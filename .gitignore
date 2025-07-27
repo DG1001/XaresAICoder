@@ -1,3 +1,30 @@
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker volumes
+workspace_data/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
 CLAUDE.md
 prompt.md
-.env

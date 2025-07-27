@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XaresAICoder - AI-Powered Coding Platform</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <img src="../logo.png" alt="XaresAICoder" class="logo">
+                <h1>XaresAICoder</h1>
+                <p class="subtitle">AI-Powered Browser-Based Coding Platform</p>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Project Creation Section -->
+        <section class="create-project">
+            <h2>Create New Project</h2>
+            <form id="createProjectForm" class="project-form">
+                <div class="form-group">
+                    <label for="projectName">Project Name:</label>
+                    <input 
+                        type="text" 
+                        id="projectName" 
+                        name="projectName" 
+                        required 
+                        placeholder="Enter your project name"
+                        maxlength="50"
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label for="projectType">Project Type:</label>
+                    <select id="projectType" name="projectType" required>
+                        <option value="">Select project type</option>
+                        <option value="python-flask">Python Flask</option>
+                        <option value="node-react">Node.js React (Coming Soon)</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="btn-primary" id="createBtn">
+                    <span class="btn-text">Create Workspace</span>
+                    <div class="spinner" style="display: none;"></div>
+                </button>
+            </form>
+        </section>
+
+        <!-- Active Projects Section -->
+        <section class="active-projects">
+            <div class="section-header">
+                <h2>Your Projects</h2>
+                <button id="refreshBtn" class="btn-secondary">Refresh</button>
+            </div>
+            
+            <div id="projectsList" class="projects-grid">
+                <!-- Projects will be loaded here -->
+            </div>
+            
+            <div id="noProjects" class="no-projects" style="display: none;">
+                <p>No projects yet. Create your first project above!</p>
+            </div>
+        </section>
+
+        <!-- OpenCode Information -->
+        <section class="opencode-info">
+            <h2>Getting Started with OpenCode SST</h2>
+            <div class="info-cards">
+                <div class="info-card">
+                    <h3>1. Authenticate</h3>
+                    <p>In the terminal, run: <code>opencode auth login</code></p>
+                    <p>Enter your API key when prompted</p>
+                </div>
+                
+                <div class="info-card">
+                    <h3>2. Start Coding</h3>
+                    <p>Use: <code>opencode [your coding request]</code></p>
+                    <p>Example: <code>opencode "create a REST API endpoint"</code></p>
+                </div>
+                
+                <div class="info-card">
+                    <h3>3. Get Help</h3>
+                    <p>Run: <code>opencode --help</code></p>
+                    <p>For detailed documentation and examples</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner-large"></div>
+            <p>Creating your workspace...</p>
+            <p class="loading-detail">This may take a few moments</p>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div id="errorModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Error</h3>
+                <button class="modal-close" id="closeErrorModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="closeErrorBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 XaresAICoder. Powered by code-server and OpenCode SST.</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

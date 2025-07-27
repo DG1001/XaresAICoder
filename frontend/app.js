@@ -1,0 +1,327 @@
+// XaresAICoder Frontend Application
+class XaresAICoder {
+    constructor() {
+        this.apiBase = '/api';
+        this.projects = [];
+        this.init();
+    }
+
+    init() {
+        this.bindEvents();
+        this.loadProjects();
+        
+        // Load projects from localStorage for offline display
+        this.loadProjectsFromStorage();
+    }
+
+    bindEvents() {
+        // Project creation form
+        const createForm = document.getElementById('createProjectForm');
+        createForm.addEventListener('submit', (e) => this.handleCreateProject(e));
+
+        // Refresh button
+        const refreshBtn = document.getElementById('refreshBtn');
+        refreshBtn.addEventListener('click', () => this.loadProjects());
+
+        // Modal close handlers
+        const closeErrorModal = document.getElementById('closeErrorModal');
+        const closeErrorBtn = document.getElementById('closeErrorBtn');
+        
+        closeErrorModal.addEventListener('click', () => this.hideErrorModal());
+        closeErrorBtn.addEventListener('click', () => this.hideErrorModal());
+        
+        // Close modal on outside click
+        const errorModal = document.getElementById('errorModal');
+        errorModal.addEventListener('click', (e) => {
+            if (e.target === errorModal) {
+                this.hideErrorModal();
+            }
+        });
+    }
+
+    async handleCreateProject(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const projectName = formData.get('projectName').trim();
+        const projectType = formData.get('projectType');
+
+        if (!projectName || !projectType) {
+            this.showError('Please fill in all required fields');
+            return;
+        }
+
+        if (projectType === 'node-react') {
+            this.showError('Node.js React projects are coming soon! Please select Python Flask for now.');
+            return;
+        }
+
+        this.showLoading(true);
+
+        try {
+            const response = await fetch(`${this.apiBase}/projects/create`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    projectName,
+                    projectType
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to create project');
+            }
+
+            // Success! Open the workspace
+            const project = data.project;
+            this.saveProjectToStorage(project);
+            
+            // Clear form
+            e.target.reset();
+            
+            // Redirect to workspace
+            window.open(project.workspaceUrl, '_blank');
+            
+            // Refresh project list
+            this.loadProjects();
+
+        } catch (error) {
+            console.error('Error creating project:', error);
+            this.showError(error.message || 'Failed to create project. Please try again.');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async loadProjects() {
+        try {
+            const response = await fetch(`${this.apiBase}/projects/`);
+            const data = await response.json();
+
+            if (response.ok) {
+                this.projects = data.projects || [];
+                this.saveProjectsToStorage(this.projects);
+            } else {
+                console.error('Failed to load projects:', data.message);
+                // Fall back to localStorage
+                this.loadProjectsFromStorage();
+            }
+
+        } catch (error) {
+            console.error('Error loading projects:', error);
+            // Fall back to localStorage
+            this.loadProjectsFromStorage();
+        }
+
+        this.renderProjects();
+    }
+
+    renderProjects() {
+        const projectsList = document.getElementById('projectsList');
+        const noProjects = document.getElementById('noProjects');
+
+        if (this.projects.length === 0) {
+            projectsList.innerHTML = '';
+            noProjects.style.display = 'block';
+            return;
+        }
+
+        noProjects.style.display = 'none';
+        
+        projectsList.innerHTML = this.projects.map(project => `
+            <div class="project-card">
+                <h3>${this.escapeHtml(project.projectName)}</h3>
+                <div class="project-type">${this.getProjectTypeLabel(project.projectType)}</div>
+                <div class="project-meta">
+                    <div>
+                        <span class="status-indicator ${this.getStatusClass(project.status)}"></span>
+                        Status: ${this.getStatusLabel(project.status)}
+                    </div>
+                    <div>Created: ${this.formatDate(project.createdAt)}</div>
+                    ${project.lastAccessed ? `<div>Last accessed: ${this.formatDate(project.lastAccessed)}</div>` : ''}
+                </div>
+                <div class="project-actions">
+                    <button class="btn-open" onclick="app.openWorkspace('${project.projectId}', '${project.workspaceUrl}')">
+                        Open Workspace
+                    </button>
+                    <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', '${this.escapeHtml(project.projectName)}')">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async openWorkspace(projectId, workspaceUrl) {
+        try {
+            // Check if project is still running
+            const response = await fetch(`${this.apiBase}/projects/${projectId}`);
+            const data = await response.json();
+
+            if (response.ok && data.project) {
+                window.open(workspaceUrl, '_blank');
+            } else {
+                this.showError('Workspace is no longer available. It may have been stopped due to inactivity.');
+                this.loadProjects(); // Refresh the list
+            }
+        } catch (error) {
+            console.error('Error checking project status:', error);
+            // Try to open anyway
+            window.open(workspaceUrl, '_blank');
+        }
+    }
+
+    async deleteProject(projectId, projectName) {
+        if (!confirm(`Are you sure you want to delete the project "${projectName}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/projects/${projectId}`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.removeProjectFromStorage(projectId);
+                this.loadProjects();
+            } else {
+                this.showError(data.message || 'Failed to delete project');
+            }
+
+        } catch (error) {
+            console.error('Error deleting project:', error);
+            this.showError('Failed to delete project. Please try again.');
+        }
+    }
+
+    // Utility methods
+    showLoading(show) {
+        const overlay = document.getElementById('loadingOverlay');
+        const createBtn = document.getElementById('createBtn');
+        const btnText = createBtn.querySelector('.btn-text');
+        const spinner = createBtn.querySelector('.spinner');
+
+        if (show) {
+            overlay.style.display = 'flex';
+            createBtn.disabled = true;
+            btnText.textContent = 'Creating...';
+            spinner.style.display = 'block';
+        } else {
+            overlay.style.display = 'none';
+            createBtn.disabled = false;
+            btnText.textContent = 'Create Workspace';
+            spinner.style.display = 'none';
+        }
+    }
+
+    showError(message) {
+        const modal = document.getElementById('errorModal');
+        const messageElement = document.getElementById('errorMessage');
+        messageElement.textContent = message;
+        modal.style.display = 'flex';
+    }
+
+    hideErrorModal() {
+        const modal = document.getElementById('errorModal');
+        modal.style.display = 'none';
+    }
+
+    getProjectTypeLabel(type) {
+        const labels = {
+            'python-flask': 'Python Flask',
+            'node-react': 'Node.js React'
+        };
+        return labels[type] || type;
+    }
+
+    getStatusLabel(status) {
+        const labels = {
+            'running': 'Running',
+            'stopped': 'Stopped',
+            'error': 'Error',
+            'not_found': 'Not Found'
+        };
+        return labels[status] || status;
+    }
+
+    getStatusClass(status) {
+        return status === 'running' ? 'status-running' : 'status-stopped';
+    }
+
+    formatDate(dateString) {
+        if (!dateString) return 'Unknown';
+        try {
+            return new Date(dateString).toLocaleString();
+        } catch (error) {
+            return 'Unknown';
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Local storage methods for offline support
+    saveProjectsToStorage(projects) {
+        try {
+            localStorage.setItem('xares_projects', JSON.stringify(projects));
+        } catch (error) {
+            console.error('Error saving projects to storage:', error);
+        }
+    }
+
+    loadProjectsFromStorage() {
+        try {
+            const stored = localStorage.getItem('xares_projects');
+            if (stored) {
+                this.projects = JSON.parse(stored);
+            }
+        } catch (error) {
+            console.error('Error loading projects from storage:', error);
+            this.projects = [];
+        }
+    }
+
+    saveProjectToStorage(project) {
+        try {
+            const stored = localStorage.getItem('xares_projects');
+            let projects = stored ? JSON.parse(stored) : [];
+            
+            // Add new project or update existing
+            const existingIndex = projects.findIndex(p => p.projectId === project.projectId);
+            if (existingIndex >= 0) {
+                projects[existingIndex] = project;
+            } else {
+                projects.unshift(project); // Add to beginning
+            }
+            
+            localStorage.setItem('xares_projects', JSON.stringify(projects));
+        } catch (error) {
+            console.error('Error saving project to storage:', error);
+        }
+    }
+
+    removeProjectFromStorage(projectId) {
+        try {
+            const stored = localStorage.getItem('xares_projects');
+            if (stored) {
+                let projects = JSON.parse(stored);
+                projects = projects.filter(p => p.projectId !== projectId);
+                localStorage.setItem('xares_projects', JSON.stringify(projects));
+            }
+        } catch (error) {
+            console.error('Error removing project from storage:', error);
+        }
+    }
+}
+
+// Initialize the application
+const app = new XaresAICoder();

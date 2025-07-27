@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./frontend:/usr/share/nginx/html/frontend
+    depends_on:
+      - server
+    networks:
+      - xares-aicoder-network
+
+  server:
+    build: ./server
+    environment:
+      - SERVER_PORT=3000
+      - DOCKER_NETWORK=xares-aicoder-network
+      - CODE_SERVER_PASSWORD=${CODE_SERVER_PASSWORD:-default_password}
+      - WORKSPACE_TIMEOUT_MINUTES=${WORKSPACE_TIMEOUT_MINUTES:-120}
+      - MAX_WORKSPACES_PER_USER=${MAX_WORKSPACES_PER_USER:-5}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - workspace_data:/app/workspaces
+    networks:
+      - xares-aicoder-network
+    restart: unless-stopped
+
+networks:
+  xares-aicoder-network:
+    driver: bridge
+
+volumes:
+  workspace_data:
