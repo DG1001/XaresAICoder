@@ -35,30 +35,150 @@ git config --global user.email "user@xaresaicoder.local" 2>/dev/null || true
 # Python virtual environment setup function
 setup_flask_project() {
     echo "Setting up Flask project structure..."
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install flask python-dotenv
+    cd /workspace
     
+    # Create virtual environment
+    python3 -m venv venv
+    
+    # Create Flask application
     cat > app.py << 'FLASK_EOF'
-from flask import Flask
+from flask import Flask, render_template, jsonify
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 @app.route('/')
-def hello_world():
-    return 'Hello from XaresAICoder!'
+def index():
+    return '''
+    <h1>🎉 Welcome to XaresAICoder!</h1>
+    <p>Your Flask application is running successfully.</p>
+    <p><a href="/api/status">Check API Status</a></p>
+    <p><strong>Next steps:</strong></p>
+    <ul>
+        <li>Edit this file (app.py) to build your application</li>
+        <li>Use the terminal to install additional packages: <code>pip install package-name</code></li>
+        <li>Run the app: <code>python app.py</code></li>
+    </ul>
+    '''
+
+@app.route('/api/status')
+def api_status():
+    return jsonify({
+        'status': 'running',
+        'message': 'Flask API is working!',
+        'framework': 'Flask',
+        'python_version': '3.11+'
+    })
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0', port=5000)
 FLASK_EOF
     
+    # Create requirements.txt
     cat > requirements.txt << 'REQ_EOF'
-Flask==2.3.3
-python-dotenv==1.0.0
+Flask==3.1.1
+python-dotenv==1.1.1
+requests==2.32.4
 REQ_EOF
+
+    # Create .env file
+    cat > .env << 'ENV_EOF'
+SECRET_KEY=your-secret-key-here
+FLASK_ENV=development
+FLASK_DEBUG=True
+ENV_EOF
+
+    # Create a simple README
+    cat > README.md << 'README_EOF'
+# Flask Project
+
+This is a Flask application created with XaresAICoder.
+
+## Setup
+
+1. Activate the virtual environment:
+   ```bash
+   source venv/bin/activate
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Run the application:
+   ```bash
+   python app.py
+   ```
+
+4. Open http://localhost:5000 in your browser
+
+## Development
+
+- Edit `app.py` to add your routes and logic
+- Add new dependencies to `requirements.txt`
+- Use the integrated terminal for package management
+
+## AI Assistance
+
+Use the OpenCode SST integration for AI-powered development:
+```bash
+opencode "add a user authentication system"
+opencode "create a REST API endpoint for user management"
+```
+README_EOF
+
+    # Create .gitignore
+    cat > .gitignore << 'GITIGNORE_EOF'
+# Virtual environment
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment variables
+.env.local
+.env.production
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
+GITIGNORE_EOF
     
-    echo "Flask project setup complete!"
-    echo "To run: source venv/bin/activate && python app.py"
+    echo "✅ Flask project setup complete!"
+    echo ""
+    echo "📁 Files created:"
+    echo "  - app.py (main Flask application)"
+    echo "  - requirements.txt (dependencies)"
+    echo "  - .env (environment variables)"
+    echo "  - README.md (project documentation)"
+    echo "  - .gitignore (Git ignore rules)"
+    echo ""
+    echo "🚀 To get started:"
+    echo "  1. source venv/bin/activate"
+    echo "  2. pip install -r requirements.txt"
+    echo "  3. python app.py"
 }
 
 # Export the function

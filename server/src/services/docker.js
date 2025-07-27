@@ -80,21 +80,28 @@ class DockerService {
   async initializeProject(container, projectType) {
     try {
       const commands = [
-        'git init',
-        'git config user.name "XaresAICoder User"',
-        'git config user.email "user@xaresaicoder.local"'
+        'cd /workspace && git init',
+        'cd /workspace && git config user.name "XaresAICoder User"',
+        'cd /workspace && git config user.email "user@xaresaicoder.local"'
       ];
 
       if (projectType === 'python-flask') {
-        commands.push('setup_flask_project');
+        commands.push('cd /workspace && setup_flask_project');
+        commands.push('cd /workspace && git add .');
+        commands.push('cd /workspace && git commit -m "Initial Flask project setup"');
       }
 
       for (const cmd of commands) {
-        await container.exec({
+        console.log(`Executing: ${cmd}`);
+        const exec = await container.exec({
           Cmd: ['bash', '-c', cmd],
           AttachStdout: true,
-          AttachStderr: true
+          AttachStderr: true,
+          WorkingDir: '/workspace'
         });
+        
+        const stream = await exec.start();
+        await this.streamToString(stream);
       }
     } catch (error) {
       console.error('Error initializing project:', error);

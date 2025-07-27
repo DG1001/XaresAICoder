@@ -1,8 +1,9 @@
 ms-python.python
-ms-vscode.vscode-typescript-next
-eamodio.gitlens
-ms-vscode.vscode-json
 ms-python.flake8
 ms-python.black-formatter
-bradlc.vscode-tailwindcss
+ms-python.pylint
+eamodio.gitlens
+ms-vscode.vscode-typescript-next
 esbenp.prettier-vscode
+redhat.vscode-yaml
+redhat.vscode-xml

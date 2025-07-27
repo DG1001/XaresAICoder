@@ -9,15 +9,20 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    nodejs \
-    npm \
+    python3-dev \
     wget \
     unzip \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages for Flask development using --break-system-packages
-RUN pip3 install --break-system-packages flask python-dotenv requests
+RUN pip3 install --break-system-packages \
+    flask==3.1.1 \
+    python-dotenv==1.1.1 \
+    requests==2.32.4 \
+    black \
+    flake8 \
+    pytest \
+    pylint
 
 # Create workspace directory
 RUN mkdir -p /workspace
