@@ -49,12 +49,15 @@ class DockerService {
       });
 
       await container.start();
+      console.log(`Container ${containerName} started`);
 
-      // Initialize git repository and project structure
-      await this.initializeProject(container, projectType);
-
-      // Wait for code-server to be ready
+      // Wait for code-server to be ready first
       await this.waitForWorkspaceReady(containerName);
+      console.log(`Workspace ${containerName} is ready, now initializing project`);
+
+      // Initialize git repository and project structure after container is ready
+      await this.initializeProject(container, projectType);
+      console.log(`Initialization completed for ${containerName}`);
 
       this.activeContainers.set(projectId, {
         container,
@@ -78,31 +81,54 @@ class DockerService {
   }
 
   async initializeProject(container, projectType) {
+    console.log(`Starting project initialization for type: ${projectType}`);
     try {
+      // Create a marker file to verify the function is running
+      const markerExec = await container.exec({
+        Cmd: ['bash', '-c', 'echo "Initialization started" > /workspace/INIT_MARKER.txt'],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+      await markerExec.start();
+      
       const commands = [
-        'cd /workspace && git init',
-        'cd /workspace && git config user.name "XaresAICoder User"',
-        'cd /workspace && git config user.email "user@xaresaicoder.local"'
+        'git init',
+        'git config user.name "XaresAICoder User"',
+        'git config user.email "user@xaresaicoder.local"'
       ];
 
       if (projectType === 'python-flask') {
-        commands.push('cd /workspace && setup_flask_project');
-        commands.push('cd /workspace && git add .');
-        commands.push('cd /workspace && git commit -m "Initial Flask project setup"');
+        console.log('Adding Flask project setup commands');
+        commands.push('setup_flask_project');
+        commands.push('git add .');
+        commands.push('git commit -m "Initial Flask project setup"');
       }
 
+      // Run commands as root but set proper ownership afterward
       for (const cmd of commands) {
         console.log(`Executing: ${cmd}`);
+        const fullCmd = `source /home/coder/.bashrc && cd /workspace && ${cmd}`;
+        
         const exec = await container.exec({
-          Cmd: ['bash', '-c', cmd],
+          Cmd: ['bash', '-c', fullCmd],
           AttachStdout: true,
           AttachStderr: true,
-          WorkingDir: '/workspace'
+          Env: ['HOME=/home/coder', 'USER=coder']
         });
         
         const stream = await exec.start();
-        await this.streamToString(stream);
+        const output = await this.streamToString(stream);
+        console.log(`Command output: ${output.trim()}`);
       }
+      
+      // Fix ownership of created files
+      const chownExec = await container.exec({
+        Cmd: ['chown', '-R', 'coder:coder', '/workspace'],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+      await chownExec.start();
+      console.log('Project initialization completed successfully');
     } catch (error) {
       console.error('Error initializing project:', error);
       // Don't throw here, as the container is already created

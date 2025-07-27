@@ -12,14 +12,23 @@ fi
 
 # Custom welcome message for XaresAICoder
 echo ""
-echo "Welcome to XaresAICoder!"
+echo "🚀 Welcome to XaresAICoder!"
 echo ""
-echo "To use OpenCode SST:"
-echo "1. Run: opencode auth login"
-echo "2. Enter your API key when prompted"
-echo "3. Start coding with: opencode [your prompt]"
+echo "🤖 OpenCode SST AI Assistant Ready"
 echo ""
-echo "For help: opencode --help"
+echo "Quick Start:"
+echo "1. Configure API: opencode auth login"
+echo "2. Initialize project: opencode (then type /init)"
+echo "3. Start coding with AI assistance"
+echo ""
+echo "📁 Project Templates:"
+echo "- Flask app: setup_flask_project"
+echo "- Or create your own project structure"
+echo ""
+echo "💡 Pro Tips:"
+echo "- Ask questions about your codebase"
+echo "- Request new features in Plan/Build mode"
+echo "- Share sessions with /share command"
 echo ""
 
 # Add aliases for common commands
@@ -124,13 +133,38 @@ This is a Flask application created with XaresAICoder.
 - Add new dependencies to `requirements.txt`
 - Use the integrated terminal for package management
 
-## AI Assistance
+## AI Assistance with OpenCode SST
 
-Use the OpenCode SST integration for AI-powered development:
-```bash
-opencode "add a user authentication system"
-opencode "create a REST API endpoint for user management"
-```
+Get AI-powered development assistance:
+
+1. **Initialize OpenCode for this project:**
+   ```bash
+   opencode
+   # Then type: /init
+   ```
+
+2. **Ask questions about your code:**
+   ```bash
+   opencode
+   # Then ask: "How can I improve this Flask app structure?"
+   ```
+
+3. **Request new features:**
+   ```bash
+   opencode
+   # Then type: "Add user authentication with session management"
+   ```
+
+4. **Get help with specific files:**
+   ```bash
+   opencode
+   # Then: "Review app.py and suggest improvements"
+   ```
+
+**Useful OpenCode Commands:**
+- `/init` - Initialize project analysis
+- `/share` - Share session for collaboration
+- `/help` - Show available commands
 README_EOF
 
     # Create .gitignore
