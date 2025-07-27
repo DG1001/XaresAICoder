@@ -24,10 +24,18 @@ class DockerService {
         Env: [
           `PASSWORD=${this.codeServerPassword}`,
           `PROJECT_TYPE=${projectType}`,
-          `PROJECT_ID=${projectId}`
+          `PROJECT_ID=${projectId}`,
+          `VSCODE_PROXY_URI=http://${projectId}-{{port}}.localhost/`,
+          `PROXY_DOMAIN=${projectId}.localhost`
         ],
         ExposedPorts: {
-          '8080/tcp': {}
+          '8080/tcp': {}, // code-server
+          '3000/tcp': {}, // Node.js apps
+          '5000/tcp': {}, // Flask/Python apps
+          '8000/tcp': {}, // Django/other Python apps
+          '4200/tcp': {}, // Angular
+          '3001/tcp': {}, // React dev server alt
+          '9000/tcp': {}  // Various apps
         },
         HostConfig: {
           Memory: 4 * 1024 * 1024 * 1024, // 4GB
@@ -45,7 +53,7 @@ class DockerService {
           }
         },
         WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', 'password', '/workspace']
+        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', 'password', '--proxy-domain', `${projectId}.localhost`, '/workspace']
       });
 
       await container.start();
@@ -70,7 +78,7 @@ class DockerService {
       return {
         projectId,
         containerName,
-        workspaceUrl: `/workspace/${projectId}/`,
+        workspaceUrl: `http://${projectId}.localhost/`,
         status: 'running'
       };
 
@@ -214,7 +222,7 @@ class DockerService {
       return {
         projectId,
         status,
-        workspaceUrl: `/workspace/${projectId}/`,
+        workspaceUrl: `http://${projectId}.localhost/`,
         createdAt: workspace.createdAt,
         projectType: workspace.projectType,
         containerInfo: {

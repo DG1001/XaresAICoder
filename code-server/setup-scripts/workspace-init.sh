@@ -3,6 +3,33 @@ set -e
 
 echo "Setting up workspace initialization..."
 
+# Create VS Code settings to reduce port forwarding notifications
+mkdir -p /home/coder/.local/share/code-server/User
+cat > /home/coder/.local/share/code-server/User/settings.json << 'SETTINGS_EOF'
+{
+    "remote.autoForwardPorts": false,
+    "remote.portsAttributes": {
+        "5000": {
+            "label": "Flask App - Use subdomain URL instead!",
+            "onAutoForward": "ignore"
+        },
+        "3000": {
+            "label": "Node.js App - Use subdomain URL instead!",
+            "onAutoForward": "ignore"
+        },
+        "8000": {
+            "label": "Django App - Use subdomain URL instead!",
+            "onAutoForward": "ignore"
+        }
+    },
+    "workbench.startupEditor": "readme",
+    "python.defaultInterpreterPath": "./venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.venvPath": ".",
+    "python.autoComplete.extraPaths": ["./venv/lib/python3.11/site-packages"]
+}
+SETTINGS_EOF
+
 # Create a welcome script that runs when terminal opens
 cat > /home/coder/.bashrc << 'EOF'
 # Default bashrc content
@@ -46,8 +73,8 @@ setup_flask_project() {
     echo "Setting up Flask project structure..."
     cd /workspace
     
-    # Create virtual environment
-    python3 -m venv venv
+    # Create virtual environment with clean isolation
+    python3 -m venv venv --clear
     
     # Create Flask application
     cat > app.py << 'FLASK_EOF'
@@ -125,7 +152,11 @@ This is a Flask application created with XaresAICoder.
    python app.py
    ```
 
-4. Open http://localhost:5000 in your browser
+4. **Access your app:**
+   
+   When you start the Flask app, VS Code will automatically detect port 5000
+   and provide the correct URL via port forwarding notifications.
+   Simply click the provided link to access your application!
 
 ## Development
 
@@ -167,6 +198,19 @@ Get AI-powered development assistance:
 - `/help` - Show available commands
 README_EOF
 
+    # Create VS Code workspace settings for this project
+    mkdir -p .vscode
+    cat > .vscode/settings.json << 'VSCODE_SETTINGS_EOF'
+{
+    "python.defaultInterpreterPath": "./venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.formatting.provider": "black",
+    "python.envFile": "${workspaceFolder}/.env"
+}
+VSCODE_SETTINGS_EOF
+
     # Create .gitignore
     cat > .gitignore << 'GITIGNORE_EOF'
 # Virtual environment
@@ -184,8 +228,7 @@ __pycache__/
 .env.local
 .env.production
 
-# IDE files
-.vscode/
+# IDE files (keep .vscode for project settings)
 .idea/
 
 # Logs
@@ -213,6 +256,8 @@ GITIGNORE_EOF
     echo "  1. source venv/bin/activate"
     echo "  2. pip install -r requirements.txt"
     echo "  3. python app.py"
+    echo ""
+    echo "🌐 VS Code will automatically detect port 5000 and provide access URLs!"
 }
 
 # Export the function
