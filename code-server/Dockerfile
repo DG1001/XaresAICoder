@@ -2,7 +2,7 @@ FROM codercom/code-server:latest
 
 USER root
 
-# Install system dependencies
+# Install system dependencies including Node.js
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     wget \
     unzip \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages for Flask development using --break-system-packages
@@ -23,6 +25,13 @@ RUN pip3 install --break-system-packages \
     flake8 \
     pytest \
     pylint
+
+# Install AI coding tools
+# Install Aider AI pair programming tool
+RUN pip3 install --break-system-packages aider-chat
+
+# Install Node.js AI tools (Gemini CLI and Claude Code)
+RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code
 
 # Create workspace directory
 RUN mkdir -p /workspace

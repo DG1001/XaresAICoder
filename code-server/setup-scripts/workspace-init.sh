@@ -41,12 +41,19 @@ fi
 echo ""
 echo "🚀 Welcome to XaresAICoder!"
 echo ""
-echo "🤖 OpenCode SST AI Assistant Ready"
+echo "🤖 AI Coding Tools Available:"
+echo "  • OpenCode SST - Multi-model AI assistant"
+echo "  • Aider - AI pair programming in terminal"
+echo "  • Gemini CLI - Google's AI coding assistant"
+echo "  • Claude Code - Anthropic's AI coding tool"
 echo ""
-echo "Quick Start:"
-echo "1. Configure API: opencode auth login"
-echo "2. Initialize project: opencode (then type /init)"
-echo "3. Start coding with AI assistance"
+echo "⚡ Quick Setup:"
+echo "  • All AI tools: setup_ai_tools"
+echo "  • Individual setup: setup_opencode, setup_aider, setup_gemini, setup_claude"
+echo ""
+echo "🚀 Quick Start:"
+echo "1. Run setup_ai_tools to configure your preferred AI tools"
+echo "2. Start coding with AI assistance!"
 echo ""
 echo "📁 Project Templates:"
 echo "- Flask app: setup_flask_project"
@@ -164,38 +171,85 @@ This is a Flask application created with XaresAICoder.
 - Add new dependencies to `requirements.txt`
 - Use the integrated terminal for package management
 
-## AI Assistance with OpenCode SST
+## AI Coding Assistance
 
-Get AI-powered development assistance:
+XaresAICoder includes four powerful AI coding tools. Choose the one that best fits your workflow:
 
-1. **Initialize OpenCode for this project:**
-   ```bash
-   opencode
-   # Then type: /init
-   ```
+### 🤖 OpenCode SST - Multi-model AI Assistant
+Best for: Project analysis, multi-model support, collaborative development
 
-2. **Ask questions about your code:**
-   ```bash
-   opencode
-   # Then ask: "How can I improve this Flask app structure?"
-   ```
+```bash
+# Quick setup
+setup_opencode
 
-3. **Request new features:**
-   ```bash
-   opencode
-   # Then type: "Add user authentication with session management"
-   ```
+# Get started
+opencode          # Start interactive session
+# Then type: /init  # Initialize project analysis
+```
 
-4. **Get help with specific files:**
-   ```bash
-   opencode
-   # Then: "Review app.py and suggest improvements"
-   ```
-
-**Useful OpenCode Commands:**
-- `/init` - Initialize project analysis
+**Key Commands:**
+- `/init` - Analyze your project
 - `/share` - Share session for collaboration
 - `/help` - Show available commands
+
+### 🤖 Aider - AI Pair Programming
+Best for: Interactive coding, file editing, git integration
+
+```bash
+# Setup (requires API key)
+export OPENAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, GEMINI_API_KEY
+setup_aider
+
+# Get started
+aider             # Start interactive pair programming
+```
+
+**Features:**
+- Direct file editing with AI
+- Automatic git commits
+- Supports multiple AI models
+- Works with your existing codebase
+
+### 🤖 Gemini CLI - Google's AI Assistant  
+Best for: Code generation, debugging, Google ecosystem integration
+
+```bash
+# Setup (requires API key from https://makersuite.google.com/app/apikey)
+export GEMINI_API_KEY=your_key_here
+setup_gemini
+
+# Get started
+gemini            # Start interactive session
+```
+
+**Features:**
+- Natural language code generation
+- Code explanation and debugging
+- Project analysis and suggestions
+
+### 🤖 Claude Code - Anthropic's Agentic Tool
+Best for: Deep codebase understanding, multi-file editing, advanced workflows
+
+```bash
+# Setup (requires Claude Pro/Max or API billing)
+setup_claude
+
+# Get started
+claude            # Start agentic coding session
+```
+
+**Features:**
+- Understands entire codebase
+- Multi-file editing capabilities
+- Git workflow automation
+- Advanced reasoning and planning
+
+## Quick Setup for All Tools
+
+Run this command to see setup instructions for all AI tools:
+```bash
+setup_ai_tools
+```
 README_EOF
 
     # Create VS Code workspace settings for this project
@@ -260,8 +314,125 @@ GITIGNORE_EOF
     echo "🌐 VS Code will automatically detect port 5000 and provide access URLs!"
 }
 
-# Export the function
-export -f setup_flask_project
+# AI Tool Setup Functions
+
+# Setup OpenCode SST
+setup_opencode() {
+    echo "🤖 Setting up OpenCode SST..."
+    echo ""
+    echo "OpenCode SST is already installed!"
+    echo ""
+    echo "To get started:"
+    echo "1. opencode auth login"
+    echo "2. opencode (then type /init to analyze your project)"
+    echo ""
+    echo "📚 Learn more: https://opencode.dev"
+}
+
+# Setup Aider AI pair programming
+setup_aider() {
+    echo "🤖 Setting up Aider AI pair programming..."
+    echo ""
+    echo "Aider is already installed!"
+    echo ""
+    echo "To get started:"
+    echo "1. Set your API key: export OPENAI_API_KEY=your_key_here"
+    echo "   (or use other providers: ANTHROPIC_API_KEY, GEMINI_API_KEY, etc.)"
+    echo "2. Run: aider"
+    echo "3. Start coding with AI assistance!"
+    echo ""
+    echo "💡 Pro tip: Aider works with many AI models:"
+    echo "   - OpenAI GPT-4, GPT-3.5"
+    echo "   - Anthropic Claude"
+    echo "   - Google Gemini"
+    echo "   - Local models via Ollama"
+    echo ""
+    echo "📚 Learn more: https://aider.chat"
+}
+
+# Setup Gemini CLI
+setup_gemini() {
+    echo "🤖 Setting up Gemini CLI..."
+    echo ""
+    echo "Gemini CLI is already installed!"
+    echo ""
+    echo "To get started:"
+    echo "1. Get API key from: https://makersuite.google.com/app/apikey"
+    echo "2. Set API key: export GEMINI_API_KEY=your_key_here"
+    echo "3. Run: gemini-cli"
+    echo ""
+    echo "💡 Features:"
+    echo "   - Natural language code generation"
+    echo "   - Code explanation and debugging"
+    echo "   - Project analysis and suggestions"
+    echo ""
+    echo "📚 Learn more: https://ai.google.dev/gemini-api"
+}
+
+# Setup Claude Code
+setup_claude() {
+    echo "🤖 Setting up Claude Code..."
+    echo ""
+    echo "Claude Code is already installed!"
+    echo ""
+    echo "To get started:"
+    echo "1. Run: claude"
+    echo "2. Follow authentication prompts"
+    echo "   (Requires Claude Pro/Max subscription or API billing)"
+    echo ""
+    echo "💡 Features:"
+    echo "   - Agentic coding assistance"
+    echo "   - Codebase understanding"
+    echo "   - Git workflow automation"
+    echo "   - Multi-file editing"
+    echo ""
+    echo "📚 Learn more: https://docs.anthropic.com/claude-code"
+}
+
+# Setup all AI tools
+setup_ai_tools() {
+    echo "🚀 XaresAICoder AI Tools Setup"
+    echo "=============================="
+    echo ""
+    echo "Available AI coding tools:"
+    echo ""
+    
+    echo "1️⃣  OpenCode SST"
+    setup_opencode
+    echo ""
+    echo "----------------------------------------"
+    echo ""
+    
+    echo "2️⃣  Aider AI"
+    setup_aider
+    echo ""
+    echo "----------------------------------------"
+    echo ""
+    
+    echo "3️⃣  Gemini CLI"
+    setup_gemini
+    echo ""
+    echo "----------------------------------------"
+    echo ""
+    
+    echo "4️⃣  Claude Code"
+    setup_claude
+    echo ""
+    echo "=============================="
+    echo ""
+    echo "✅ All AI tools are ready!"
+    echo ""
+    echo "💡 Choose the tool that best fits your workflow:"
+    echo "   • OpenCode SST: Multi-model support, project analysis"
+    echo "   • Aider: Interactive pair programming"
+    echo "   • Gemini CLI: Google's AI with code generation"
+    echo "   • Claude Code: Agentic coding with deep codebase understanding"
+    echo ""
+    echo "🔑 Don't forget to set up your API keys for the tools you want to use!"
+}
+
+# Export all functions
+export -f setup_flask_project setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."
