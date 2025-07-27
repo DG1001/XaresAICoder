@@ -93,4 +93,40 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Start project
+router.post('/:projectId/start', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const result = await workspaceService.startProject(projectId);
+    
+    res.json(result);
+
+  } catch (error) {
+    console.error('Start project error:', error);
+    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    res.status(statusCode).json({
+      error: 'Failed to start project',
+      message: error.message
+    });
+  }
+});
+
+// Stop project
+router.post('/:projectId/stop', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const result = await workspaceService.stopProject(projectId);
+    
+    res.json(result);
+
+  } catch (error) {
+    console.error('Stop project error:', error);
+    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    res.status(statusCode).json({
+      error: 'Failed to stop project',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;

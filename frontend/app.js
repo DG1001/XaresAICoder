@@ -133,7 +133,7 @@ class XaresAICoder {
         noProjects.style.display = 'none';
         
         projectsList.innerHTML = this.projects.map(project => `
-            <div class="project-card">
+            <div class="project-card" data-project-id="${project.projectId}">
                 <h3>${this.escapeHtml(project.projectName)}</h3>
                 <div class="project-type">${this.getProjectTypeLabel(project.projectType)}</div>
                 <div class="project-meta">
@@ -145,12 +145,7 @@ class XaresAICoder {
                     ${project.lastAccessed ? `<div>Last accessed: ${this.formatDate(project.lastAccessed)}</div>` : ''}
                 </div>
                 <div class="project-actions">
-                    <button class="btn-open" onclick="app.openWorkspace('${project.projectId}', '${project.workspaceUrl}')">
-                        Open Workspace
-                    </button>
-                    <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', '${this.escapeHtml(project.projectName)}')">
-                        Delete
-                    </button>
+                    ${this.getProjectActionButtons(project)}
                 </div>
             </div>
         `).join('');
@@ -197,6 +192,112 @@ class XaresAICoder {
         } catch (error) {
             console.error('Error deleting project:', error);
             this.showError('Failed to delete project. Please try again.');
+        }
+    }
+
+    async startProject(projectId) {
+        try {
+            this.setProjectActionLoading(projectId, true);
+            
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/start`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.loadProjects(); // Refresh the list to show updated status
+            } else {
+                this.showError(data.message || 'Failed to start project');
+            }
+
+        } catch (error) {
+            console.error('Error starting project:', error);
+            this.showError('Failed to start project. Please try again.');
+        } finally {
+            this.setProjectActionLoading(projectId, false);
+        }
+    }
+
+    async stopProject(projectId) {
+        if (!confirm('Are you sure you want to stop this workspace? Any unsaved work will be lost.')) {
+            return;
+        }
+
+        try {
+            this.setProjectActionLoading(projectId, true);
+            
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/stop`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.loadProjects(); // Refresh the list to show updated status
+            } else {
+                this.showError(data.message || 'Failed to stop project');
+            }
+
+        } catch (error) {
+            console.error('Error stopping project:', error);
+            this.showError('Failed to stop project. Please try again.');
+        } finally {
+            this.setProjectActionLoading(projectId, false);
+        }
+    }
+
+    getProjectActionButtons(project) {
+        const isRunning = project.status === 'running';
+        const isStopped = project.status === 'stopped';
+        const isError = project.status === 'error';
+
+        let buttons = '';
+
+        if (isRunning) {
+            buttons += `
+                <button class="btn-open" onclick="app.openWorkspace('${project.projectId}', '${project.workspaceUrl}')">
+                    Open Workspace
+                </button>
+                <button class="btn-warning" onclick="app.stopProject('${project.projectId}')">
+                    Stop
+                </button>
+            `;
+        } else if (isStopped) {
+            buttons += `
+                <button class="btn-success" onclick="app.startProject('${project.projectId}')">
+                    Start
+                </button>
+            `;
+        } else if (isError) {
+            buttons += `
+                <button class="btn-success" onclick="app.startProject('${project.projectId}')">
+                    Restart
+                </button>
+            `;
+        }
+
+        buttons += `
+            <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', '${this.escapeHtml(project.projectName)}')">
+                Delete
+            </button>
+        `;
+
+        return buttons;
+    }
+
+    setProjectActionLoading(projectId, loading) {
+        const projectCard = document.querySelector(`[data-project-id="${projectId}"]`);
+        if (projectCard) {
+            const buttons = projectCard.querySelectorAll('.project-actions button');
+            buttons.forEach(btn => {
+                btn.disabled = loading;
+                if (loading) {
+                    btn.style.opacity = '0.6';
+                } else {
+                    btn.style.opacity = '1';
+                }
+            });
         }
     }
 
@@ -303,7 +404,13 @@ class XaresAICoder {
     }
 
     getStatusClass(status) {
-        return status === 'running' ? 'status-running' : 'status-stopped';
+        const classes = {
+            'running': 'status-running',
+            'stopped': 'status-stopped',
+            'error': 'status-error',
+            'not_found': 'status-error'
+        };
+        return classes[status] || 'status-stopped';
     }
 
     formatDate(dateString) {

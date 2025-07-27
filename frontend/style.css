@@ -162,6 +162,36 @@ section h2 {
     background: #c82333;
 }
 
+.btn-warning {
+    background: #ffc107;
+    color: #212529;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-warning:hover {
+    background: #e0a800;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-success:hover {
+    background: #218838;
+}
+
 /* Spinner */
 .spinner {
     width: 20px;
@@ -270,6 +300,10 @@ section h2 {
 }
 
 .status-stopped {
+    background: #6c757d;
+}
+
+.status-error {
     background: #dc3545;
 }
 

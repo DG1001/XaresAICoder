@@ -79,7 +79,59 @@ class WorkspaceService {
     const dockerStatus = await dockerService.getProjectStatus(projectId);
     project.status = dockerStatus.status;
 
-    return project;
+    return {
+      ...project,
+      containerInfo: dockerStatus.containerInfo
+    };
+  }
+
+  async startProject(projectId) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    try {
+      const result = await dockerService.startWorkspace(projectId);
+      project.status = result.status || 'running';
+      project.lastAccessed = new Date();
+      
+      return {
+        success: true,
+        message: result.message,
+        project: {
+          ...project,
+          status: project.status
+        }
+      };
+    } catch (error) {
+      console.error('Error starting project:', error);
+      throw error;
+    }
+  }
+
+  async stopProject(projectId) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    try {
+      const result = await dockerService.stopWorkspaceContainer(projectId);
+      project.status = result.status || 'stopped';
+      
+      return {
+        success: true,
+        message: result.message,
+        project: {
+          ...project,
+          status: project.status
+        }
+      };
+    } catch (error) {
+      console.error('Error stopping project:', error);
+      throw error;
+    }
   }
 
   async deleteProject(projectId) {
@@ -103,15 +155,38 @@ class WorkspaceService {
       .filter(p => p.userId === userId)
       .sort((a, b) => b.lastAccessed - a.lastAccessed);
 
-    return userProjects.map(p => ({
-      projectId: p.projectId,
-      projectName: p.projectName,
-      projectType: p.projectType,
-      status: p.status,
-      workspaceUrl: p.workspaceUrl,
-      createdAt: p.createdAt,
-      lastAccessed: p.lastAccessed
-    }));
+    // Update status for all projects in parallel
+    const projectsWithStatus = await Promise.all(
+      userProjects.map(async (p) => {
+        try {
+          const dockerStatus = await dockerService.getProjectStatus(p.projectId);
+          p.status = dockerStatus.status;
+          
+          return {
+            projectId: p.projectId,
+            projectName: p.projectName,
+            projectType: p.projectType,
+            status: p.status,
+            workspaceUrl: p.workspaceUrl,
+            createdAt: p.createdAt,
+            lastAccessed: p.lastAccessed
+          };
+        } catch (error) {
+          console.error(`Error getting status for project ${p.projectId}:`, error);
+          return {
+            projectId: p.projectId,
+            projectName: p.projectName,
+            projectType: p.projectType,
+            status: 'error',
+            workspaceUrl: p.workspaceUrl,
+            createdAt: p.createdAt,
+            lastAccessed: p.lastAccessed
+          };
+        }
+      })
+    );
+
+    return projectsWithStatus;
   }
 
   async cleanupWorkspaces() {
