@@ -83,8 +83,8 @@ class XaresAICoder {
             // Clear form
             e.target.reset();
             
-            // Redirect to workspace
-            window.open(project.workspaceUrl, '_blank');
+            // Show success message with instructions
+            this.showWorkspaceReady(project);
             
             // Refresh project list
             this.loadProjects();
@@ -212,12 +212,64 @@ class XaresAICoder {
             createBtn.disabled = true;
             btnText.textContent = 'Creating...';
             spinner.style.display = 'block';
+            
+            // Update loading message
+            document.querySelector('.loading-content p').textContent = 'Creating your workspace and starting VS Code...';
+            document.querySelector('.loading-detail').textContent = 'This may take 15-30 seconds';
         } else {
             overlay.style.display = 'none';
             createBtn.disabled = false;
             btnText.textContent = 'Create Workspace';
             spinner.style.display = 'none';
         }
+    }
+
+    showWorkspaceReady(project) {
+        // Show a success modal with workspace access instructions
+        const modal = document.getElementById('successModal') || this.createSuccessModal();
+        const projectNameElement = modal.querySelector('#successProjectName');
+        const workspaceUrlElement = modal.querySelector('#successWorkspaceUrl');
+        
+        projectNameElement.textContent = project.projectName;
+        workspaceUrlElement.href = project.workspaceUrl;
+        workspaceUrlElement.textContent = project.workspaceUrl;
+        
+        modal.style.display = 'flex';
+        
+        // Auto-open workspace after a short delay
+        setTimeout(() => {
+            window.open(project.workspaceUrl, '_blank');
+        }, 1000);
+    }
+
+    createSuccessModal() {
+        const modal = document.createElement('div');
+        modal.id = 'successModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🎉 Workspace Ready!</h3>
+                    <button class="modal-close" onclick="this.parentElement.parentElement.parentElement.style.display='none'">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Your project "<strong id="successProjectName"></strong>" has been created successfully!</p>
+                    <p>VS Code is starting in a new tab. If it doesn't open automatically, click the link below:</p>
+                    <p><a id="successWorkspaceUrl" href="#" target="_blank" class="workspace-link"></a></p>
+                    <div class="login-info">
+                        <h4>Login Information:</h4>
+                        <p><strong>Password:</strong> <code>default_password</code></p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-primary" onclick="window.open(document.getElementById('successWorkspaceUrl').href, '_blank')">Open Workspace</button>
+                    <button class="btn-secondary" onclick="this.parentElement.parentElement.parentElement.style.display='none'">Close</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        return modal;
     }
 
     showError(message) {

@@ -53,6 +53,9 @@ class DockerService {
       // Initialize git repository and project structure
       await this.initializeProject(container, projectType);
 
+      // Wait for code-server to be ready
+      await this.waitForWorkspaceReady(containerName);
+
       this.activeContainers.set(projectId, {
         container,
         name: containerName,
@@ -97,6 +100,59 @@ class DockerService {
       console.error('Error initializing project:', error);
       // Don't throw here, as the container is already created
     }
+  }
+
+  async waitForWorkspaceReady(containerName, maxWaitTime = 15000) {
+    const startTime = Date.now();
+    const checkInterval = 2000; // Check every 2 seconds
+
+    console.log(`Waiting for workspace ${containerName} to be ready...`);
+
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        const container = this.docker.getContainer(containerName);
+        
+        // Simple approach: just check if we can execute curl successfully
+        const exec = await container.exec({
+          Cmd: ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:8080/', '--max-time', '3'],
+          AttachStdout: true,
+          AttachStderr: false
+        });
+        
+        const stream = await exec.start({ hijack: true, stdin: false });
+        const result = await this.streamToString(stream);
+        
+        console.log(`Health check result: "${result.trim()}"`);
+        
+        // Any valid HTTP response code means the server is responding
+        const httpCode = result.trim();
+        if (httpCode && (httpCode.includes('302') || httpCode.includes('200') || httpCode.match(/[2-5]\d{2}/))) {
+          console.log(`Workspace ${containerName} is ready! (HTTP ${httpCode})`);
+          return true;
+        }
+      } catch (error) {
+        console.log(`Health check attempt failed: ${error.message}`);
+      }
+
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+
+    console.warn(`Workspace ${containerName} not ready after ${maxWaitTime}ms, proceeding anyway`);
+    return false;
+  }
+
+  async streamToString(stream) {
+    return new Promise((resolve, reject) => {
+      let data = '';
+      stream.on('data', chunk => {
+        data += chunk.toString();
+      });
+      stream.on('end', () => {
+        resolve(data);
+      });
+      stream.on('error', reject);
+    });
   }
 
   async ensureCodeServerImage() {
