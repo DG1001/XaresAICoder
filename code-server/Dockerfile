@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages for Flask development
-RUN pip3 install flask python-dotenv requests
+# Install Python packages for Flask development using --break-system-packages
+RUN pip3 install --break-system-packages flask python-dotenv requests
 
 # Create workspace directory
 RUN mkdir -p /workspace

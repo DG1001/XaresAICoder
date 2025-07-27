@@ -4,7 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 class DockerService {
   constructor() {
     this.docker = new Docker();
-    this.network = process.env.DOCKER_NETWORK || 'xares-aicoder-network';
+    // Docker Compose prefixes network names with project name
+    this.network = process.env.DOCKER_NETWORK || 'xaresaicoder_xares-aicoder-network';
     this.codeServerPassword = process.env.CODE_SERVER_PASSWORD || 'default_password';
     this.activeContainers = new Map();
   }
