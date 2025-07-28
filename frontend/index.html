@@ -3,105 +3,192 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XaresAICoder - AI-Powered Coding Platform</title>
+    <title>XaresAICoder - AI-Powered Development Environment</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <div class="container">
-            <div class="header-content">
+    <!-- Activity Bar (Left Sidebar) -->
+    <div class="activity-bar">
+        <div class="activity-bar-content">
+            <div class="logo-section">
                 <img src="logo.png" alt="XaresAICoder" class="logo">
-                <h1>XaresAICoder</h1>
-                <p class="subtitle">AI-Powered Browser-Based Coding Platform</p>
+                <span class="logo-text">XaresAICoder</span>
+            </div>
+            <nav class="activity-nav">
+                <div class="nav-item active" data-tab="projects">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25V2.75A1.75 1.75 0 0 0 14.25 1H1.75zM1.5 2.75a.25.25 0 0 1 .25-.25h12.5a.25.25 0 0 1 .25.25V5.5H1.5V2.75zm0 4.25h13v6.25a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25V7z"/>
+                    </svg>
+                    <span>Projects</span>
+                </div>
+                <div class="nav-item" data-tab="ai-tools">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M6 2a.75.75 0 0 1 .696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5H12.596l-1.846 4.615a.75.75 0 0 1-1.393 0L6 4.869 4.357 8.115a.75.75 0 0 1-1.393 0L1.118 4.615A.75.75 0 0 1 1.75 4H5.25a.75.75 0 0 1 0 1.5H2.404l1.339 3.346L5.304 2.47A.75.75 0 0 1 6 2z"/>
+                    </svg>
+                    <span>AI Tools</span>
+                </div>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Title Bar -->
+        <div class="title-bar">
+            <div class="title-bar-content">
+                <h1>AI-Powered Development Environment</h1>
+                <p class="subtitle">Create and manage your coding projects with integrated AI assistance</p>
             </div>
         </div>
-    </header>
 
-    <main class="container">
-        <!-- Project Creation Section -->
-        <section class="create-project">
-            <h2>Create New Project</h2>
-            <form id="createProjectForm" class="project-form">
-                <div class="form-group">
-                    <label for="projectName">Project Name:</label>
-                    <input 
-                        type="text" 
-                        id="projectName" 
-                        name="projectName" 
-                        required 
-                        placeholder="Enter your project name"
-                        maxlength="50"
-                    >
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <!-- Projects Tab -->
+            <div class="tab-panel active" id="projects-tab">
+                <div class="panel-header">
+                    <h2>Create New Project</h2>
+                    <div class="panel-actions">
+                        <button id="refreshBtn" class="btn-icon" title="Refresh Projects">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-                
-                <div class="form-group">
-                    <label for="projectType">Project Type:</label>
-                    <select id="projectType" name="projectType" required>
-                        <option value="">Select project type</option>
-                        <option value="python-flask">Python Flask</option>
-                        <option value="node-react">Node.js React (Coming Soon)</option>
-                    </select>
-                </div>
-                
-                <button type="submit" class="btn-primary" id="createBtn">
-                    <span class="btn-text">Create Workspace</span>
-                    <div class="spinner" style="display: none;"></div>
-                </button>
-            </form>
-        </section>
 
-        <!-- Active Projects Section -->
-        <section class="active-projects">
-            <div class="section-header">
-                <h2>Your Projects</h2>
-                <button id="refreshBtn" class="btn-secondary">Refresh</button>
-            </div>
-            
-            <div id="projectsList" class="projects-grid">
-                <!-- Projects will be loaded here -->
-            </div>
-            
-            <div id="noProjects" class="no-projects" style="display: none;">
-                <p>No projects yet. Create your first project above!</p>
-            </div>
-        </section>
+                <div class="content-section">
+                    <form id="createProjectForm" class="project-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="projectName">Project Name</label>
+                                <input 
+                                    type="text" 
+                                    id="projectName" 
+                                    name="projectName" 
+                                    required 
+                                    placeholder="my-awesome-project"
+                                    maxlength="50"
+                                >
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="projectType">Template</label>
+                                <select id="projectType" name="projectType" required>
+                                    <option value="">Choose a template</option>
+                                    <option value="python-flask">Python Flask Application</option>
+                                    <option value="node-react">Node.js React App (Coming Soon)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn-primary" id="createBtn">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/>
+                            </svg>
+                            <span class="btn-text">Create Workspace</span>
+                            <div class="spinner" style="display: none;"></div>
+                        </button>
+                    </form>
+                </div>
 
-        <!-- OpenCode Information -->
-        <section class="opencode-info">
-            <h2>🤖 Getting Started with OpenCode SST</h2>
-            <div class="info-cards">
-                <div class="info-card">
-                    <h3>Authenticate</h3>
-                    <p>In the terminal, run: <code>opencode auth login</code></p>
-                    <p>Enter your API key when prompted</p>
-                </div>
-                
-                <div class="info-card">
-                    <h3>Start Coding</h3>
-                    <p>Use: <code>opencode [your coding request]</code></p>
-                    <p>Example: <code>opencode "create a REST API endpoint"</code></p>
-                </div>
-                
-                <div class="info-card">
-                    <h3>Get Help</h3>
-                    <p>Run: <code>opencode --help</code></p>
-                    <p>For detailed documentation and examples</p>
+                <div class="content-section">
+                    <div class="section-header">
+                        <h3>Recent Projects</h3>
+                    </div>
+                    
+                    <div id="projectsList" class="projects-list">
+                        <!-- Projects will be loaded here -->
+                    </div>
+                    
+                    <div id="noProjects" class="empty-state" style="display: none;">
+                        <svg width="48" height="48" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25V2.75A1.75 1.75 0 0 0 14.25 1H1.75zM1.5 2.75a.25.25 0 0 1 .25-.25h12.5a.25.25 0 0 1 .25.25V5.5H1.5V2.75zm0 4.25h13v6.25a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25V7z"/>
+                        </svg>
+                        <h4>No projects yet</h4>
+                        <p>Create your first project to get started with AI-powered development</p>
+                    </div>
                 </div>
             </div>
-            
-            <div class="flask-template-info">
-                <h3>📁 Project Templates</h3>
-                <p>Start with ready-to-use templates or create your own project structure:</p>
-                <div class="template-command">
-                    <code>setup_flask_project</code>
-                    <span class="template-desc">Sets up a complete Flask application with virtual environment, dependencies, and project structure</span>
+
+            <!-- AI Tools Tab -->
+            <div class="tab-panel" id="ai-tools-tab">
+                <div class="panel-header">
+                    <h2>AI Development Tools</h2>
+                </div>
+
+                <div class="content-section">
+                    <div class="tools-grid">
+                        <div class="tool-card">
+                            <div class="tool-icon">
+                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M6 2a.75.75 0 0 1 .696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5H12.596l-1.846 4.615a.75.75 0 0 1-1.393 0L6 4.869 4.357 8.115a.75.75 0 0 1-1.393 0L1.118 4.615A.75.75 0 0 1 1.75 4H5.25a.75.75 0 0 1 0 1.5H2.404l1.339 3.346L5.304 2.47A.75.75 0 0 1 6 2z"/>
+                                </svg>
+                            </div>
+                            <h3>OpenCode SST</h3>
+                            <p>Multi-model AI assistant for project analysis and collaboration</p>
+                            <div class="tool-commands">
+                                <code>opencode auth login</code>
+                                <code>opencode "your request"</code>
+                            </div>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">
+                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
+                                </svg>
+                            </div>
+                            <h3>Aider</h3>
+                            <p>AI pair programming with direct file editing and git integration</p>
+                            <div class="tool-commands">
+                                <code>setup_aider</code>
+                                <code>aider</code>
+                            </div>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">
+                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5.78 8.75a9.64 9.64 0 0 0 1.363 4.177c.255.426.542.832.857 1.215.245-.296.551-.705.857-1.215A9.64 9.64 0 0 0 10.22 8.75Zm4.44-1.5a9.64 9.64 0 0 0-1.363-4.177c-.307-.51-.612-.919-.857-1.215a9.927 9.927 0 0 0-.857 1.215A9.64 9.64 0 0 0 5.78 7.25Zm-5.944 1.5H1.543a6.507 6.507 0 0 0 4.666 5.5c-.123-.181-.24-.365-.352-.552-.715-1.192-1.437-2.874-1.581-4.948Zm-2.733-1.5h2.733c.144-2.074.866-3.756 1.58-4.948.12-.197.237-.381.353-.552a6.507 6.507 0 0 0-4.666 5.5Zm10.181 1.5c-.144 2.074-.866 3.756-1.58 4.948-.12.197-.237.381-.353.552a6.507 6.507 0 0 0 4.666-5.5Zm2.733-1.5a6.507 6.507 0 0 0-4.666-5.5c.123.181.24.365.353.552.714 1.192 1.436 2.874 1.58 4.948Z"/>
+                                </svg>
+                            </div>
+                            <h3>Gemini CLI</h3>
+                            <p>Google's AI assistant for code generation and debugging</p>
+                            <div class="tool-commands">
+                                <code>setup_gemini</code>
+                                <code>gemini</code>
+                            </div>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">
+                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.777.416L8 13.101l-5.223 2.815A.5.5 0 0 1 2 15.5V2zm2-1a1 1 0 0 0-1 1v12.566l4.723-2.482a.5.5 0 0 1 .554 0L13 14.566V2a1 1 0 0 0-1-1H4z"/>
+                                </svg>
+                            </div>
+                            <h3>Claude Code</h3>
+                            <p>Anthropic's agentic tool for deep codebase understanding</p>
+                            <div class="tool-commands">
+                                <code>setup_claude</code>
+                                <code>claude</code>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="quick-setup">
+                        <h3>Quick Setup</h3>
+                        <p>Run this command in your workspace terminal to see setup instructions for all AI tools:</p>
+                        <div class="command-block">
+                            <code>setup_ai_tools</code>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </section>
-    </main>
+        </div>
+    </div>
 
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay" style="display: none;">
@@ -109,6 +196,25 @@
             <div class="spinner-large"></div>
             <p>Creating your workspace...</p>
             <p class="loading-detail">This may take a few moments</p>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Workspace Created</h3>
+                <button class="modal-close" onclick="this.parentElement.parentElement.parentElement.style.display='none'">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Your project "<strong id="successProjectName"></strong>" has been created successfully!</p>
+                <p>VS Code is starting in a new tab. If it doesn't open automatically, click the link below:</p>
+                <p><a id="successWorkspaceUrl" href="#" target="_blank" class="workspace-link"></a></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="window.open(document.getElementById('successWorkspaceUrl').href, '_blank')">Open Workspace</button>
+                <button class="btn-secondary" onclick="this.parentElement.parentElement.parentElement.style.display='none'">Close</button>
+            </div>
         </div>
     </div>
 
@@ -127,12 +233,6 @@
             </div>
         </div>
     </div>
-
-    <footer>
-        <div class="container">
-            <p>&copy; 2024 XaresAICoder. Powered by code-server and OpenCode SST.</p>
-        </div>
-    </footer>
 
     <script src="app.js"></script>
 </body>

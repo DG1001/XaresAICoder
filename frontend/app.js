@@ -15,6 +15,12 @@ class XaresAICoder {
     }
 
     bindEvents() {
+        // Tab navigation
+        const navItems = document.querySelectorAll('.nav-item');
+        navItems.forEach(item => {
+            item.addEventListener('click', (e) => this.handleTabSwitch(e));
+        });
+
         // Project creation form
         const createForm = document.getElementById('createProjectForm');
         createForm.addEventListener('submit', (e) => this.handleCreateProject(e));
@@ -37,6 +43,19 @@ class XaresAICoder {
                 this.hideErrorModal();
             }
         });
+    }
+
+    handleTabSwitch(e) {
+        const clickedItem = e.currentTarget;
+        const targetTab = clickedItem.dataset.tab;
+        
+        // Remove active class from all nav items and tab panels
+        document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+        
+        // Add active class to clicked nav item and corresponding tab panel
+        clickedItem.classList.add('active');
+        document.getElementById(`${targetTab}-tab`).classList.add('active');
     }
 
     async handleCreateProject(e) {
@@ -133,16 +152,14 @@ class XaresAICoder {
         noProjects.style.display = 'none';
         
         projectsList.innerHTML = this.projects.map(project => `
-            <div class="project-card" data-project-id="${project.projectId}">
-                <h3>${this.escapeHtml(project.projectName)}</h3>
-                <div class="project-type">${this.getProjectTypeLabel(project.projectType)}</div>
-                <div class="project-meta">
-                    <div>
-                        <span class="status-indicator ${this.getStatusClass(project.status)}"></span>
-                        Status: ${this.getStatusLabel(project.status)}
+            <div class="project-item" data-project-id="${project.projectId}">
+                <div class="project-info">
+                    <h4>${this.escapeHtml(project.projectName)}</h4>
+                    <div class="project-meta">
+                        <span class="project-status ${this.getStatusClass(project.status)}">${this.getStatusLabel(project.status)}</span>
+                        <span>${this.getProjectTypeLabel(project.projectType)}</span>
+                        <span>Created ${this.formatDate(project.createdAt)}</span>
                     </div>
-                    <div>Created: ${this.formatDate(project.createdAt)}</div>
-                    ${project.lastAccessed ? `<div>Last accessed: ${this.formatDate(project.lastAccessed)}</div>` : ''}
                 </div>
                 <div class="project-actions">
                     ${this.getProjectActionButtons(project)}
