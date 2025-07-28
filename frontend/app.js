@@ -51,6 +51,23 @@ class XaresAICoder {
                 this.hideErrorModal();
             }
         });
+
+        // Password verification modal handlers
+        const closePasswordModal = document.getElementById('closePasswordModal');
+        const cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
+        const confirmPasswordBtn = document.getElementById('confirmPasswordBtn');
+        
+        closePasswordModal.addEventListener('click', () => this.hidePasswordModal());
+        cancelPasswordBtn.addEventListener('click', () => this.hidePasswordModal());
+        confirmPasswordBtn.addEventListener('click', () => this.handlePasswordConfirm());
+        
+        // Handle Enter key in password input
+        const verifyPasswordInput = document.getElementById('verifyPasswordInput');
+        verifyPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.handlePasswordConfirm();
+            }
+        });
     }
 
     handleTabSwitch(e) {
@@ -280,13 +297,29 @@ class XaresAICoder {
     }
 
     async deleteProject(projectId, projectName) {
-        if (!confirm(`Are you sure you want to delete the project "${projectName}"? This action cannot be undone.`)) {
-            return;
+        const project = this.projects.find(p => p.projectId === projectId);
+        
+        if (project && project.passwordProtected) {
+            // Show password verification modal for protected workspaces
+            this.showPasswordModal('delete', projectId, projectName);
+        } else {
+            // Direct confirmation for unprotected workspaces
+            if (!confirm(`Are you sure you want to delete the project "${projectName}"? This action cannot be undone.`)) {
+                return;
+            }
+            this.executeDeleteProject(projectId);
         }
+    }
 
+    async executeDeleteProject(projectId, password = null) {
         try {
+            const requestBody = password ? { password } : {};
             const response = await fetch(`${this.apiBase}/projects/${projectId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
@@ -294,13 +327,20 @@ class XaresAICoder {
             if (response.ok) {
                 this.removeProjectFromStorage(projectId);
                 this.loadProjects();
+                this.hidePasswordModal();
             } else {
-                this.showError(data.message || 'Failed to delete project');
+                if (response.status === 401) {
+                    this.showPasswordError('Invalid password. Please try again.');
+                } else {
+                    this.showError(data.message || 'Failed to delete project');
+                    this.hidePasswordModal();
+                }
             }
 
         } catch (error) {
             console.error('Error deleting project:', error);
             this.showError('Failed to delete project. Please try again.');
+            this.hidePasswordModal();
         }
     }
 
@@ -329,28 +369,51 @@ class XaresAICoder {
     }
 
     async stopProject(projectId) {
-        if (!confirm('Are you sure you want to stop this workspace? Any unsaved work will be lost.')) {
-            return;
+        const project = this.projects.find(p => p.projectId === projectId);
+        
+        if (project && project.passwordProtected) {
+            // Show password verification modal for protected workspaces
+            this.showPasswordModal('stop', projectId, project.projectName);
+        } else {
+            // Direct confirmation for unprotected workspaces
+            if (!confirm('Are you sure you want to stop this workspace? Any unsaved work will be lost.')) {
+                return;
+            }
+            this.executeStopProject(projectId);
         }
+    }
 
+    async executeStopProject(projectId, password = null) {
         try {
             this.setProjectActionLoading(projectId, true);
             
+            const requestBody = password ? { password } : {};
             const response = await fetch(`${this.apiBase}/projects/${projectId}/stop`, {
-                method: 'POST'
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
 
             if (response.ok) {
                 this.loadProjects(); // Refresh the list to show updated status
+                this.hidePasswordModal();
             } else {
-                this.showError(data.message || 'Failed to stop project');
+                if (response.status === 401) {
+                    this.showPasswordError('Invalid password. Please try again.');
+                } else {
+                    this.showError(data.message || 'Failed to stop project');
+                    this.hidePasswordModal();
+                }
             }
 
         } catch (error) {
             console.error('Error stopping project:', error);
             this.showError('Failed to stop project. Please try again.');
+            this.hidePasswordModal();
         } finally {
             this.setProjectActionLoading(projectId, false);
         }
@@ -498,6 +561,75 @@ class XaresAICoder {
     hideErrorModal() {
         const modal = document.getElementById('errorModal');
         modal.style.display = 'none';
+    }
+
+    showPasswordModal(action, projectId, projectName) {
+        const modal = document.getElementById('passwordVerifyModal');
+        const messageElement = document.getElementById('passwordVerifyMessage');
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const errorElement = document.getElementById('passwordVerifyError');
+        
+        // Store the action and project info for later use
+        this.pendingPasswordAction = { action, projectId, projectName };
+        
+        // Set the message based on action
+        const actionText = action === 'delete' ? 'delete' : 'stop';
+        messageElement.textContent = `Enter the password for "${projectName}" to ${actionText} this protected workspace:`;
+        
+        // Clear previous input and errors
+        passwordInput.value = '';
+        errorElement.style.display = 'none';
+        
+        modal.style.display = 'flex';
+        
+        // Focus on password input
+        setTimeout(() => passwordInput.focus(), 100);
+    }
+
+    hidePasswordModal() {
+        const modal = document.getElementById('passwordVerifyModal');
+        const errorElement = document.getElementById('passwordVerifyError');
+        modal.style.display = 'none';
+        errorElement.style.display = 'none';
+        this.pendingPasswordAction = null;
+    }
+
+    showPasswordError(message) {
+        const errorElement = document.getElementById('passwordVerifyError');
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+    }
+
+    handlePasswordConfirm() {
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const password = passwordInput.value.trim();
+        
+        if (!password) {
+            this.showPasswordError('Please enter the workspace password.');
+            return;
+        }
+        
+        if (!this.pendingPasswordAction) {
+            return;
+        }
+        
+        const { action, projectId, projectName } = this.pendingPasswordAction;
+        
+        if (action === 'delete') {
+            // Show confirmation dialog before executing delete
+            if (confirm(`Are you sure you want to delete the project "${projectName}"? This action cannot be undone.`)) {
+                this.executeDeleteProject(projectId, password);
+            } else {
+                this.hidePasswordModal();
+            }
+        } else if (action === 'stop') {
+            // Show confirmation dialog before executing stop
+            if (confirm('Are you sure you want to stop this workspace? Any unsaved work will be lost.')) {
+                this.executeStopProject(projectId, password);
+            } else {
+                this.hidePasswordModal();
+            }
+        }
     }
 
     getProjectTypeLabel(type) {

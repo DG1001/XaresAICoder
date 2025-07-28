@@ -76,7 +76,8 @@ router.get('/:projectId', async (req, res) => {
 router.delete('/:projectId', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const result = await workspaceService.deleteProject(projectId);
+    const { password } = req.body;
+    const result = await workspaceService.deleteProject(projectId, password);
     
     res.json({
       success: true,
@@ -85,7 +86,10 @@ router.delete('/:projectId', async (req, res) => {
 
   } catch (error) {
     console.error('Delete project error:', error);
-    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.message === 'Invalid password for protected workspace') statusCode = 401;
+    
     res.status(statusCode).json({
       error: 'Failed to delete project',
       message: error.message
@@ -135,13 +139,17 @@ router.post('/:projectId/start', async (req, res) => {
 router.post('/:projectId/stop', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const result = await workspaceService.stopProject(projectId);
+    const { password } = req.body;
+    const result = await workspaceService.stopProject(projectId, password);
     
     res.json(result);
 
   } catch (error) {
     console.error('Stop project error:', error);
-    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.message === 'Invalid password for protected workspace') statusCode = 401;
+    
     res.status(statusCode).json({
       error: 'Failed to stop project',
       message: error.message

@@ -47,6 +47,7 @@ class WorkspaceService {
         projectType,
         userId,
         passwordProtected: options.passwordProtected || false,
+        password: options.passwordProtected ? options.password : null, // Store password for verification
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'running',
@@ -116,10 +117,17 @@ class WorkspaceService {
     }
   }
 
-  async stopProject(projectId) {
+  async stopProject(projectId, providedPassword = null) {
     const project = this.projects.get(projectId);
     if (!project) {
       throw new Error('Project not found');
+    }
+
+    // Check password if workspace is protected
+    if (project.passwordProtected) {
+      if (!providedPassword || providedPassword !== project.password) {
+        throw new Error('Invalid password for protected workspace');
+      }
     }
 
     try {
@@ -140,10 +148,17 @@ class WorkspaceService {
     }
   }
 
-  async deleteProject(projectId) {
+  async deleteProject(projectId, providedPassword = null) {
     const project = this.projects.get(projectId);
     if (!project) {
       throw new Error('Project not found');
+    }
+
+    // Check password if workspace is protected
+    if (project.passwordProtected) {
+      if (!providedPassword || providedPassword !== project.password) {
+        throw new Error('Invalid password for protected workspace');
+      }
     }
 
     try {
