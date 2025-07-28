@@ -51,36 +51,74 @@ Access: `https://aicoder.example.com:8080` → workspaces at `https://workspacei
 
 ## Deployment Steps
 
-### For Internal Development Server
+### Automated Deployment (Recommended)
 
-1. **Copy environment configuration:**
+Use the included deployment script for easy setup:
+
+```bash
+# Full deployment with interactive setup
+./deploy.sh
+
+# Quick deployment for localhost
+./deploy.sh --skip-env
+
+# Only build the code-server image
+./deploy.sh --build-only
+```
+
+The script will:
+1. ✅ Check prerequisites (Docker, Docker Compose)
+2. 🔨 Build the custom code-server image with AI tools
+3. ⚙️ Help you configure the environment
+4. 🚀 Deploy and health-check the application
+
+### Manual Deployment
+
+#### For Internal Development Server
+
+1. **Build code-server image:**
    ```bash
-   cp .env.dev.example .env
+   cd code-server
+   docker build -t xares-aicoder-codeserver:latest .
+   cd ..
    ```
 
-2. **Build and start services:**
+2. **Copy environment configuration:**
+   ```bash
+   cp .env.dev.example .env
+   # Edit .env to set your actual domain
+   ```
+
+3. **Build and start services:**
    ```bash
    docker-compose up --build -d
    ```
 
-3. **Verify deployment:**
+4. **Verify deployment:**
    ```bash
    curl http://dev.mycompany.internal:8000/api/health
    ```
 
-### For localhost development
+#### For localhost development
 
-1. **Use default environment:**
+1. **Build code-server image:**
+   ```bash
+   cd code-server
+   docker build -t xares-aicoder-codeserver:latest .
+   cd ..
+   ```
+
+2. **Use default environment:**
    ```bash
    # .env already configured for localhost
    ```
 
-2. **Build and start services:**
+3. **Build and start services:**
    ```bash
    docker-compose up --build -d
    ```
 
-3. **Verify deployment:**
+4. **Verify deployment:**
    ```bash
    curl http://localhost/api/health
    ```
