@@ -10,7 +10,7 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 
 ### 🎯 **Core Platform**
 - **Professional VS Code Interface** with light theme inspired design
-- **Passwordless Authentication** for seamless local development
+- **Optional Password Protection** for workspace security
 - **Subdomain-based Port Forwarding** (e.g., `projectid-5000.localhost`)
 - **Isolated Docker Workspaces** with automatic resource management
 - **Real-time Container Management** with start/stop controls
@@ -63,9 +63,10 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 
 1. Enter a project name
 2. Select "Python Flask" as the project type
-3. Click "Create Workspace"
-4. Wait for the workspace to be created
-5. VS Code will open in a new tab
+3. **Optional**: Check "Password Protect Workspace" for secure access
+4. Click "Create Workspace"
+5. Wait for the workspace to be created
+6. VS Code will open in a new tab
 
 ## Architecture
 
@@ -121,14 +122,32 @@ docker-compose down
 ### API Endpoints
 
 #### Project Management
-- `POST /api/projects/create` - Create new project with health check
+- `POST /api/projects/create` - Create new project with optional password protection
+  ```json
+  {
+    "projectName": "my-project",
+    "projectType": "python-flask",
+    "passwordProtected": true,  // optional
+    "password": "secure-password"  // required if passwordProtected is true
+  }
+  ```
 - `GET /api/projects/:id` - Get project details with real-time status
 - `DELETE /api/projects/:id` - Delete project and cleanup containers
+  ```json
+  {
+    "password": "workspace-password"  // required if workspace is password protected
+  }
+  ```
 - `GET /api/projects/` - List all projects with current container status
 
 #### Container Control
 - `POST /api/projects/:id/start` - Start stopped workspace container
 - `POST /api/projects/:id/stop` - Stop running workspace container
+  ```json
+  {
+    "password": "workspace-password"  // required if workspace is password protected
+  }
+  ```
 
 #### System
 - `GET /api/health` - API server health check
@@ -346,6 +365,22 @@ docker logs workspace-<project-id>
 
 ## Security
 
+### Workspace Security
+
+**Optional Password Protection**
+- **Per-Workspace Control**: Enable password protection during workspace creation
+- **Secure Password Generation**: Cryptographically strong 12-character passwords
+- **Custom Passwords**: Use generated passwords or create your own (minimum 8 characters)
+- **Operation Protection**: Password required for stop/delete operations on protected workspaces
+- **Visual Indicators**: Lock icons identify protected workspaces in the project list
+- **Backward Compatibility**: Existing workspaces remain passwordless by default
+
+**Security Workflow**
+1. **Creating Protected Workspaces**: Check "Password Protect Workspace" → Auto-generated secure password → Customize if desired
+2. **Accessing Workspaces**: Protected workspaces require password authentication via VS Code's built-in auth
+3. **Managing Workspaces**: Stop/delete operations require password verification for protected workspaces
+4. **Password Display**: Success modal shows password for easy reference when workspace is created
+
 ### Container Security
 
 - No root access in workspaces
@@ -356,7 +391,7 @@ docker logs workspace-<project-id>
 ### User Data
 
 - API keys stored only in user workspaces
-- No persistent user authentication
+- Workspace passwords stored securely in memory (not persisted to disk)
 - Workspace isolation prevents cross-contamination
 
 ## Troubleshooting
@@ -423,6 +458,30 @@ docker stop workspace-<project-id>
 
 # Restart via API (will auto-detect stopped state)
 curl -X POST http://localhost/api/projects/<project-id>/start
+```
+
+**Password protection issues**
+```bash
+# Can't access protected workspace - check authentication
+# 1. Verify workspace is running
+curl http://localhost/api/projects/<project-id>
+
+# 2. Access workspace URL and enter password when prompted
+# URL: http://projectid.localhost/
+
+# 3. If password is forgotten, check project creation logs or recreate workspace
+```
+
+**Stop/Delete operations fail with "Invalid password"**
+```bash
+# 1. Ensure you're using the correct password (case-sensitive)
+# 2. Check browser console for 401 errors
+# 3. Verify project is password protected (look for lock icon in UI)
+
+# For developers: Check API response
+curl -X POST http://localhost/api/projects/<project-id>/stop \
+  -H "Content-Type: application/json" \
+  -d '{"password":"your-password"}'
 ```
 
 **Network issues**
