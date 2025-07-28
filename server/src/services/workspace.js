@@ -1,10 +1,17 @@
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs').promises;
+const path = require('path');
+const bcrypt = require('bcrypt');
 const dockerService = require('./docker');
 
 class WorkspaceService {
   constructor() {
     this.projects = new Map();
     this.maxWorkspacesPerUser = parseInt(process.env.MAX_WORKSPACES_PER_USER) || 5;
+    this.persistenceFile = path.join('/app', 'workspaces', 'projects.json');
+    
+    // Load existing projects on startup
+    this.loadProjectsFromDisk();
     
     // Start cleanup interval
     setInterval(() => {
@@ -34,6 +41,12 @@ class WorkspaceService {
       // Generate unique project ID
       const projectId = uuidv4();
 
+      // Hash password if provided
+      let passwordHash = null;
+      if (options.passwordProtected && options.password) {
+        passwordHash = await bcrypt.hash(options.password, 10);
+      }
+
       // Create Docker container with auth options
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
         passwordProtected: options.passwordProtected || false,
@@ -47,7 +60,7 @@ class WorkspaceService {
         projectType,
         userId,
         passwordProtected: options.passwordProtected || false,
-        password: options.passwordProtected ? options.password : null, // Store password for verification
+        passwordHash: passwordHash, // Store hashed password
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'running',
@@ -55,6 +68,9 @@ class WorkspaceService {
       };
 
       this.projects.set(projectId, project);
+
+      // Save to disk
+      await this.saveProjectsToDisk();
 
       return {
         projectId,
@@ -100,7 +116,11 @@ class WorkspaceService {
 
     // Check password if workspace is protected
     if (project.passwordProtected) {
-      if (!providedPassword || providedPassword !== project.password) {
+      if (!providedPassword) {
+        throw new Error('Invalid password for protected workspace');
+      }
+      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
+      if (!passwordMatch) {
         throw new Error('Invalid password for protected workspace');
       }
     }
@@ -132,7 +152,11 @@ class WorkspaceService {
 
     // Check password if workspace is protected
     if (project.passwordProtected) {
-      if (!providedPassword || providedPassword !== project.password) {
+      if (!providedPassword) {
+        throw new Error('Invalid password for protected workspace');
+      }
+      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
+      if (!passwordMatch) {
         throw new Error('Invalid password for protected workspace');
       }
     }
@@ -163,7 +187,11 @@ class WorkspaceService {
 
     // Check password if workspace is protected
     if (project.passwordProtected) {
-      if (!providedPassword || providedPassword !== project.password) {
+      if (!providedPassword) {
+        throw new Error('Invalid password for protected workspace');
+      }
+      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
+      if (!passwordMatch) {
         throw new Error('Invalid password for protected workspace');
       }
     }
@@ -171,6 +199,10 @@ class WorkspaceService {
     try {
       await dockerService.stopWorkspace(projectId);
       this.projects.delete(projectId);
+      
+      // Save to disk
+      await this.saveProjectsToDisk();
+      
       return { success: true };
     } catch (error) {
       console.error('Error deleting project:', error);
@@ -223,12 +255,20 @@ class WorkspaceService {
     try {
       await dockerService.cleanupInactiveWorkspaces();
       
+      let removedCount = 0;
       // Remove project metadata for cleaned up workspaces
       for (const [projectId, project] of this.projects) {
         const dockerStatus = await dockerService.getProjectStatus(projectId);
         if (dockerStatus.status === 'not_found') {
           this.projects.delete(projectId);
+          removedCount++;
         }
+      }
+      
+      // Save to disk if we removed any projects
+      if (removedCount > 0) {
+        console.log(`Cleaned up ${removedCount} orphaned projects`);
+        await this.saveProjectsToDisk();
       }
     } catch (error) {
       console.error('Error during workspace cleanup:', error);
@@ -242,6 +282,75 @@ class WorkspaceService {
         .filter(p => p.status === 'running').length,
       maxWorkspacesPerUser: this.maxWorkspacesPerUser
     };
+  }
+
+  // Persistence methods
+  async saveProjectsToDisk() {
+    try {
+      // Ensure directory exists
+      const dir = path.dirname(this.persistenceFile);
+      await fs.mkdir(dir, { recursive: true });
+
+      // Convert Map to plain object for JSON serialization
+      const projectsData = {};
+      for (const [key, value] of this.projects) {
+        // Save all data including password hash (if present)
+        projectsData[key] = {
+          ...value
+        };
+      }
+
+      await fs.writeFile(this.persistenceFile, JSON.stringify(projectsData, null, 2));
+      console.log(`Saved ${this.projects.size} projects to disk`);
+    } catch (error) {
+      console.error('Error saving projects to disk:', error);
+    }
+  }
+
+  async loadProjectsFromDisk() {
+    try {
+      const data = await fs.readFile(this.persistenceFile, 'utf8');
+      const projectsData = JSON.parse(data);
+      
+      console.log(`Loading projects from disk...`);
+      
+      // Load projects and verify they still exist in Docker
+      for (const [projectId, projectData] of Object.entries(projectsData)) {
+        try {
+          // Check if container still exists
+          const dockerStatus = await dockerService.getProjectStatus(projectId);
+          
+          if (dockerStatus.status !== 'not_found') {
+            // Restore project data with password hash intact
+            const project = {
+              ...projectData,
+              // Update status from Docker
+              status: dockerStatus.status,
+              lastAccessed: new Date(projectData.lastAccessed || projectData.createdAt)
+            };
+            
+            this.projects.set(projectId, project);
+            console.log(`Restored project: ${project.projectName} (${projectId}) - Status: ${project.status}`);
+          } else {
+            console.log(`Skipping project ${projectId} - container not found`);
+          }
+        } catch (error) {
+          console.error(`Error restoring project ${projectId}:`, error);
+        }
+      }
+      
+      console.log(`Loaded ${this.projects.size} projects from disk`);
+      
+      // Save updated data (removes orphaned projects)
+      await this.saveProjectsToDisk();
+      
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        console.log('No existing projects file found - starting fresh');
+      } else {
+        console.error('Error loading projects from disk:', error);
+      }
+    }
   }
 }
 

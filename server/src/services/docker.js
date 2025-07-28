@@ -217,15 +217,25 @@ class DockerService {
   }
 
   async getProjectStatus(projectId) {
-    const workspace = this.activeContainers.get(projectId);
-    if (!workspace) {
-      return { status: 'not_found' };
-    }
-
+    const containerName = `workspace-${projectId}`;
+    
     try {
-      const containerInfo = await workspace.container.inspect();
+      // Try to get container by name from Docker API
+      const container = this.docker.getContainer(containerName);
+      const containerInfo = await container.inspect();
       const isRunning = containerInfo.State.Running;
       const status = isRunning ? 'running' : 'stopped';
+      
+      // Update our in-memory cache if container exists
+      if (!this.activeContainers.has(projectId)) {
+        this.activeContainers.set(projectId, {
+          container: container,
+          createdAt: new Date(containerInfo.Created),
+          projectType: this.extractProjectTypeFromEnv(containerInfo.Config.Env)
+        });
+      }
+      
+      const workspace = this.activeContainers.get(projectId);
       
       return {
         projectId,
@@ -241,28 +251,45 @@ class DockerService {
         }
       };
     } catch (error) {
-      // Container might have been removed
+      // Container doesn't exist
+      if (error.statusCode === 404) {
+        return { status: 'not_found' };
+      }
       console.error(`Error inspecting container for project ${projectId}:`, error);
       return { status: 'error', error: error.message };
     }
   }
 
-  async startWorkspace(projectId) {
-    const workspace = this.activeContainers.get(projectId);
-    if (!workspace) {
-      throw new Error('Workspace not found');
-    }
+  // Helper method to extract project type from container environment variables
+  extractProjectTypeFromEnv(envArray) {
+    const projectTypeVar = envArray.find(env => env.startsWith('PROJECT_TYPE='));
+    return projectTypeVar ? projectTypeVar.split('=')[1] : 'unknown';
+  }
 
+  async startWorkspace(projectId) {
+    const containerName = `workspace-${projectId}`;
+    
     try {
-      const containerInfo = await workspace.container.inspect();
+      // Try to get container by name from Docker API
+      const container = this.docker.getContainer(containerName);
+      const containerInfo = await container.inspect();
+      
       if (containerInfo.State.Running) {
         return { success: true, message: 'Workspace is already running' };
       }
 
-      await workspace.container.start();
+      await container.start();
+      
+      // Update our in-memory cache
+      this.activeContainers.set(projectId, {
+        container: container,
+        name: containerName,
+        createdAt: new Date(containerInfo.Created),
+        projectType: this.extractProjectTypeFromEnv(containerInfo.Config.Env)
+      });
       
       // Wait for workspace to be ready after starting
-      await this.waitForWorkspaceReady(workspace.name);
+      await this.waitForWorkspaceReady(containerName);
       
       return { 
         success: true, 
@@ -270,24 +297,35 @@ class DockerService {
         status: 'running'
       };
     } catch (error) {
+      if (error.statusCode === 404) {
+        throw new Error('Workspace container not found');
+      }
       console.error(`Error starting workspace ${projectId}:`, error);
       throw new Error(`Failed to start workspace: ${error.message}`);
     }
   }
 
   async stopWorkspaceContainer(projectId) {
-    const workspace = this.activeContainers.get(projectId);
-    if (!workspace) {
-      throw new Error('Workspace not found');
-    }
-
+    const containerName = `workspace-${projectId}`;
+    
     try {
-      const containerInfo = await workspace.container.inspect();
+      // Try to get container by name from Docker API
+      const container = this.docker.getContainer(containerName);
+      const containerInfo = await container.inspect();
+      
       if (!containerInfo.State.Running) {
         return { success: true, message: 'Workspace is already stopped' };
       }
 
-      await workspace.container.stop({ t: 10 }); // 10 second timeout
+      await container.stop({ t: 10 }); // 10 second timeout
+      
+      // Update our in-memory cache
+      this.activeContainers.set(projectId, {
+        container: container,
+        name: containerName,
+        createdAt: new Date(containerInfo.Created),
+        projectType: this.extractProjectTypeFromEnv(containerInfo.Config.Env)
+      });
       
       return { 
         success: true, 
@@ -295,28 +333,35 @@ class DockerService {
         status: 'stopped'
       };
     } catch (error) {
+      if (error.statusCode === 404) {
+        throw new Error('Workspace container not found');
+      }
       console.error(`Error stopping workspace ${projectId}:`, error);
       throw new Error(`Failed to stop workspace: ${error.message}`);
     }
   }
 
   async stopWorkspace(projectId) {
-    const workspace = this.activeContainers.get(projectId);
-    if (!workspace) {
-      throw new Error('Workspace not found');
-    }
-
+    const containerName = `workspace-${projectId}`;
+    
     try {
-      // Check if container is running before stopping
-      const containerInfo = await workspace.container.inspect();
+      // Try to get container by name from Docker API
+      const container = this.docker.getContainer(containerName);
+      const containerInfo = await container.inspect();
+      
       if (containerInfo.State.Running) {
-        await workspace.container.stop();
+        await container.stop();
       }
       
-      await workspace.container.remove();
+      await container.remove();
       this.activeContainers.delete(projectId);
       return { success: true };
     } catch (error) {
+      if (error.statusCode === 404) {
+        // Container already doesn't exist, consider it success
+        this.activeContainers.delete(projectId);
+        return { success: true };
+      }
       throw new Error(`Failed to stop workspace: ${error.message}`);
     }
   }
