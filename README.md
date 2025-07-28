@@ -1,22 +1,33 @@
 # XaresAICoder
 
-A browser-based AI coding platform that integrates VS Code (code-server) with OpenCode SST for AI-powered development.
+A professional browser-based AI-powered development environment that integrates VS Code (code-server) with multiple AI coding assistants for enhanced productivity.
 
 ## Overview
 
-XaresAICoder provides isolated development workspaces running VS Code in the browser, with OpenCode SST pre-installed for AI coding assistance. Each workspace runs in a separate Docker container with resource limits and automatic cleanup.
+XaresAICoder provides isolated development workspaces running VS Code in the browser, with four integrated AI coding tools for comprehensive development assistance. Each workspace runs in a separate Docker container with resource limits, automatic cleanup, and seamless subdomain-based port forwarding.
 
 ## Features
 
-- **Browser-based VS Code** using code-server
-- **OpenCode SST integration** for AI-powered coding
-- **Isolated workspaces** with Docker containers
-- **Real-time container management** with start/stop controls
-- **Dynamic status monitoring** showing actual container states
-- **Python Flask** project templates
-- **Automatic project initialization** with Git
-- **Resource management** with timeouts and limits
-- **Intuitive web interface** for complete project lifecycle management
+### 🎯 **Core Platform**
+- **Professional VS Code Interface** with light theme inspired design
+- **Passwordless Authentication** for seamless local development
+- **Subdomain-based Port Forwarding** (e.g., `projectid-5000.localhost`)
+- **Isolated Docker Workspaces** with automatic resource management
+- **Real-time Container Management** with start/stop controls
+- **Dynamic Status Monitoring** showing actual container states
+
+### 🤖 **AI Coding Tools (4 Integrated)**
+- **OpenCode SST** - Multi-model AI assistant for project analysis
+- **Aider** - AI pair programming with direct file editing and git integration
+- **Gemini CLI** - Google's AI for code generation and debugging
+- **Claude Code** - Anthropic's agentic tool for deep codebase understanding
+
+### 🚀 **Development Features**
+- **Python Flask** project templates with virtual environments
+- **Automatic Project Initialization** with Git repository setup
+- **VS Code Port Forwarding** with automatic browser opening
+- **Professional Web Interface** with tabbed navigation
+- **Resource Management** with configurable timeouts and limits
 
 ## Quick Start
 
@@ -60,9 +71,9 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 
 ### Services
 
-- **nginx**: Reverse proxy and static file server
-- **server**: Node.js API for project management
-- **code-server containers**: Dynamic VS Code instances
+- **nginx**: Reverse proxy with subdomain routing for applications
+- **server**: Node.js API for project management and container orchestration  
+- **code-server containers**: Dynamic VS Code instances with integrated AI tools
 
 ### Components
 
@@ -141,23 +152,85 @@ Each workspace container:
 - **Disk**: 10GB
 - **Network**: Isolated bridge network
 
-## OpenCode SST Integration
+## AI Development Tools
 
-### Installation
+XaresAICoder includes four powerful AI coding assistants, all pre-installed and ready to use. Choose the tool that best fits your workflow or use them together for maximum productivity.
 
-OpenCode SST is automatically installed in each workspace. Currently uses a mock implementation - replace the installation script in `code-server/setup-scripts/setup-opencode.sh` with the actual OpenCode SST installation method.
-
-### Usage in Workspace
+### 🤖 **OpenCode SST** - Multi-model AI Assistant
+**Best for**: Project analysis, multi-model support, collaborative development
 
 ```bash
-# Authenticate
+# Quick setup
+setup_opencode
+
+# Get started  
 opencode auth login
+opencode          # Start interactive session
+# Then type: /init  # Initialize project analysis
+```
 
-# Use AI assistance
-opencode "create a REST API endpoint"
+**Key Commands:**
+- `/init` - Analyze your project
+- `/share` - Share session for collaboration  
+- `/help` - Show available commands
 
-# Get help
-opencode --help
+### 🤖 **Aider** - AI Pair Programming
+**Best for**: Interactive coding, file editing, git integration
+
+```bash
+# Setup (requires API key)
+export OPENAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, GEMINI_API_KEY
+setup_aider
+
+# Get started
+aider             # Start interactive pair programming
+```
+
+**Features:**
+- Direct file editing with AI
+- Automatic git commits
+- Supports multiple AI models (OpenAI, Anthropic, Google, Local via Ollama)
+- Works with your existing codebase
+
+### 🤖 **Gemini CLI** - Google's AI Assistant  
+**Best for**: Code generation, debugging, Google ecosystem integration
+
+```bash
+# Setup (requires API key from https://makersuite.google.com/app/apikey)
+export GEMINI_API_KEY=your_key_here
+setup_gemini
+
+# Get started
+gemini            # Start interactive session
+```
+
+**Features:**
+- Natural language code generation
+- Code explanation and debugging
+- Project analysis and suggestions
+
+### 🤖 **Claude Code** - Anthropic's Agentic Tool
+**Best for**: Deep codebase understanding, multi-file editing, advanced workflows
+
+```bash
+# Setup (requires Claude Pro/Max or API billing)
+setup_claude
+
+# Get started
+claude            # Start agentic coding session
+```
+
+**Features:**
+- Understands entire codebase
+- Multi-file editing capabilities
+- Git workflow automation
+- Advanced reasoning and planning
+
+### Quick Setup for All Tools
+
+Run this command in your workspace terminal to see setup instructions for all AI tools:
+```bash
+setup_ai_tools
 ```
 
 ## Project Templates
@@ -176,6 +249,54 @@ Includes:
 1. Update `setup-scripts/workspace-init.sh`
 2. Add project type to API validation
 3. Update frontend project type selector
+
+## Port Forwarding & Application Access
+
+XaresAICoder uses **subdomain-based routing** for seamless application access, eliminating the need for complex path-based URLs.
+
+### How It Works
+
+When you start an application (e.g., Flask on port 5000) in your workspace:
+
+1. **VS Code detects the port** and shows a notification popup
+2. **Click "Open in Browser"** to access your app
+3. **URL format**: `http://projectid-5000.localhost/`
+
+### Supported Ports
+
+- **Port 5000**: Flask/Python applications  
+- **Port 3000**: Node.js applications
+- **Port 8000**: Django applications
+- **Port 4200**: Angular applications
+- **Additional ports**: Automatically forwarded as needed
+
+### Key Benefits
+
+✅ **Clean URLs**: `projectid-5000.localhost` instead of `/proxy/5000/`  
+✅ **API Compatibility**: Relative URLs work correctly in your applications  
+✅ **Automatic Detection**: VS Code automatically detects new ports  
+✅ **Browser Integration**: One-click access from VS Code notifications  
+✅ **Production Ready**: Scales to real domains with wildcard certificates  
+
+### Configuration
+
+Port forwarding is pre-configured with optimal settings:
+
+```json
+{
+  "remote.autoForwardPorts": true,
+  "remote.portsAttributes": {
+    "5000": {
+      "label": "Flask Application",
+      "onAutoForward": "openBrowserOnce"
+    }
+  }
+}
+```
+
+**Environment Variables (automatically set):**
+- `VSCODE_PROXY_URI=http://projectid-{{port}}.localhost/`
+- `PROXY_DOMAIN=projectid.localhost`
 
 ## Container Management
 
@@ -269,6 +390,29 @@ docker ps | grep workspace-<project-id>
 curl -X POST http://localhost/api/projects/<project-id>/start
 ```
 
+**Port forwarding not working**
+```bash
+# Check subdomain URL format
+# Correct: http://projectid-5000.localhost/
+# Incorrect: http://localhost/proxy/5000/
+
+# Verify VS Code settings in workspace
+docker exec workspace-<project-id> cat /home/coder/.local/share/code-server/User/settings.json
+
+# Check environment variables
+docker exec workspace-<project-id> env | grep PROXY
+```
+
+**Application URLs returning 404**
+```bash
+# Ensure your app binds to 0.0.0.0, not 127.0.0.1
+# Flask example:
+app.run(host='0.0.0.0', port=5000)
+
+# Check nginx configuration
+docker-compose logs nginx
+```
+
 **Container management issues**
 ```bash
 # Check real-time status
@@ -299,23 +443,34 @@ docker-compose down -v
 docker system prune -a
 ```
 
-## Limitations
+## Current Capabilities & Roadmap
 
-### Current Phase 1 Limitations
+### ✅ **Implemented Features**
 
-- Only Python Flask projects supported
-- Basic user management (no authentication)
-- OpenCode SST mock implementation
-- Local storage only (no persistence layer)
+- **Multiple AI Tools**: OpenCode SST, Aider, Gemini CLI, Claude Code
+- **Professional UI**: VS Code-inspired light theme design
+- **Subdomain Port Forwarding**: Clean URLs for application access
+- **Passwordless Authentication**: Seamless local development experience
+- **Python Flask Templates**: Ready-to-use project scaffolding
+- **Container Management**: Real-time status monitoring and control
+- **Resource Management**: Automatic cleanup and resource limits
 
-### Future Enhancements
+### 🚧 **Current Limitations**
 
-- Multiple language support (Node.js, Java, etc.)
-- User authentication system
-- GitHub integration
-- Real OpenCode SST integration
-- Deployment capabilities
-- Database persistence
+- **Project Templates**: Only Python Flask supported (Node.js in development)
+- **User Management**: No multi-user authentication (designed for local use)
+- **Storage**: Local storage only (no cloud persistence)
+- **Deployment**: Development-focused (production deployment in roadmap)
+
+### 🚀 **Future Enhancements**
+
+- **Multi-language Support**: Node.js, Java, Go, Rust project templates
+- **User Authentication**: Multi-user support with authentication system
+- **Cloud Integration**: GitHub, GitLab integration for project management
+- **Deployment Pipeline**: One-click deployment to cloud platforms
+- **Database Persistence**: User projects and settings persistence
+- **Team Collaboration**: Shared workspaces and real-time collaboration
+- **Custom Domains**: Production deployment with custom domain support
 
 ## Contributing
 
