@@ -25,6 +25,14 @@ class XaresAICoder {
         const createForm = document.getElementById('createProjectForm');
         createForm.addEventListener('submit', (e) => this.handleCreateProject(e));
 
+        // Password protection checkbox
+        const passwordProtectedCheckbox = document.getElementById('passwordProtected');
+        passwordProtectedCheckbox.addEventListener('change', (e) => this.handlePasswordProtectionToggle(e));
+
+        // Generate password button
+        const generatePasswordBtn = document.getElementById('generatePasswordBtn');
+        generatePasswordBtn.addEventListener('click', () => this.generateSecurePassword());
+
         // Refresh button
         const refreshBtn = document.getElementById('refreshBtn');
         refreshBtn.addEventListener('click', () => this.loadProjects());
@@ -58,15 +66,83 @@ class XaresAICoder {
         document.getElementById(`${targetTab}-tab`).classList.add('active');
     }
 
+    handlePasswordProtectionToggle(e) {
+        const passwordGroup = document.getElementById('passwordGroup');
+        const passwordInput = document.getElementById('workspacePassword');
+        
+        if (e.target.checked) {
+            passwordGroup.style.display = 'block';
+            // Generate initial password when enabling protection
+            if (!passwordInput.value) {
+                this.generateSecurePassword();
+            }
+        } else {
+            passwordGroup.style.display = 'none';
+            passwordInput.value = '';
+        }
+    }
+
+    generateSecurePassword() {
+        const length = 12;
+        // Use character sets excluding ambiguous characters (0/O, 1/l/I)
+        const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        const lowercase = 'abcdefghijkmnpqrstuvwxyz';
+        const numbers = '23456789';
+        const symbols = '!@#$%&*+-=?';
+        
+        const allChars = uppercase + lowercase + numbers + symbols;
+        let password = '';
+        
+        // Ensure at least one character from each set
+        password += this.getRandomChar(uppercase);
+        password += this.getRandomChar(lowercase);
+        password += this.getRandomChar(numbers);
+        password += this.getRandomChar(symbols);
+        
+        // Fill the rest randomly
+        for (let i = 4; i < length; i++) {
+            password += this.getRandomChar(allChars);
+        }
+        
+        // Shuffle the password to avoid predictable patterns
+        password = this.shuffleString(password);
+        
+        document.getElementById('workspacePassword').value = password;
+    }
+
+    getRandomChar(chars) {
+        const array = new Uint8Array(1);
+        crypto.getRandomValues(array);
+        return chars[array[0] % chars.length];
+    }
+
+    shuffleString(str) {
+        const array = str.split('');
+        for (let i = array.length - 1; i > 0; i--) {
+            const randomArray = new Uint8Array(1);
+            crypto.getRandomValues(randomArray);
+            const j = randomArray[0] % (i + 1);
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array.join('');
+    }
+
     async handleCreateProject(e) {
         e.preventDefault();
         
         const formData = new FormData(e.target);
         const projectName = formData.get('projectName').trim();
         const projectType = formData.get('projectType');
+        const passwordProtected = formData.get('passwordProtected') === 'on';
+        const workspacePassword = formData.get('workspacePassword');
 
         if (!projectName || !projectType) {
             this.showError('Please fill in all required fields');
+            return;
+        }
+
+        if (passwordProtected && (!workspacePassword || workspacePassword.length < 8)) {
+            this.showError('Password must be at least 8 characters long');
             return;
         }
 
@@ -77,16 +153,23 @@ class XaresAICoder {
 
         this.showLoading(true);
 
+        const requestBody = {
+            projectName,
+            projectType
+        };
+
+        if (passwordProtected) {
+            requestBody.passwordProtected = true;
+            requestBody.password = workspacePassword;
+        }
+
         try {
             const response = await fetch(`${this.apiBase}/projects/create`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    projectName,
-                    projectType
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
@@ -101,6 +184,12 @@ class XaresAICoder {
             
             // Clear form
             e.target.reset();
+            
+            // Hide password group and clear password input
+            const passwordGroup = document.getElementById('passwordGroup');
+            const passwordInput = document.getElementById('workspacePassword');
+            passwordGroup.style.display = 'none';
+            passwordInput.value = '';
             
             // Show success message with instructions
             this.showWorkspaceReady(project);
@@ -154,7 +243,10 @@ class XaresAICoder {
         projectsList.innerHTML = this.projects.map(project => `
             <div class="project-item" data-project-id="${project.projectId}">
                 <div class="project-info">
-                    <h4>${this.escapeHtml(project.projectName)}</h4>
+                    <h4>
+                        ${this.escapeHtml(project.projectName)}
+                        ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
+                    </h4>
                     <div class="project-meta">
                         <span class="project-status ${this.getStatusClass(project.status)}">${this.getStatusLabel(project.status)}</span>
                         <span>${this.getProjectTypeLabel(project.projectType)}</span>
@@ -347,10 +439,20 @@ class XaresAICoder {
         const modal = document.getElementById('successModal') || this.createSuccessModal();
         const projectNameElement = modal.querySelector('#successProjectName');
         const workspaceUrlElement = modal.querySelector('#successWorkspaceUrl');
+        const passwordInfoElement = modal.querySelector('#passwordInfo');
+        const passwordValueElement = modal.querySelector('#passwordValue');
         
         projectNameElement.textContent = project.projectName;
         workspaceUrlElement.href = project.workspaceUrl;
         workspaceUrlElement.textContent = project.workspaceUrl;
+        
+        // Show password information if workspace is protected
+        if (project.passwordProtected && project.password) {
+            passwordInfoElement.style.display = 'block';
+            passwordValueElement.textContent = project.password;
+        } else {
+            passwordInfoElement.style.display = 'none';
+        }
         
         modal.style.display = 'flex';
         

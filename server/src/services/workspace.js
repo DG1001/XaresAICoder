@@ -12,7 +12,7 @@ class WorkspaceService {
     }, 10 * 60 * 1000); // Every 10 minutes
   }
 
-  async createProject(projectName, projectType, userId = 'default') {
+  async createProject(projectName, projectType, options = {}, userId = 'default') {
     try {
       // Validate input
       if (!projectName || !projectType) {
@@ -34,8 +34,11 @@ class WorkspaceService {
       // Generate unique project ID
       const projectId = uuidv4();
 
-      // Create Docker container
-      const workspace = await dockerService.createWorkspaceContainer(projectId, projectType);
+      // Create Docker container with auth options
+      const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
+        passwordProtected: options.passwordProtected || false,
+        password: options.password || null
+      });
 
       // Store project metadata
       const project = {
@@ -43,6 +46,7 @@ class WorkspaceService {
         projectName: projectName.trim(),
         projectType,
         userId,
+        passwordProtected: options.passwordProtected || false,
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'running',
@@ -55,9 +59,11 @@ class WorkspaceService {
         projectId,
         projectName: project.projectName,
         projectType,
+        passwordProtected: project.passwordProtected,
         workspaceUrl: workspace.workspaceUrl,
         status: 'running',
-        createdAt: project.createdAt
+        createdAt: project.createdAt,
+        ...(project.passwordProtected && options.password && { password: options.password })
       };
 
     } catch (error) {
@@ -166,6 +172,7 @@ class WorkspaceService {
             projectId: p.projectId,
             projectName: p.projectName,
             projectType: p.projectType,
+            passwordProtected: p.passwordProtected || false,
             status: p.status,
             workspaceUrl: p.workspaceUrl,
             createdAt: p.createdAt,
@@ -177,6 +184,7 @@ class WorkspaceService {
             projectId: p.projectId,
             projectName: p.projectName,
             projectType: p.projectType,
+            passwordProtected: p.passwordProtected || false,
             status: 'error',
             workspaceUrl: p.workspaceUrl,
             createdAt: p.createdAt,

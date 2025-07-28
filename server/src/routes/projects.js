@@ -6,7 +6,7 @@ const router = express.Router();
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType } = req.body;
+    const { projectName, projectType, passwordProtected, password } = req.body;
     
     if (!projectName || !projectType) {
       return res.status(400).json({
@@ -15,7 +15,27 @@ router.post('/create', async (req, res) => {
       });
     }
 
-    const project = await workspaceService.createProject(projectName, projectType);
+    // Validate password if protection is enabled
+    if (passwordProtected) {
+      if (!password || password.length < 8) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be at least 8 characters long'
+        });
+      }
+      
+      if (password.length > 50) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be less than 50 characters'
+        });
+      }
+    }
+
+    const project = await workspaceService.createProject(projectName, projectType, {
+      passwordProtected: !!passwordProtected,
+      password: passwordProtected ? password : null
+    });
     
     res.status(201).json({
       success: true,

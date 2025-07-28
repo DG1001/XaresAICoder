@@ -9,7 +9,7 @@ class DockerService {
     this.activeContainers = new Map();
   }
 
-  async createWorkspaceContainer(projectId, projectType) {
+  async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
     try {
       const containerName = `workspace-${projectId}`;
       const port = await this.findAvailablePort(8080);
@@ -17,15 +17,25 @@ class DockerService {
       // Build the code-server image if it doesn't exist
       await this.ensureCodeServerImage();
 
+      // Setup authentication
+      const { passwordProtected = false, password = null } = authOptions;
+      let authFlag = 'none'; // Default to no auth
+      const envVars = [
+        `PROJECT_TYPE=${projectType}`,
+        `PROJECT_ID=${projectId}`,
+        `VSCODE_PROXY_URI=http://${projectId}-{{port}}.localhost/`,
+        `PROXY_DOMAIN=${projectId}.localhost`
+      ];
+
+      if (passwordProtected && password) {
+        authFlag = 'password';
+        envVars.push(`PASSWORD=${password}`);
+      }
+
       const container = await this.docker.createContainer({
         Image: 'xares-aicoder-codeserver:latest',
         name: containerName,
-        Env: [
-          `PROJECT_TYPE=${projectType}`,
-          `PROJECT_ID=${projectId}`,
-          `VSCODE_PROXY_URI=http://${projectId}-{{port}}.localhost/`,
-          `PROXY_DOMAIN=${projectId}.localhost`
-        ],
+        Env: envVars,
         ExposedPorts: {
           '8080/tcp': {}, // code-server
           '3000/tcp': {}, // Node.js apps
@@ -51,7 +61,7 @@ class DockerService {
           }
         },
         WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', 'none', '--proxy-domain', `${projectId}.localhost`, '/workspace']
+        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', authFlag, '--proxy-domain', `${projectId}.localhost`, '/workspace']
       });
 
       await container.start();
