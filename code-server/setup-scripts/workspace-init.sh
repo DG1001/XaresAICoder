@@ -176,26 +176,7 @@ This is a Flask application created with XaresAICoder.
 
 ## AI Coding Assistance
 
-XaresAICoder includes five powerful AI coding tools. Choose the one that best fits your workflow:
-
-### 🤖 Cline (Claude Dev) - VS Code Integrated AI
-Best for: Inline editing, code completion, seamless VS Code integration
-
-**Quick Access:**
-- Open Command Palette and type "Cline" for all commands
-- Use the Cline icon in the sidebar
-
-**Features:**
-- AI-powered code generation
-- Contextual understanding of your codebase
-- Multi-file editing capabilities
-- Terminal integration
-- Claude AI integration
-
-**Setup:**
-- Extension is pre-installed
-- Configure Claude API key in extension settings
-- Learn more: https://github.com/saoudrizwan/claude-dev
+XaresAICoder includes four powerful AI coding tools. Choose the one that best fits your workflow:
 
 ### 🤖 OpenCode SST - Multi-model AI Assistant
 Best for: Project analysis, multi-model support, collaborative development
