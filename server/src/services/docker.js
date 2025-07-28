@@ -167,7 +167,7 @@ class DockerService {
         
         // Simple approach: just check if we can execute curl successfully
         const exec = await container.exec({
-          Cmd: ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:8080/', '--max-time', '3'],
+          Cmd: ['/usr/bin/curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:8080/', '--max-time', '3'],
           AttachStdout: true,
           AttachStderr: false
         });
