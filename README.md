@@ -4,7 +4,7 @@ A professional browser-based AI-powered development environment that integrates 
 
 ## Overview
 
-XaresAICoder provides isolated development workspaces running VS Code in the browser, with four integrated AI coding tools for comprehensive development assistance. Each workspace runs in a separate Docker container with resource limits, automatic cleanup, and seamless subdomain-based port forwarding.
+XaresAICoder provides isolated development workspaces running VS Code in the browser, with five integrated AI coding tools for comprehensive development assistance. Each workspace runs in a separate Docker container with resource limits, automatic cleanup, and seamless subdomain-based port forwarding.
 
 ## Features
 
@@ -16,7 +16,8 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 - **Real-time Container Management** with start/stop controls
 - **Dynamic Status Monitoring** showing actual container states
 
-### 🤖 **AI Coding Tools (4 Integrated)**
+### 🤖 **AI Coding Tools (5 Integrated)**
+- **Continue AI** - VS Code integrated AI with inline editing and code completion
 - **OpenCode SST** - Multi-model AI assistant for project analysis
 - **Aider** - AI pair programming with direct file editing and git integration
 - **Gemini CLI** - Google's AI for code generation and debugging
@@ -173,7 +174,33 @@ Each workspace container:
 
 ## AI Development Tools
 
-XaresAICoder includes four powerful AI coding assistants, all pre-installed and ready to use. Choose the tool that best fits your workflow or use them together for maximum productivity.
+XaresAICoder includes five powerful AI coding assistants, all pre-installed and ready to use. Choose the tool that best fits your workflow or use them together for maximum productivity.
+
+### 🤖 **Continue AI** - VS Code Integrated AI
+**Best for**: Inline editing, code completion, seamless VS Code integration
+
+Continue AI is a VS Code extension that provides AI-powered coding assistance directly within your editor.
+
+**Quick Access:**
+```bash
+# Extension is pre-installed, access via:
+# Ctrl+I (Cmd+I) - Inline editing
+# Ctrl+Shift+M (Cmd+Shift+M) - Open Continue sidebar
+# Command Palette -> "Continue" for all commands
+```
+
+**Key Features:**
+- **Inline Code Completion**: AI-powered suggestions as you type
+- **Natural Language Editing**: Convert plain English to code
+- **Code Explanation**: Understand complex code with AI explanations
+- **Context-Aware**: Understands your entire codebase
+- **Multiple Models**: Supports OpenAI, Anthropic, Ollama, and more
+
+**Setup:**
+1. Extension is pre-installed in your workspace
+2. Open Continue sidebar (Ctrl+Shift+M)
+3. Configure your preferred AI model and API key
+4. Start coding with AI assistance!
 
 ### 🤖 **OpenCode SST** - Multi-model AI Assistant
 **Best for**: Project analysis, multi-model support, collaborative development
@@ -506,10 +533,10 @@ docker system prune -a
 
 ### ✅ **Implemented Features**
 
-- **Multiple AI Tools**: OpenCode SST, Aider, Gemini CLI, Claude Code
+- **Multiple AI Tools**: Continue AI, OpenCode SST, Aider, Gemini CLI, Claude Code
 - **Professional UI**: VS Code-inspired light theme design
 - **Subdomain Port Forwarding**: Clean URLs for application access
-- **Passwordless Authentication**: Seamless local development experience
+- **Optional Password Protection**: Secure workspace access when needed
 - **Python Flask Templates**: Ready-to-use project scaffolding
 - **Container Management**: Real-time status monitoring and control
 - **Resource Management**: Automatic cleanup and resource limits
