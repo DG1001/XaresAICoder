@@ -60,12 +60,10 @@ USER coder
 COPY extensions.txt /tmp/extensions.txt
 RUN /tmp/setup-scripts/install-extensions.sh
 
-# Install Continue AI extension specifically (since it might need special handling)
-USER root
-COPY install-continue.sh /tmp/install-continue.sh
-RUN chmod +x /tmp/install-continue.sh && /tmp/install-continue.sh
+# Extensions will be installed through extensions.txt
 
 # Copy and setup the extension check and test scripts
+USER root
 COPY check-extensions.sh /usr/local/bin/check-extensions.sh
 COPY test-extension-install.sh /usr/local/bin/test-extension-install.sh
 RUN chmod +x /usr/local/bin/check-extensions.sh /usr/local/bin/test-extension-install.sh

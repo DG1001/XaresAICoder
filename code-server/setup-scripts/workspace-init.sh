@@ -41,20 +41,22 @@ fi
 echo ""
 echo "🚀 Welcome to XaresAICoder!"
 echo ""
-echo "🤖 AI Coding Tools Available:"
-echo "  • Continue AI - VS Code AI coding extension"
-echo "  • OpenCode SST - Multi-model AI assistant"
-echo "  • Aider - AI pair programming in terminal"
-echo "  • Gemini CLI - Google's AI coding assistant"
-echo "  • Claude Code - Anthropic's AI coding tool"
+echo "🤖 Recommended AI Coding Tools:"
+echo "  • Continue - VS Code AI completion & chat (install from marketplace)"
+echo "  • Cline (Claude Dev) - AI file editor (install from marketplace)"
+echo "  • OpenCode SST - Multi-model AI assistant (pre-installed)"
+echo "  • Aider - AI pair programming in terminal (pre-installed)"
+echo "  • Gemini CLI - Google's AI coding assistant (pre-installed)"
+echo "  • Claude Code - Anthropic's AI coding tool (pre-installed)"
 echo ""
 echo "⚡ Quick Setup:"
-echo "  • All AI tools: setup_ai_tools"
-echo "  • Individual setup: setup_continue, setup_opencode, setup_aider, setup_gemini, setup_claude"
+echo "  • Command line tools: setup_ai_tools"
+echo "  • Individual setup: setup_opencode, setup_aider, setup_gemini, setup_claude"
 echo ""
 echo "🚀 Quick Start:"
-echo "1. Run setup_ai_tools to configure your preferred AI tools"
-echo "2. Start coding with AI assistance!"
+echo "1. Install AI extensions from VS Code marketplace (Continue, Cline)"
+echo "2. Run setup_ai_tools to configure command line AI tools"
+echo "3. Start coding with AI assistance!"
 echo ""
 echo "📁 Project Templates:"
 echo "- Flask app: setup_flask_project"
@@ -176,25 +178,24 @@ This is a Flask application created with XaresAICoder.
 
 XaresAICoder includes five powerful AI coding tools. Choose the one that best fits your workflow:
 
-### 🤖 Continue AI - VS Code Integrated AI
+### 🤖 Cline (Claude Dev) - VS Code Integrated AI
 Best for: Inline editing, code completion, seamless VS Code integration
 
 **Quick Access:**
-- Use `Ctrl+I` (Cmd+I) for inline editing
-- Use `Ctrl+Shift+M` (Cmd+Shift+M) to open Continue sidebar
-- Open Command Palette and type "Continue" for all commands
+- Open Command Palette and type "Cline" for all commands
+- Use the Cline icon in the sidebar
 
 **Features:**
-- Inline code completion and editing
-- Natural language to code conversion
-- Code explanation and documentation
-- Context-aware suggestions
-- Multiple AI model support (OpenAI, Anthropic, Ollama, etc.)
+- AI-powered code generation
+- Contextual understanding of your codebase
+- Multi-file editing capabilities
+- Terminal integration
+- Claude AI integration
 
 **Setup:**
 - Extension is pre-installed
-- Configure API keys in Continue sidebar settings
-- Learn more: https://continue.dev
+- Configure Claude API key in extension settings
+- Learn more: https://github.com/saoudrizwan/claude-dev
 
 ### 🤖 OpenCode SST - Multi-model AI Assistant
 Best for: Project analysis, multi-model support, collaborative development
@@ -337,32 +338,6 @@ GITIGNORE_EOF
 
 # AI Tool Setup Functions
 
-# Setup Continue AI VS Code Extension
-setup_continue() {
-    echo "🤖 Setting up Continue AI..."
-    echo ""
-    echo "Continue AI is already installed as a VS Code extension!"
-    echo ""
-    echo "To get started:"
-    echo "1. Open the Command Palette (Ctrl+Shift+P / Cmd+Shift+P)"
-    echo "2. Type 'Continue' to see available commands"
-    echo "3. Use Ctrl+I (Cmd+I) to start inline editing"
-    echo "4. Use Ctrl+Shift+M (Cmd+Shift+M) to open the Continue sidebar"
-    echo ""
-    echo "💡 Features:"
-    echo "   - Inline code completion and editing"
-    echo "   - Natural language to code conversion"
-    echo "   - Code explanation and documentation"
-    echo "   - Context-aware suggestions"
-    echo "   - Multiple AI model support"
-    echo ""
-    echo "🔧 Configuration:"
-    echo "   - Access settings via Continue sidebar"
-    echo "   - Supports OpenAI, Anthropic, Ollama, and more"
-    echo "   - API keys configured in extension settings"
-    echo ""
-    echo "📚 Learn more: https://continue.dev"
-}
 
 # Setup OpenCode SST
 setup_opencode() {
@@ -445,13 +420,7 @@ setup_ai_tools() {
     echo "Available AI coding tools:"
     echo ""
     
-    echo "1️⃣  Continue AI"
-    setup_continue
-    echo ""
-    echo "----------------------------------------"
-    echo ""
-    
-    echo "2️⃣  OpenCode SST"
+    echo "1️⃣  OpenCode SST"
     setup_opencode
     echo ""
     echo "----------------------------------------"
@@ -469,7 +438,7 @@ setup_ai_tools() {
     echo "----------------------------------------"
     echo ""
     
-    echo "5️⃣  Claude Code"
+    echo "4️⃣  Claude Code"
     setup_claude
     echo ""
     echo "=============================="
@@ -477,17 +446,20 @@ setup_ai_tools() {
     echo "✅ All AI tools are ready!"
     echo ""
     echo "💡 Choose the tool that best fits your workflow:"
-    echo "   • Continue AI: VS Code integrated AI with inline editing"
     echo "   • OpenCode SST: Multi-model support, project analysis"
     echo "   • Aider: Interactive pair programming"
     echo "   • Gemini CLI: Google's AI with code generation"
     echo "   • Claude Code: Agentic coding with deep codebase understanding"
     echo ""
+    echo "🔌 VS Code Extensions (install from marketplace):"
+    echo "   • Continue: AI code completion and chat"
+    echo "   • Cline (Claude Dev): AI file editor and assistant"
+    echo ""
     echo "🔑 Don't forget to set up your API keys for the tools you want to use!"
 }
 
 # Export all functions
-export -f setup_flask_project setup_continue setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
+export -f setup_flask_project setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."

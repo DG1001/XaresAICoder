@@ -7,7 +7,7 @@ EXTENSIONS_FILE="/tmp/extensions.txt"
 MISSING_EXTENSIONS=()
 
 # Critical extensions that should definitely be present
-CRITICAL_EXTENSIONS=("Continue.continue")
+CRITICAL_EXTENSIONS=("ms-python.python")
 
 # Function to check if extension is installed by listing extensions
 is_extension_installed() {
@@ -42,9 +42,9 @@ if [ ${#MISSING_EXTENSIONS[@]} -gt 0 ]; then
         timeout 60s su - coder -c "code-server --install-extension '$extension' --force --verbose" || {
             echo "⚠️  Installation timed out or failed for $extension"
             
-            # Special handling for Continue extension
-            if [ "$extension" = "Continue.continue" ]; then
-                echo "Attempting alternative installation method for Continue..."
+            # Special handling for Python extension
+            if [ "$extension" = "ms-python.python" ]; then
+                echo "Attempting alternative installation method for Python..."
                 su - coder -c "code-server --install-extension '$extension' --force" &>/dev/null || true
             fi
         }

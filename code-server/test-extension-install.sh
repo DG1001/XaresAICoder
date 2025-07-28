@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Test script to debug extension installation
-echo "=== Testing Continue AI Extension Installation ==="
+echo "=== Testing VS Code Extension Installation ==="
 echo ""
 
 # Test 1: Check if code-server command is available
@@ -29,8 +29,8 @@ else
 fi
 echo ""
 
-# Test 3: Try to install Continue extension manually
-echo "3. Attempting to install Continue.continue extension:"
+# Test 3: Try to install an example extension manually
+echo "3. Attempting to install ms-python.python extension:"
 su - coder << 'EOF'
 export HOME=/home/coder
 export USER=coder
@@ -38,19 +38,19 @@ echo "Installing as user: $(whoami)"
 echo "Home directory: $HOME"
 
 # Try installation with verbose output
-echo "Running: code-server --install-extension Continue.continue --force --verbose"
-code-server --install-extension Continue.continue --force --verbose
+echo "Running: code-server --install-extension ms-python.python --force --verbose"
+code-server --install-extension ms-python.python --force --verbose
 echo "Installation command completed."
 EOF
 echo ""
 
 # Test 4: Verify installation
 echo "4. Verifying installation:"
-if [ -d "/home/coder/.local/share/code-server/extensions/continue.continue-"* ] 2>/dev/null; then
-    echo "✅ Continue extension found!"
-    ls -la /home/coder/.local/share/code-server/extensions/continue.continue-*
+if [ -d "/home/coder/.local/share/code-server/extensions/ms-python.python-"* ] 2>/dev/null; then
+    echo "✅ Python extension found!"
+    ls -la /home/coder/.local/share/code-server/extensions/ms-python.python-*
 else
-    echo "❌ Continue extension not found after installation"
+    echo "❌ Python extension not found after installation"
 fi
 echo ""
 

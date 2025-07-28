@@ -121,13 +121,17 @@ router.get('/', async (req, res) => {
 router.post('/:projectId/start', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const result = await workspaceService.startProject(projectId);
+    const { password } = req.body;
+    const result = await workspaceService.startProject(projectId, password);
     
     res.json(result);
 
   } catch (error) {
     console.error('Start project error:', error);
-    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.message === 'Invalid password for protected workspace') statusCode = 401;
+    
     res.status(statusCode).json({
       error: 'Failed to start project',
       message: error.message

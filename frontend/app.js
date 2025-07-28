@@ -345,24 +345,48 @@ class XaresAICoder {
     }
 
     async startProject(projectId) {
+        const project = this.projects.find(p => p.projectId === projectId);
+        
+        if (project && project.passwordProtected) {
+            // Show password verification modal for protected workspaces
+            this.showPasswordModal('start', projectId, project.projectName);
+        } else {
+            // Direct start for unprotected workspaces
+            this.executeStartProject(projectId);
+        }
+    }
+
+    async executeStartProject(projectId, password = null) {
         try {
             this.setProjectActionLoading(projectId, true);
             
+            const requestBody = password ? { password } : {};
             const response = await fetch(`${this.apiBase}/projects/${projectId}/start`, {
-                method: 'POST'
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
 
             if (response.ok) {
                 this.loadProjects(); // Refresh the list to show updated status
+                this.hidePasswordModal();
             } else {
-                this.showError(data.message || 'Failed to start project');
+                if (response.status === 401) {
+                    this.showPasswordError('Invalid password. Please try again.');
+                } else {
+                    this.showError(data.message || 'Failed to start project');
+                    this.hidePasswordModal();
+                }
             }
 
         } catch (error) {
             console.error('Error starting project:', error);
             this.showError('Failed to start project. Please try again.');
+            this.hidePasswordModal();
         } finally {
             this.setProjectActionLoading(projectId, false);
         }
@@ -573,7 +597,7 @@ class XaresAICoder {
         this.pendingPasswordAction = { action, projectId, projectName };
         
         // Set the message based on action
-        const actionText = action === 'delete' ? 'delete' : 'stop';
+        const actionText = action === 'delete' ? 'delete' : action === 'stop' ? 'stop' : 'start';
         messageElement.textContent = `Enter the password for "${projectName}" to ${actionText} this protected workspace:`;
         
         // Clear previous input and errors
@@ -629,6 +653,9 @@ class XaresAICoder {
             } else {
                 this.hidePasswordModal();
             }
+        } else if (action === 'start') {
+            // Execute start directly (no confirmation needed)
+            this.executeStartProject(projectId, password);
         }
     }
 

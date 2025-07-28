@@ -16,8 +16,10 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 - **Real-time Container Management** with start/stop controls
 - **Dynamic Status Monitoring** showing actual container states
 
-### 🤖 **AI Coding Tools (5 Integrated)**
-- **Continue AI** - VS Code integrated AI with inline editing and code completion
+### 🤖 **AI Development Tools**
+Pre-configured workspace with recommended AI coding assistants:
+- **Continue** - VS Code extension for AI-powered code completion and chat
+- **Cline (Claude Dev)** - AI coding assistant with file editing capabilities
 - **OpenCode SST** - Multi-model AI assistant for project analysis
 - **Aider** - AI pair programming with direct file editing and git integration
 - **Gemini CLI** - Google's AI for code generation and debugging
@@ -174,33 +176,23 @@ Each workspace container:
 
 ## AI Development Tools
 
-XaresAICoder includes five powerful AI coding assistants, all pre-installed and ready to use. Choose the tool that best fits your workflow or use them together for maximum productivity.
+XaresAICoder provides a clean VS Code workspace where you can install and use your preferred AI coding assistants. We recommend several popular tools that work well together.
 
-### 🤖 **Continue AI** - VS Code Integrated AI
-**Best for**: Inline editing, code completion, seamless VS Code integration
+### 🤖 **Recommended AI Extensions**
 
-Continue AI is a VS Code extension that provides AI-powered coding assistance directly within your editor.
+**Continue** - AI Code Completion & Chat
+- Install from VS Code marketplace: `continue.continue`
+- Supports multiple AI providers (OpenAI, Anthropic, local models)
+- Inline code completion and sidebar chat interface
+- Excellent for rapid development and code explanation
 
-**Quick Access:**
-```bash
-# Extension is pre-installed, access via:
-# Ctrl+I (Cmd+I) - Inline editing
-# Ctrl+Shift+M (Cmd+Shift+M) - Open Continue sidebar
-# Command Palette -> "Continue" for all commands
-```
+**Cline (Claude Dev)** - AI File Editor
+- Install from VS Code marketplace: `saoudrizwan.claude-dev`
+- Direct file editing with Claude AI
+- Multi-file operations and terminal integration
+- Great for complex refactoring and feature development
 
-**Key Features:**
-- **Inline Code Completion**: AI-powered suggestions as you type
-- **Natural Language Editing**: Convert plain English to code
-- **Code Explanation**: Understand complex code with AI explanations
-- **Context-Aware**: Understands your entire codebase
-- **Multiple Models**: Supports OpenAI, Anthropic, Ollama, and more
-
-**Setup:**
-1. Extension is pre-installed in your workspace
-2. Open Continue sidebar (Ctrl+Shift+M)
-3. Configure your preferred AI model and API key
-4. Start coding with AI assistance!
+### 🤖 **Command Line AI Tools**
 
 ### 🤖 **OpenCode SST** - Multi-model AI Assistant
 **Best for**: Project analysis, multi-model support, collaborative development
@@ -533,7 +525,7 @@ docker system prune -a
 
 ### ✅ **Implemented Features**
 
-- **Multiple AI Tools**: Continue AI, OpenCode SST, Aider, Gemini CLI, Claude Code
+- **AI-Ready Workspace**: Pre-configured VS Code with recommended AI tool installation guides
 - **Professional UI**: VS Code-inspired light theme design
 - **Subdomain Port Forwarding**: Clean URLs for application access
 - **Optional Password Protection**: Secure workspace access when needed

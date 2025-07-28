@@ -92,10 +92,17 @@ class WorkspaceService {
     };
   }
 
-  async startProject(projectId) {
+  async startProject(projectId, providedPassword = null) {
     const project = this.projects.get(projectId);
     if (!project) {
       throw new Error('Project not found');
+    }
+
+    // Check password if workspace is protected
+    if (project.passwordProtected) {
+      if (!providedPassword || providedPassword !== project.password) {
+        throw new Error('Invalid password for protected workspace');
+      }
     }
 
     try {
