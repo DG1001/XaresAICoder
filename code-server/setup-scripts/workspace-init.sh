@@ -3,23 +3,23 @@ set -e
 
 echo "Setting up workspace initialization..."
 
-# Create VS Code settings to reduce port forwarding notifications
+# Create VS Code settings with subdomain-based port forwarding
 mkdir -p /home/coder/.local/share/code-server/User
 cat > /home/coder/.local/share/code-server/User/settings.json << 'SETTINGS_EOF'
 {
-    "remote.autoForwardPorts": false,
+    "remote.autoForwardPorts": true,
     "remote.portsAttributes": {
         "5000": {
-            "label": "Flask App - Use subdomain URL instead!",
-            "onAutoForward": "ignore"
+            "label": "Flask Application",
+            "onAutoForward": "openBrowserOnce"
         },
         "3000": {
-            "label": "Node.js App - Use subdomain URL instead!",
-            "onAutoForward": "ignore"
+            "label": "Node.js Application", 
+            "onAutoForward": "openBrowserOnce"
         },
         "8000": {
-            "label": "Django App - Use subdomain URL instead!",
-            "onAutoForward": "ignore"
+            "label": "Django Application",
+            "onAutoForward": "openBrowserOnce"
         }
     },
     "workbench.startupEditor": "readme",
