@@ -1,9 +1,15 @@
 // XaresAICoder Frontend Application
 class XaresAICoder {
     constructor() {
-        this.apiBase = '/api';
+        this.apiBase = this.detectApiBase();
         this.projects = [];
         this.init();
+    }
+
+    detectApiBase() {
+        // For same-origin requests, use relative paths
+        // This works for both localhost and ci.infra:8000 deployments
+        return '/api';
     }
 
     init() {

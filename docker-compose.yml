@@ -1,13 +1,15 @@
-version: '3.8'
-
 services:
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
+      - "${BASE_PORT:-80}:${BASE_PORT:-80}"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template
       - ./frontend:/usr/share/nginx/html/frontend
+    environment:
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      - BASE_PORT=${BASE_PORT:-80}
+      - PROTOCOL=${PROTOCOL:-http}
     depends_on:
       - server
     networks:
@@ -20,6 +22,9 @@ services:
       - DOCKER_NETWORK=xaresaicoder_xares-aicoder-network
       - WORKSPACE_TIMEOUT_MINUTES=${WORKSPACE_TIMEOUT_MINUTES:-120}
       - MAX_WORKSPACES_PER_USER=${MAX_WORKSPACES_PER_USER:-5}
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      - BASE_PORT=${BASE_PORT:-80}
+      - PROTOCOL=${PROTOCOL:-http}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces

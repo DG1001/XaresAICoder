@@ -7,6 +7,10 @@ class DockerService {
     // Docker Compose prefixes network names with project name
     this.network = process.env.DOCKER_NETWORK || 'xaresaicoder_xares-aicoder-network';
     this.activeContainers = new Map();
+    // Domain and port configuration
+    this.baseDomain = process.env.BASE_DOMAIN || 'localhost';
+    this.basePort = process.env.BASE_PORT || '80';
+    this.protocol = process.env.PROTOCOL || 'http';
   }
 
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
@@ -23,8 +27,8 @@ class DockerService {
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
         `PROJECT_ID=${projectId}`,
-        `VSCODE_PROXY_URI=http://${projectId}-{{port}}.localhost/`,
-        `PROXY_DOMAIN=${projectId}.localhost`
+        `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
+        `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
       ];
 
       if (passwordProtected && password) {
@@ -61,7 +65,7 @@ class DockerService {
           }
         },
         WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', authFlag, '--proxy-domain', `${projectId}.localhost`, '/workspace']
+        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
       });
 
       await container.start();
@@ -86,7 +90,7 @@ class DockerService {
       return {
         projectId,
         containerName,
-        workspaceUrl: `http://${projectId}.localhost/`,
+        workspaceUrl: `${this.protocol}://${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
         status: 'running'
       };
 
@@ -240,7 +244,7 @@ class DockerService {
       return {
         projectId,
         status,
-        workspaceUrl: `http://${projectId}.localhost/`,
+        workspaceUrl: `${this.protocol}://${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
         createdAt: workspace.createdAt,
         projectType: workspace.projectType,
         containerInfo: {

@@ -1,25 +1,17 @@
-events {
-    worker_connections 1024;
+# Increase server names hash bucket size for long UUIDs
+server_names_hash_bucket_size 128;
+
+# Enable DNS resolver for dynamic container resolution
+resolver 127.0.0.11 valid=30s;
+
+upstream api_backend {
+    server server:3000;
 }
 
-http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
-    
-    # Increase server names hash bucket size for long UUIDs
-    server_names_hash_bucket_size 128;
-    
-    # Enable DNS resolver for dynamic container resolution
-    resolver 127.0.0.11 valid=30s;
-
-    upstream api_backend {
-        server server:3000;
-    }
-
-    # Main server for localhost (frontend and API)
-    server {
-        listen 80;
-        server_name localhost;
+# Main server for the frontend and API
+server {
+        listen ${BASE_PORT};
+        server_name ${BASE_DOMAIN};
 
         # Frontend
         location / {
@@ -39,11 +31,11 @@ http {
     }
 
     # Subdomain server for workspace applications on specific ports
-    # Pattern: projectid-port.localhost (e.g., projectid-5000.localhost)
+    # Pattern: projectid-port.domain (e.g., projectid-5000.localhost or projectid-5000.ci.infra)
     # NOTE: This MUST come before the general workspace pattern to match first
     server {
-        listen 80;
-        server_name ~^(?<workspace_id>[a-f0-9\-]+)-(?<app_port>[0-9]+)\.localhost$;
+        listen ${BASE_PORT};
+        server_name ~^(?<workspace_id>[a-f0-9\-]+)-(?<app_port>[0-9]+)\.${BASE_DOMAIN}$;
 
         location / {
             set $upstream workspace-$workspace_id:$app_port;
@@ -64,10 +56,10 @@ http {
     }
 
     # Subdomain server for workspace code-server instances
-    # Pattern: projectid.localhost
+    # Pattern: projectid.domain (e.g., projectid.localhost or projectid.ci.infra)
     server {
-        listen 80;
-        server_name ~^(?<workspace_id>[a-f0-9\-]+)\.localhost$;
+        listen ${BASE_PORT};
+        server_name ~^(?<workspace_id>[a-f0-9\-]+)\.${BASE_DOMAIN}$;
 
         location / {
             set $upstream workspace-$workspace_id:8080;
@@ -86,4 +78,3 @@ http {
             proxy_read_timeout 86400;
         }
     }
-}
