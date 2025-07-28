@@ -18,7 +18,6 @@ services:
     environment:
       - SERVER_PORT=3000
       - DOCKER_NETWORK=xaresaicoder_xares-aicoder-network
-      - CODE_SERVER_PASSWORD=${CODE_SERVER_PASSWORD:-default_password}
       - WORKSPACE_TIMEOUT_MINUTES=${WORKSPACE_TIMEOUT_MINUTES:-120}
       - MAX_WORKSPACES_PER_USER=${MAX_WORKSPACES_PER_USER:-5}
     volumes:

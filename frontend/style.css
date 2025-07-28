@@ -660,20 +660,6 @@ section h2::after {
     text-decoration: underline;
 }
 
-.login-info {
-    background: rgba(20, 20, 25, 0.8);
-    border: 1px solid rgba(120, 119, 198, 0.3);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-top: 1.5rem;
-    backdrop-filter: blur(10px);
-}
-
-.login-info h4 {
-    margin-bottom: 0.75rem;
-    color: #f4f4f5;
-    font-weight: 600;
-}
 
 /* Footer */
 footer {

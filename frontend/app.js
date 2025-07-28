@@ -357,10 +357,6 @@ class XaresAICoder {
                     <p>Your project "<strong id="successProjectName"></strong>" has been created successfully!</p>
                     <p>VS Code is starting in a new tab. If it doesn't open automatically, click the link below:</p>
                     <p><a id="successWorkspaceUrl" href="#" target="_blank" class="workspace-link"></a></p>
-                    <div class="login-info">
-                        <h4>Login Information:</h4>
-                        <p><strong>Password:</strong> <code>default_password</code></p>
-                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn-primary" onclick="window.open(document.getElementById('successWorkspaceUrl').href, '_blank')">Open Workspace</button>

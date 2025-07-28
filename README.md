@@ -130,7 +130,6 @@ docker-compose down
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERVER_PORT` | 3000 | API server port |
-| `CODE_SERVER_PASSWORD` | default_password | VS Code access password |
 | `WORKSPACE_TIMEOUT_MINUTES` | 120 | Workspace auto-stop timeout |
 | `MAX_WORKSPACES_PER_USER` | 5 | Maximum workspaces per user |
 

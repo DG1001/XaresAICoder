@@ -6,7 +6,6 @@ class DockerService {
     this.docker = new Docker();
     // Docker Compose prefixes network names with project name
     this.network = process.env.DOCKER_NETWORK || 'xaresaicoder_xares-aicoder-network';
-    this.codeServerPassword = process.env.CODE_SERVER_PASSWORD || 'default_password';
     this.activeContainers = new Map();
   }
 
@@ -22,7 +21,6 @@ class DockerService {
         Image: 'xares-aicoder-codeserver:latest',
         name: containerName,
         Env: [
-          `PASSWORD=${this.codeServerPassword}`,
           `PROJECT_TYPE=${projectType}`,
           `PROJECT_ID=${projectId}`,
           `VSCODE_PROXY_URI=http://${projectId}-{{port}}.localhost/`,
@@ -53,7 +51,7 @@ class DockerService {
           }
         },
         WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', 'password', '--proxy-domain', `${projectId}.localhost`, '/workspace']
+        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', 'none', '--proxy-domain', `${projectId}.localhost`, '/workspace']
       });
 
       await container.start();
