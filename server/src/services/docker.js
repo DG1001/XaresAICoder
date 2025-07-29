@@ -50,8 +50,8 @@ class DockerService {
           '9000/tcp': {}  // Various apps
         },
         HostConfig: {
-          Memory: 4 * 1024 * 1024 * 1024, // 4GB
-          CpuShares: 2048, // 2 CPU cores equivalent
+          Memory: 2 * 1024 * 1024 * 1024, // 2GB
+          CpuShares: 1024, // 1 CPU cores equivalent
           NetworkMode: this.network,
           RestartPolicy: {
             Name: 'unless-stopped'
