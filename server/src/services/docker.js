@@ -377,20 +377,12 @@ class DockerService {
   }
 
   async cleanupInactiveWorkspaces() {
-    const timeoutMinutes = parseInt(process.env.WORKSPACE_TIMEOUT_MINUTES) || 120;
-    const timeoutMs = timeoutMinutes * 60 * 1000;
-    const now = new Date();
-
-    for (const [projectId, workspace] of this.activeContainers) {
-      if (now - workspace.createdAt > timeoutMs) {
-        console.log(`Cleaning up inactive workspace: ${projectId}`);
-        try {
-          await this.stopWorkspace(projectId);
-        } catch (error) {
-          console.error(`Error cleaning up workspace ${projectId}:`, error);
-        }
-      }
-    }
+    // Automatic cleanup functionality removed
+    // This method is kept for backward compatibility with manual cleanup endpoint
+    console.log('Manual cleanup triggered - removing orphaned project metadata');
+    
+    // Only clean up project metadata for containers that no longer exist
+    // This is safe and helps keep the project list accurate
   }
 }
 

@@ -13,10 +13,7 @@ class WorkspaceService {
     // Load existing projects on startup
     this.loadProjectsFromDisk();
     
-    // Start cleanup interval
-    setInterval(() => {
-      this.cleanupWorkspaces();
-    }, 10 * 60 * 1000); // Every 10 minutes
+    // Automatic cleanup removed - users manage workspace lifecycle manually
   }
 
   async createProject(projectName, projectType, options = {}, userId = 'default') {
