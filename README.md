@@ -25,6 +25,11 @@ Pre-configured workspace with recommended AI coding assistants:
 - **Gemini CLI** - Google's AI for code generation and debugging
 - **Claude Code** - Anthropic's agentic tool for deep codebase understanding
 
+### 🔧 **Development Tools**
+- **GitHub CLI (gh)** - Complete GitHub integration for repository management
+- **Git** - Version control with automatic repository initialization
+- **SSH support** - Secure authentication for GitHub and other services
+
 ### 🚀 **Development Features**
 - **Python Flask** project templates with virtual environments
 - **Automatic Project Initialization** with Git repository setup
@@ -80,6 +85,19 @@ Pre-configured workspace with recommended AI coding assistants:
 4. Click "Create Workspace"
 5. Wait for the workspace to be created
 6. VS Code will open in a new tab
+
+### GitHub Integration
+
+Connect your workspace to GitHub in seconds:
+
+```bash
+# In VS Code Terminal
+gh auth login
+gh repo create my-project --public
+git push -u origin main
+```
+
+See [GITHUB_WORKFLOWS.md](GITHUB_WORKFLOWS.md) for detailed GitHub integration guide.
 
 ## Architecture
 
