@@ -1126,6 +1126,962 @@ volumes:
       device: /secure/credential-storage
 ```
 
+## Integrated Git Server Extension
+
+### Overview: Complete On-Premise Git Solution
+
+Building on the credential management system, XaresAICoder can be extended with an integrated Git server (Gitea or Forgejo) to create a **completely self-contained development platform**. This eliminates dependencies on external Git providers and enables advanced features like CI/CD pipelines directly within the platform.
+
+## Gitea vs Forgejo: Comprehensive Comparison
+
+### Technical Overview
+
+Both Gitea and Forgejo are lightweight, self-hosted Git services written in Go. Forgejo is a **hard fork** of Gitea that emerged in late 2022 due to governance concerns about Gitea's direction.
+
+#### Gitea
+```yaml
+# Strengths
+- Mature and stable (since 2016)
+- Large community and ecosystem
+- Well-documented APIs
+- Proven enterprise deployments
+- Regular security updates
+
+# Weaknesses  
+- Limited CI/CD capabilities
+- Governance concerns in community
+- Less GitHub Actions compatibility
+```
+
+#### Forgejo
+```yaml
+# Strengths
+- Community-driven governance
+- Forgejo Actions (GitHub Actions compatible)
+- Enhanced privacy features
+- Active development on CI/CD
+- Better federation support planned
+
+# Weaknesses
+- Newer project (less mature)
+- Smaller ecosystem
+- Breaking changes possible
+```
+
+### Feature Comparison Matrix
+
+| Feature | Gitea | Forgejo | Recommendation |
+|---------|-------|---------|---------------|
+| **Stability** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Gitea (more mature) |
+| **CI/CD Pipelines** | ⭐⭐ | ⭐⭐⭐⭐⭐ | **Forgejo** (Actions) |
+| **GitHub Actions Compat** | ❌ | ✅ | **Forgejo** |
+| **API Completeness** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Gitea |
+| **Docker Integration** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | Tie |
+| **Security Features** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | Forgejo |
+| **Community Support** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | Gitea |
+| **Future Development** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | **Forgejo** |
+
+### **Recommendation: Forgejo**
+
+For XaresAICoder integration, **Forgejo is the clear winner** due to:
+
+1. **🚀 Forgejo Actions**: GitHub Actions compatible CI/CD
+2. **🔒 Enhanced Privacy**: Better data protection features  
+3. **🎯 Active CI/CD Development**: Focused on automation features
+4. **🌟 Community Governance**: Transparent, developer-friendly governance
+5. **📈 Forward Compatibility**: Better alignment with modern DevOps needs
+
+## Architecture: XaresAICoder + Forgejo Integration
+
+```
+┌─ XaresAICoder Platform ─────────────────────────────────┐
+│                                                         │
+│  ┌─ Frontend ──────────┐  ┌─ Forgejo Web UI ─────────┐  │
+│  │ • Project Mgmt     │  │ • Repository Browser     │  │
+│  │ • Credentials      │  │ • Issue Tracking         │  │
+│  │ • Workspace Mgmt   │  │ • Pull Requests          │  │
+│  └────────────────────────┘  │ • CI/CD Pipelines       │  │
+│                              └─────────────────────────┘  │
+│  ┌─ Backend API ──────────────────────────────────────┐  │
+│  │ • Credential Service                              │  │
+│  │ • Workspace Management                            │  │
+│  │ • Forgejo Integration API                         │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌─ Container Layer ──────────────────────────────────┐  │
+│  │ nginx │ workspace │ workspace │ forgejo │ runners │  │
+│  │       │     1     │     2     │         │         │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Implementation Plan
+
+### Phase 1: Forgejo Integration
+
+#### Docker Compose Configuration
+```yaml
+# Enhanced docker-compose.yml
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:1.21
+    container_name: xaresaicoder-forgejo
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - FORGEJO__database__DB_TYPE=sqlite3
+      - FORGEJO__server__DOMAIN=git.${BASE_DOMAIN}
+      - FORGEJO__server__HTTP_PORT=3000
+      - FORGEJO__server__ROOT_URL=${PROTOCOL}://git.${BASE_DOMAIN}:${BASE_PORT}/
+      - FORGEJO__repository__ENABLE_PUSH_CREATE_USER=true
+      - FORGEJO__repository__ENABLE_PUSH_CREATE_ORG=true
+      - FORGEJO__repository__DEFAULT_PUSH_CREATE_PRIVATE=false
+      - FORGEJO__actions__ENABLED=true
+      - FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org
+      # Security settings
+      - FORGEJO__security__INSTALL_LOCK=true
+      - FORGEJO__security__SECRET_KEY=${FORGEJO_SECRET_KEY}
+      # Integration settings
+      - FORGEJO__webhook__ALLOWED_HOST_LIST=*
+      - FORGEJO__api__ENABLE_SWAGGER=true
+    restart: unless-stopped
+    networks:
+      - xares-aicoder-network
+    volumes:
+      - forgejo_data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "2222:22"  # SSH for Git operations
+    depends_on:
+      - nginx
+
+  # Forgejo Actions Runner
+  forgejo-runner:
+    image: code.gitea.io/actions/act_runner:latest
+    container_name: xaresaicoder-forgejo-runner
+    environment:
+      - GITEA_INSTANCE_URL=${PROTOCOL}://git.${BASE_DOMAIN}:${BASE_PORT}/
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${FORGEJO_RUNNER_TOKEN}
+      - GITEA_RUNNER_NAME=xaresaicoder-runner-1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - forgejo_runner_data:/data
+    restart: unless-stopped
+    networks:
+      - xares-aicoder-network
+    depends_on:
+      - forgejo
+
+volumes:
+  forgejo_data:
+  forgejo_runner_data:
+```
+
+#### Environment Configuration
+```env
+# .env additions for Forgejo
+FORGEJO_SECRET_KEY=generate-a-64-char-hex-key
+FORGEJO_ADMIN_USER=admin
+FORGEJO_ADMIN_PASSWORD=secure-admin-password
+FORGEJO_ADMIN_EMAIL=admin@your-domain.com
+FORGEJO_RUNNER_TOKEN=generate-runner-registration-token
+```
+
+### Phase 2: Nginx Routing Integration
+
+#### Enhanced nginx.conf.template
+```nginx
+# Forgejo Git Server
+location /git/ {
+    proxy_pass http://forgejo:3000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host:$server_port;
+    
+    # Support for Git LFS
+    client_max_body_size 512M;
+}
+
+# Git API endpoints
+location /api/v1/ {
+    proxy_pass http://forgejo:3000/api/v1/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Git raw content
+location ~ ^/git/([^/]+)/([^/]+)/raw/(.+)$ {
+    proxy_pass http://forgejo:3000/$1/$2/raw/$3;
+    proxy_set_header Host $host;
+}
+```
+
+### Phase 3: Credential Service Integration
+
+#### Enhanced Credential Service
+```javascript
+// Enhanced credential-service.js
+class CredentialService {
+  // ... existing methods ...
+
+  async initializeForgejoIntegration(userId) {
+    try {
+      // 1. Create user in Forgejo if not exists
+      await this.createForgejoUser(userId);
+      
+      // 2. Register SSH key with Forgejo
+      const sshKey = await this.getSSHKey(userId);
+      if (sshKey) {
+        await this.registerSSHKeyWithForgejo(userId, sshKey.publicKey);
+      }
+      
+      // 3. Generate Forgejo access token for API operations
+      const accessToken = await this.generateForgejoAccessToken(userId);
+      await this.storeCredential(userId, 'git_token', 'forgejo', {
+        token: accessToken,
+        url: `${process.env.PROTOCOL}://git.${process.env.BASE_DOMAIN}:${process.env.BASE_PORT}`,
+        username: userId
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Forgejo integration failed:', error);
+      return false;
+    }
+  }
+
+  async createForgejoUser(userId) {
+    const forgejoApiUrl = `http://forgejo:3000/api/v1`;
+    const response = await fetch(`${forgejoApiUrl}/admin/users`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${process.env.FORGEJO_ADMIN_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        username: userId,
+        email: `${userId}@xaresaicoder.local`,
+        password: this.generateSecurePassword(),
+        must_change_password: false,
+        send_notify: false,
+        visibility: 'public'
+      })
+    });
+    
+    if (!response.ok && response.status !== 422) { // 422 = user already exists
+      throw new Error(`Failed to create Forgejo user: ${response.statusText}`);
+    }
+    
+    return response.status === 201;
+  }
+
+  async registerSSHKeyWithForgejo(userId, publicKey) {
+    const forgejoApiUrl = `http://forgejo:3000/api/v1`;
+    const response = await fetch(`${forgejoApiUrl}/admin/users/${userId}/keys`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${process.env.FORGEJO_ADMIN_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title: `XaresAICoder-${userId}-${Date.now()}`,
+        key: publicKey,
+        read_only: false
+      })
+    });
+    
+    return response.ok;
+  }
+
+  async generateForgejoAccessToken(userId) {
+    const forgejoApiUrl = `http://forgejo:3000/api/v1`;
+    const response = await fetch(`${forgejoApiUrl}/users/${userId}/tokens`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${process.env.FORGEJO_ADMIN_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: `xaresaicoder-integration-${Date.now()}`,
+        scopes: ['write:repository', 'write:user', 'write:issue']
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to generate Forgejo token: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return data.sha1;
+  }
+}
+```
+
+### Phase 4: Workspace Integration
+
+#### Enhanced Helper Scripts
+```bash
+#!/bin/bash
+# create-repo.sh - Universal repository creation
+REPO_NAME="$1"
+DESCRIPTION="$2"
+PRIVATE="${3:-false}"
+PROVIDER="${4:-forgejo}" # Default to local Forgejo
+
+if [ -z "$REPO_NAME" ]; then
+    echo "Usage: create-repo <name> [description] [private] [provider]"
+    echo "Providers: forgejo (default), github"
+    exit 1
+fi
+
+case $PROVIDER in
+    forgejo)
+        create_forgejo_repo "$REPO_NAME" "$DESCRIPTION" "$PRIVATE"
+        ;;
+    github)
+        create_github_repo "$REPO_NAME" "$DESCRIPTION" "$PRIVATE"
+        ;;
+    *)
+        echo "Unknown provider: $PROVIDER"
+        exit 1
+        ;;
+esac
+
+create_forgejo_repo() {
+    local name="$1"
+    local desc="$2"
+    local private="$3"
+    
+    # Get Git user from config
+    local git_user=$(git config user.name || echo "developer")
+    local git_domain="git.${BASE_DOMAIN:-localhost}"
+    local git_port="${BASE_PORT:-80}"
+    
+    # Construct URLs
+    local ssh_url="git@${git_domain}:${git_user}/${name}.git"
+    local web_url="${PROTOCOL:-http}://${git_domain}:${git_port}/git/${git_user}/${name}"
+    
+    # Forgejo supports push-to-create, so just add remote and push
+    if [ -d ".git" ]; then
+        echo "Adding Forgejo remote..."
+        git remote add origin "$ssh_url" 2>/dev/null || git remote set-url origin "$ssh_url"
+        
+        echo "Pushing to create repository..."
+        git push -u origin main
+        
+        if [ $? -eq 0 ]; then
+            echo "✅ Repository created successfully!"
+            echo "🌐 Web: $web_url"
+            echo "📁 SSH: $ssh_url"
+            
+            # Set description if provided (requires API call)
+            if [ -n "$desc" ] && [ -n "$FORGEJO_TOKEN" ]; then
+                set_repo_description "$git_user" "$name" "$desc"
+            fi
+        else
+            echo "❌ Failed to create repository"
+            exit 1
+        fi
+    else
+        echo "❌ Not in a Git repository. Run 'git init' first."
+        exit 1
+    fi
+}
+
+set_repo_description() {
+    local owner="$1"
+    local repo="$2"
+    local description="$3"
+    
+    if [ -n "$FORGEJO_TOKEN" ]; then
+        curl -X PATCH \
+            -H "Authorization: token $FORGEJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"description\":\"$description\"}" \
+            "${PROTOCOL}://git.${BASE_DOMAIN}:${BASE_PORT}/api/v1/repos/${owner}/${repo}"
+    fi
+}
+
+# Auto-detect environment and call appropriate function
+create_forgejo_repo "$REPO_NAME" "$DESCRIPTION" "$PRIVATE"
+```
+
+#### Enhanced Workspace Injection
+```javascript
+// Enhanced workspace credential injection
+async generateHelperScripts(tempDir, gitTokens) {
+  // ... existing scripts ...
+
+  // Forgejo repository creation script
+  if (gitTokens.forgejo) {
+    const forgejoScript = `#!/bin/bash
+# Forgejo Repository Creation Helper (with CI/CD support)
+REPO_NAME="\$1"
+DESCRIPTION="\$2"
+PRIVATE="\${3:-false}"
+
+if [ -z "\$REPO_NAME" ]; then
+  echo "Usage: create-forgejo-repo <name> [description] [private]"
+  exit 1
+fi
+
+# Environment variables from credential injection
+export FORGEJO_TOKEN="${gitTokens.forgejo.token}"
+export BASE_DOMAIN="${process.env.BASE_DOMAIN}"
+export BASE_PORT="${process.env.BASE_PORT}"
+export PROTOCOL="${process.env.PROTOCOL}"
+
+# Get Git user configuration
+GIT_USER=\$(git config user.name || echo "developer")
+
+# Push-to-create workflow (Forgejo feature)
+echo "Creating repository via push-to-create..."
+git remote add origin git@git.\${BASE_DOMAIN}:\${GIT_USER}/\$REPO_NAME.git
+git push -u origin main
+
+if [ \$? -eq 0 ]; then
+    echo "✅ Repository created: \${PROTOCOL}://git.\${BASE_DOMAIN}:\${BASE_PORT}/git/\${GIT_USER}/\$REPO_NAME"
+    
+    # Set repository description via API
+    if [ -n "\$DESCRIPTION" ]; then
+        curl -X PATCH \\
+            -H "Authorization: token \$FORGEJO_TOKEN" \\
+            -H "Content-Type: application/json" \\
+            -d "{\\"description\\":\\"\$DESCRIPTION\\"}" \\
+            "\${PROTOCOL}://git.\${BASE_DOMAIN}:\${BASE_PORT}/api/v1/repos/\${GIT_USER}/\$REPO_NAME"
+    fi
+    
+    # Create default CI/CD workflow if requested
+    read -p "Create default CI/CD workflow? (y/N): " -n 1 -r
+    echo
+    if [[ \$REPLY =~ ^[Yy]\$ ]]; then
+        create_default_workflow "\$REPO_NAME"
+    fi
+else
+    echo "❌ Failed to create repository"
+fi`;
+    
+    await fs.writeFile(`${tempDir}/create-forgejo-repo.sh`, forgejoScript, { mode: 0o755 });
+  }
+
+  // CI/CD workflow generator
+  const workflowScript = `#!/bin/bash
+# Generate Forgejo Actions workflow
+create_default_workflow() {
+    local repo_name="\$1"
+    local project_type=\$(detect_project_type)
+    
+    mkdir -p .forgejo/workflows
+    
+    case \$project_type in
+        python)
+            create_python_workflow
+            ;;
+        node)
+            create_node_workflow
+            ;;
+        *)
+            create_generic_workflow
+            ;;
+    esac
+    
+    git add .forgejo/workflows/
+    git commit -m "Add CI/CD workflow"
+    git push
+    
+    echo "✅ CI/CD workflow added to repository"
+}
+
+detect_project_type() {
+    if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+        echo "python"
+    elif [ -f "package.json" ]; then
+        echo "node"
+    else
+        echo "generic"
+    fi
+}
+
+create_python_workflow() {
+    cat > .forgejo/workflows/ci.yml << 'EOF'
+name: Python CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python \${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: \${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Test with pytest
+      run: |
+        pytest
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add deployment commands here
+EOF
+}
+
+create_node_workflow() {
+    cat > .forgejo/workflows/ci.yml << 'EOF'
+name: Node.js CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x, 20.x]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js \${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: \${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - run: npm ci
+    - run: npm run build --if-present
+    - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add deployment commands here
+EOF
+}`;
+  
+  await fs.writeFile(`${tempDir}/workflow-generator.sh`, workflowScript, { mode: 0o755 });
+}
+```
+
+### Phase 5: Frontend Integration
+
+#### Git Repository Management Tab
+```html
+<!-- New tab: Git Repositories -->
+<div class="git-tab-content" id="git-tab">
+  <div class="git-header">
+    <h2>Git Repository Management</h2>
+    <div class="git-actions">
+      <button class="btn-primary" onclick="createRepository()">
+        📁 New Repository
+      </button>
+      <button class="btn-secondary" onclick="openGitWeb()">
+        🌐 Browse Git Server
+      </button>
+      <button class="btn-secondary" onclick="syncRepositories()">
+        🔄 Sync Repositories
+      </button>
+    </div>
+  </div>
+
+  <div class="git-stats">
+    <div class="stat-card">
+      <h3>12</h3>
+      <span>Repositories</span>
+    </div>
+    <div class="stat-card">
+      <h3>5</h3>
+      <span>Active Workflows</span>
+    </div>
+    <div class="stat-card">
+      <h3>23</h3>
+      <span>Recent Commits</span>
+    </div>
+  </div>
+
+  <div class="repository-list">
+    <div class="list-header">
+      <h3>Your Repositories</h3>
+      <div class="list-filters">
+        <select id="repo-filter">
+          <option value="all">All repositories</option>
+          <option value="active">Active</option>
+          <option value="archived">Archived</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="repo-grid" id="repositoryGrid">
+      <!-- Repository cards will be populated here -->
+    </div>
+  </div>
+
+  <div class="git-info-panel">
+    <div class="info-section">
+      <h4>🔗 Git Server Access</h4>
+      <div class="access-info">
+        <div class="access-item">
+          <label>Web Interface:</label>
+          <span class="access-url">
+            <a href="/git/" target="_blank" id="git-web-url">git.ci.infra:8000/git/</a>
+            <button class="btn-icon" onclick="copyToClipboard('git-web-url')">📋</button>
+          </span>
+        </div>
+        <div class="access-item">
+          <label>SSH Clone:</label>
+          <span class="access-url">
+            <code id="git-ssh-template">git@git.ci.infra:username/repo.git</code>
+            <button class="btn-icon" onclick="copyToClipboard('git-ssh-template')">📋</button>
+          </span>
+        </div>
+        <div class="access-item">
+          <label>HTTPS Clone:</label>
+          <span class="access-url">
+            <code id="git-https-template">https://git.ci.infra:8000/git/username/repo.git</code>
+            <button class="btn-icon" onclick="copyToClipboard('git-https-template')">📋</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-section">
+      <h4>🚀 CI/CD Features</h4>
+      <div class="features-list">
+        <div class="feature-item">
+          ✅ Forgejo Actions (GitHub Actions compatible)
+        </div>
+        <div class="feature-item">
+          ✅ Automated testing pipelines
+        </div>
+        <div class="feature-item">
+          ✅ Docker container builds
+        </div>
+        <div class="feature-item">
+          ✅ Deployment automation
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Repository Creation Modal -->
+<div class="modal" id="createRepoModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Create New Repository</h3>
+      <button class="modal-close" onclick="closeCreateRepoModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="createRepoForm">
+        <div class="form-group">
+          <label for="repoName">Repository Name *</label>
+          <input type="text" id="repoName" required pattern="[a-zA-Z0-9._-]+" 
+                 placeholder="my-awesome-project">
+          <small>Only letters, numbers, dots, hyphens, and underscores allowed</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="repoDescription">Description</label>
+          <textarea id="repoDescription" placeholder="A brief description of your project"></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="checkbox-option">
+            <input type="checkbox" id="repoPrivate">
+            <span>Private repository</span>
+          </label>
+        </div>
+        
+        <div class="form-group">
+          <label class="checkbox-option">
+            <input type="checkbox" id="repoInitialize" checked>
+            <span>Initialize with README</span>
+          </label>
+        </div>
+        
+        <div class="form-group">
+          <label class="checkbox-option">
+            <input type="checkbox" id="repoCICD">
+            <span>Add CI/CD workflow</span>
+          </label>
+        </div>
+        
+        <div class="form-group">
+          <label for="repoTemplate">Project Template</label>
+          <select id="repoTemplate">
+            <option value="">No template</option>
+            <option value="python-flask">Python Flask</option>
+            <option value="node-express">Node.js Express</option>
+            <option value="react-app">React Application</option>
+            <option value="vue-app">Vue.js Application</option>
+          </select>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeCreateRepoModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitCreateRepo()">Create Repository</button>
+    </div>
+  </div>
+</div>
+```
+
+#### JavaScript Git Management
+```javascript
+// git-manager.js
+class GitManager {
+  constructor() {
+    this.apiBase = '/api/git';
+    this.repositories = [];
+  }
+
+  async loadRepositories() {
+    try {
+      const response = await fetch(`${this.apiBase}/repositories`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        this.repositories = data.repositories;
+        this.renderRepositories();
+      }
+    } catch (error) {
+      console.error('Failed to load repositories:', error);
+    }
+  }
+
+  renderRepositories() {
+    const grid = document.getElementById('repositoryGrid');
+    
+    if (this.repositories.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state">
+          <h3>No repositories found</h3>
+          <p>Create your first repository to get started</p>
+          <button class="btn-primary" onclick="createRepository()">Create Repository</button>
+        </div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = this.repositories.map(repo => `
+      <div class="repo-card">
+        <div class="repo-header">
+          <h4 class="repo-name">
+            <a href="/git/${repo.owner}/${repo.name}" target="_blank">${repo.name}</a>
+          </h4>
+          <div class="repo-badges">
+            ${repo.private ? '<span class="badge private">Private</span>' : '<span class="badge public">Public</span>'}
+            ${repo.has_actions ? '<span class="badge actions">CI/CD</span>' : ''}
+          </div>
+        </div>
+        
+        <div class="repo-description">
+          ${repo.description || 'No description provided'}
+        </div>
+        
+        <div class="repo-stats">
+          <span class="stat">
+            <span class="stat-icon">⭐</span>
+            ${repo.stars_count || 0}
+          </span>
+          <span class="stat">
+            <span class="stat-icon">🍴</span>
+            ${repo.forks_count || 0}
+          </span>
+          <span class="stat">
+            <span class="stat-icon">👁️</span>
+            ${repo.watchers_count || 0}
+          </span>
+          <span class="stat">
+            <span class="stat-icon">📝</span>
+            ${repo.size}KB
+          </span>
+        </div>
+        
+        <div class="repo-meta">
+          <span class="language">${repo.language || 'Unknown'}</span>
+          <span class="updated">Updated ${this.formatDate(repo.updated_at)}</span>
+        </div>
+        
+        <div class="repo-actions">
+          <button class="btn-small btn-secondary" onclick="cloneRepository('${repo.clone_url}')">
+            📥 Clone
+          </button>
+          <button class="btn-small btn-secondary" onclick="openInWorkspace('${repo.html_url}')">
+            🚀 Open
+          </button>
+          <div class="dropdown">
+            <button class="btn-small btn-secondary dropdown-toggle">⚙️</button>
+            <div class="dropdown-menu">
+              <a href="/git/${repo.owner}/${repo.name}/settings" target="_blank">Settings</a>
+              <a href="/git/${repo.owner}/${repo.name}/actions" target="_blank">Actions</a>
+              <a href="/git/${repo.owner}/${repo.name}/issues" target="_blank">Issues</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async createRepository(formData) {
+    try {
+      const response = await fetch(`${this.apiBase}/repositories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        this.showSuccess(`Repository "${formData.name}" created successfully!`);
+        this.loadRepositories();
+        
+        // Optionally open in new workspace
+        if (formData.openInWorkspace) {
+          this.openInWorkspace(data.repository.clone_url);
+        }
+      } else {
+        this.showError(data.message || 'Failed to create repository');
+      }
+    } catch (error) {
+      this.showError('Network error: ' + error.message);
+    }
+  }
+
+  async cloneRepository(cloneUrl) {
+    // Integrate with workspace creation
+    const projectName = cloneUrl.split('/').pop().replace('.git', '');
+    
+    const response = await fetch('/api/projects/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectName,
+        projectType: 'git-clone',
+        gitUrl: cloneUrl
+      })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      window.open(data.project.workspaceUrl, '_blank');
+    }
+  }
+
+  formatDate(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
+    return date.toLocaleDateString();
+  }
+}
+```
+
+## Benefits of Integrated Git Server
+
+### 🏢 **Enterprise Advantages**
+- **Complete Data Sovereignty**: All code stays on-premise
+- **No External Dependencies**: Works in air-gapped environments  
+- **GDPR/Compliance Ready**: Full control over data processing
+- **Cost Effective**: No per-user/per-repository fees
+
+### 🚀 **Developer Experience**
+- **Push-to-Create**: `git push` automatically creates repositories
+- **Seamless Integration**: Git server + workspaces in one platform
+- **CI/CD Out-of-the-Box**: Forgejo Actions for automated pipelines
+- **Unified Authentication**: Single credential management for everything
+
+### 🔧 **Technical Benefits**
+- **GitHub Actions Compatible**: Existing workflows work with minimal changes
+- **Docker Integration**: Native container builds and deployments
+- **API Complete**: Full REST API for automation and integration
+- **Performance**: Local Git operations = faster clone/push/pull
+
+### 🎯 **Workflow Examples**
+
+#### Development Workflow
+```bash
+# 1. Create workspace with XaresAICoder
+# 2. Develop your application
+# 3. Simple push creates repository
+git add .
+git commit -m "Initial commit"
+git push -u origin main  # ✅ Repository auto-created!
+
+# 4. CI/CD pipeline automatically triggered
+# 5. Deploy to staging/production via Actions
+```
+
+#### Team Collaboration
+```bash
+# Team member joins project
+git clone git@git.ci.infra:team/awesome-project.git
+cd awesome-project
+
+# Create feature branch
+git checkout -b feature/new-login
+# ... develop feature ...
+git push -u origin feature/new-login
+
+# Create pull request via web interface
+# CI/CD runs tests automatically
+# Deploy after merge
+```
+
 ## Conclusion
 
 This credential management system transforms XaresAICoder from a development tool into an enterprise-ready platform. Key benefits:
@@ -1135,5 +2091,9 @@ This credential management system transforms XaresAICoder from a development too
 3. **Compliance**: Full audit trails and access controls
 4. **Scalability**: Supports unlimited users and credential types
 5. **Integration**: Seamless integration with existing workflows
+6. **Self-Contained**: Complete on-premise solution with integrated Git server
+7. **CI/CD Ready**: GitHub Actions compatible pipelines out-of-the-box
 
 The system is designed to be incrementally deployable, with each phase building on the previous one. This allows for gradual rollout and testing while maintaining backward compatibility with existing XaresAICoder installations.
+
+**With the integrated Forgejo server, XaresAICoder becomes a complete, self-contained development platform that rivals GitHub Codespaces while maintaining full data sovereignty and enterprise security.**

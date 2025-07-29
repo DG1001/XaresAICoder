@@ -568,11 +568,68 @@ docker system prune -a
 - **Storage**: Local storage only (no cloud persistence)
 - **Deployment**: Development-focused (production deployment in roadmap)
 
+### 🔗 **Integrated Git Server (Future Enhancement)**
+
+XaresAICoder can be extended with an integrated self-hosted Git server for complete on-premise development workflows, eliminating dependencies on external Git providers.
+
+#### **Forgejo vs Gitea Comparison**
+
+| Feature | Forgejo | Gitea |
+|---------|---------|-------|
+| **GitHub Actions Compatibility** | ✅ Full compatibility (Forgejo Actions) | ⚠️ Limited (Gitea Actions) |
+| **CI/CD Pipeline** | ✅ Native GitHub Actions workflow support | ⚠️ Basic workflow support |
+| **Development Velocity** | ✅ Faster feature development | ➖ Slower release cycle |
+| **Enterprise Features** | ✅ More aggressive feature additions | ➖ Conservative approach |
+| **Community Governance** | ✅ Community-driven (nonprofit) | ⚠️ Company-controlled |
+| **Backward Compatibility** | ✅ Full Gitea compatibility | ✅ Native |
+| **Migration Path** | ✅ Direct upgrade from Gitea | N/A |
+
+**Recommended Choice: Forgejo** for XaresAICoder integration due to superior CI/CD capabilities and GitHub Actions compatibility.
+
+#### **Integration Benefits**
+
+- **🏢 Complete On-Premise Solution**: No external dependencies on GitHub/GitLab
+- **🔄 CI/CD Integration**: GitHub Actions compatible workflows with Forgejo Actions
+- **🔐 Centralized Credential Management**: Single authentication for Git and CI/CD
+- **📊 Advanced Analytics**: Repository insights and development metrics
+- **👥 Team Collaboration**: Issue tracking, pull requests, and code review
+- **🚀 Push-to-Deploy**: Automatic deployment pipelines from git push
+
+#### **Planned Architecture**
+
+```yaml
+# Additional services for git integration
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:9
+    environment:
+      - FORGEJO__database__DB_TYPE=sqlite3
+      - FORGEJO__actions__ENABLED=true
+    volumes:
+      - forgejo_data:/data
+    ports:
+      - "3001:3000"
+    
+  forgejo-runner:
+    image: code.forgejo.org/forgejo/runner:9
+    depends_on:
+      - forgejo
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+```
+
+#### **Workflow Integration**
+
+1. **Workspace Creation**: Automatically creates Git repository in Forgejo
+2. **Credential Injection**: Seamlessly injects Git authentication into workspaces
+3. **CI/CD Setup**: Pre-configured GitHub Actions workflows for common project types
+4. **Deployment Pipeline**: One-click deployment from Git repository to production
+
 ### 🚀 **Future Enhancements**
 
 - **Multi-language Support**: Node.js, Java, Go, Rust project templates
 - **User Authentication**: Multi-user support with authentication system
-- **Cloud Integration**: GitHub, GitLab integration for project management
+- **Integrated Git Server**: Forgejo integration for complete on-premise solution
 - **Deployment Pipeline**: One-click deployment to cloud platforms
 - **Database Persistence**: User projects and settings persistence
 - **Team Collaboration**: Shared workspaces and real-time collaboration
