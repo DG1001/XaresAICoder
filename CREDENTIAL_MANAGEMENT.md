@@ -2,32 +2,34 @@
 
 ## Overview
 
-Enterprise-grade credential management system for XaresAICoder that provides centralized, secure storage and distribution of SSH keys, API tokens, and authentication credentials across all user workspaces.
+Enterprise-grade credential management system for XaresAICoder that provides centralized, secure storage and distribution of access tokens and API credentials across all user workspaces. **Emphasizes HTTP-based authentication with access tokens over SSH key management for simplicity and ease of use.**
 
 ## Problem Statement
 
 ### Current Issues
-- **SSH Key Sprawl**: Each `gh auth login` creates new public keys in GitHub
 - **Token Duplication**: API keys entered manually in every workspace
 - **Security Risk**: Credentials stored in plain text in containers
 - **No Centralization**: Each user manages credentials independently
 - **Poor UX**: Repetitive authentication setup for each workspace
+- **Complex SSH Management**: Public key management adds unnecessary complexity
 
 ### Enterprise Requirements
-- **Single SSH Key**: One key pair per user, registered once with Git providers
-- **Token Management**: Central storage for GitHub, Forgejo, GitLab tokens
+- **Access Token Management**: Central storage for GitHub, Forgejo, GitLab access tokens
+- **HTTP Auth Simplicity**: Use tokens + username for HTTP authentication (easier than SSH keys)
 - **AI Integration**: Secure API key distribution for LLM providers
 - **Audit Trail**: Track credential usage and access
 - **Encryption**: All credentials encrypted at rest and in transit
+- **UI-Based Storage**: User-friendly interface for managing access tokens
 
 ## Architecture Overview
 
 ```
 ┌─ Frontend (React) ────────────────────┐
 │  ┌─ Credentials Tab ─────────────────┐ │
-│  │ • SSH Key Management             │ │
-│  │ • Git Provider Tokens           │ │
+│  │ • Git Access Tokens             │ │
+│  │ • Repository Management         │ │
 │  │ • AI Provider API Keys          │ │
+│  │ • HTTP Auth Configuration       │ │
 │  │ • Security Settings             │ │
 │  └─────────────────────────────────────┘ │
 └───────────────────────────────────────────┘
@@ -35,24 +37,26 @@ Enterprise-grade credential management system for XaresAICoder that provides cen
                ▼
 ┌─ Backend API (Node.js/Express) ───────┐
 │  ┌─ Credential Service ──────────────┐ │
-│  │ • Encrypted Storage              │ │
+│  │ • Encrypted Token Storage        │ │
 │  │ • User Isolation                 │ │
 │  │ • Token Validation               │ │
+│  │ • OAuth Integration (future)     │ │
 │  │ • Audit Logging                  │ │
 │  └─────────────────────────────────────┘ │
 │  ┌─ Workspace Injection ────────────┐ │
-│  │ • SSH Key Mounting               │ │
+│  │ • Git Credential Helper Setup    │ │
+│  │ • HTTP Auth Configuration        │ │
 │  │ • Environment Variables          │ │
-│  │ • Helper Script Generation       │ │
+│  │ • Repository Helper Scripts      │ │
 │  └─────────────────────────────────────┘ │
 └───────────────────────────────────────────┘
                │ Docker API
                ▼
 ┌─ Workspace Containers ────────────────┐
-│  ~/.ssh/id_ed25519    (SSH Key)       │
-│  ~/.gitconfig         (Git Config)    │
-│  ~/.env              (API Keys)       │
-│  ~/bin/git-helpers/* (Helper Scripts) │
+│  ~/.git-credentials  (HTTP Auth)      │
+│  ~/.gitconfig        (Git Config)     │
+│  ~/.env             (API Keys)        │
+│  ~/bin/git-helpers/*                  │
 └───────────────────────────────────────────┘
 ```
 
@@ -79,15 +83,19 @@ class CredentialService {
 
 #### Database Schema
 ```sql
--- credentials table
+-- credentials table (prioritizes access tokens over SSH keys)
 CREATE TABLE credentials (
   id UUID PRIMARY KEY,
   user_id VARCHAR(255) NOT NULL,
-  credential_type ENUM('ssh_key', 'git_token', 'ai_token') NOT NULL,
-  provider VARCHAR(100), -- github, forgejo, openai, etc.
+  credential_type ENUM('git_access_token', 'ai_token', 'ssh_key') NOT NULL,
+  provider VARCHAR(100), -- github, forgejo, gitlab, openai, etc.
+  provider_url VARCHAR(500), -- for self-hosted Git servers
+  username VARCHAR(255), -- Git username for HTTP auth
   name VARCHAR(255) NOT NULL,
   encrypted_data TEXT NOT NULL,
   iv VARCHAR(255) NOT NULL, -- AES initialization vector
+  permissions TEXT, -- JSON array of token permissions
+  expires_at TIMESTAMP, -- token expiration (if applicable)
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
   last_used_at TIMESTAMP,
@@ -109,85 +117,242 @@ CREATE TABLE credential_audit (
 
 #### API Endpoints
 ```javascript
-// Credential CRUD
-POST   /api/credentials/ssh-keys
-GET    /api/credentials/ssh-keys
-PUT    /api/credentials/ssh-keys/:id
-DELETE /api/credentials/ssh-keys/:id
+// Git Access Token Management (Primary approach)
+POST   /api/credentials/git-tokens           // Create Git access token
+GET    /api/credentials/git-tokens           // List user's Git tokens
+PUT    /api/credentials/git-tokens/:id       // Update Git token
+DELETE /api/credentials/git-tokens/:id       // Delete Git token
 
-POST   /api/credentials/tokens
-GET    /api/credentials/tokens
-PUT    /api/credentials/tokens/:id  
-DELETE /api/credentials/tokens/:id
+// AI Token Management
+POST   /api/credentials/ai-tokens            // Store AI provider tokens
+GET    /api/credentials/ai-tokens            // List AI tokens
+PUT    /api/credentials/ai-tokens/:id        // Update AI token
+DELETE /api/credentials/ai-tokens/:id        // Delete AI token
 
-// Credential testing
-POST   /api/credentials/test/github
-POST   /api/credentials/test/forgejo
-POST   /api/credentials/test/openai
+// Credential Testing & Validation
+POST   /api/credentials/test/github          // Test GitHub token
+POST   /api/credentials/test/forgejo         // Test Forgejo token
+POST   /api/credentials/test/gitlab          // Test GitLab token
+POST   /api/credentials/test/openai          // Test OpenAI key
 
-// Workspace injection
+// Repository Management (using access tokens)
+POST   /api/repositories/create              // Create repo using stored tokens
+GET    /api/repositories                     // List accessible repositories
+POST   /api/repositories/clone               // Clone repo to workspace
+
+// Workspace Injection
 GET    /api/credentials/workspace/:workspaceId
 POST   /api/credentials/inject/:workspaceId
+
+// Future: OAuth Integration
+POST   /api/credentials/oauth/github/start   // Start GitHub OAuth flow
+GET    /api/credentials/oauth/github/callback // Handle OAuth callback
 ```
+
+## Access Token Authentication Strategy
+
+### Why Access Tokens Over SSH Keys?
+
+#### ✅ **Advantages of Access Tokens**
+- **🚀 **Simplicity**: No key pair generation or public key management
+- **🔐 **Granular Permissions**: Scope tokens to specific repositories and operations
+- **⏰ **Expiration Control**: Built-in token expiration for enhanced security
+- **🔄 **Easy Rotation**: Simple token regeneration without Git configuration changes
+- **🌐 **Universal Support**: Works with all Git providers (GitHub, GitLab, Forgejo)
+- **📱 **User-Friendly**: Familiar token-based approach like API keys
+- **🛠️ **HTTP/HTTPS**: Uses standard web protocols (no SSH complexity)
+
+#### ❌ **SSH Key Drawbacks**
+- **Complex Setup**: Key generation, public key registration, SSH agent management
+- **Binary Permissions**: All-or-nothing access (no granular control)
+- **No Expiration**: Keys remain valid indefinitely unless manually revoked
+- **Provider Lock-in**: Different key formats and configurations per provider
+- **Poor UX**: Technical complexity barriers for non-technical users
+
+### Implementation Approach
+
+#### Primary: HTTP Authentication with Access Tokens
+```bash
+# Git operations use HTTPS with embedded credentials
+git clone https://username:token@github.com/user/repo.git
+git remote add origin https://username:token@git.company.com/user/repo.git
+
+# Credentials stored securely in Git credential helper
+git config credential.helper 'store --file=~/.git-credentials'
+```
+
+#### Secondary: SSH Keys (Optional)
+```bash
+# Available for users who prefer SSH (not the default)
+git clone git@github.com:user/repo.git
+```
+
+### Token Creation Guide
+
+#### GitHub Access Token
+1. **Permissions Required**: `repo`, `user`, `delete_repo` (for Forgejo creation support)
+2. **Scope**: Fine-grained or classic personal access token
+3. **Storage**: Encrypted in XaresAICoder credential store
+4. **Usage**: HTTP authentication for all Git operations
+
+#### Forgejo Access Token  
+1. **Permissions Required**: `write:repository`, `write:user`, `write:issue`
+2. **Creation Support**: Forgejo supports repo creation via push (no API needed)
+3. **Self-Hosted**: Full URL configuration (https://git.company.com)
+4. **Integration**: Direct integration with XaresAICoder workspaces
+
+### Future Enhancement: OAuth Integration
+
+#### Automatic Token Retrieval (Phase 3+)
+```javascript
+// OAuth flow for automatic token management
+const oauthFlow = {
+  github: {
+    authUrl: 'https://github.com/login/oauth/authorize',
+    scopes: ['repo', 'user', 'delete_repo'],
+    clientId: process.env.GITHUB_CLIENT_ID
+  },
+  gitlab: {
+    authUrl: 'https://gitlab.com/oauth/authorize', 
+    scopes: ['api', 'read_user', 'write_repository'],
+    clientId: process.env.GITLAB_CLIENT_ID
+  }
+};
+
+// User clicks "Connect GitHub" -> OAuth flow -> Token stored automatically
+```
+
+This eliminates manual token entry while maintaining the HTTP authentication approach.
 
 ### Phase 2: Frontend Interface (Week 2-3)
 
 #### Credentials Tab Design
 ```html
-<!-- Main Credentials Tab -->
+<!-- Main Credentials Tab (Access Token Focus) -->
 <div class="credentials-container">
-  <!-- SSH Keys Section -->
-  <div class="credential-section">
-    <h3>SSH Keys</h3>
-    <div class="ssh-key-manager">
-      <div class="key-display">
-        <label>Default SSH Key (ED25519)</label>
-        <textarea readonly>ssh-ed25519 AAAA...user@xaresaicoder</textarea>
-        <div class="key-actions">
-          <button class="btn-primary" onclick="generateSSHKey()">Generate New</button>
-          <button class="btn-secondary" onclick="exportSSHKey()">Export Public</button>
-          <button class="btn-secondary" onclick="copyToClipboard()">Copy</button>
-        </div>
-      </div>
-      <div class="key-providers">
-        <h4>Registered with:</h4>
-        <div class="provider-status">
-          <span class="provider github registered">GitHub ✓</span>
-          <span class="provider forgejo pending">Forgejo ⏳</span>
-          <span class="provider gitlab error">GitLab ✗</span>
-        </div>
+  <!-- Quick Setup Banner -->
+  <div class="setup-banner">
+    <div class="banner-content">
+      <h3>🚀 Quick Setup: Git Access Tokens</h3>
+      <p>Manage your Git repositories with secure access tokens. No SSH key complexity required!</p>
+      <div class="setup-actions">
+        <button class="btn-primary" onclick="addGitToken('github')">+ Add GitHub Token</button>
+        <button class="btn-primary" onclick="addGitToken('forgejo')">+ Add Forgejo Token</button>
+        <button class="btn-secondary" onclick="showSetupGuide()">📖 Setup Guide</button>
       </div>
     </div>
   </div>
 
-  <!-- Git Providers Section -->
+  <!-- Git Access Tokens Section (Primary) -->
   <div class="credential-section">
-    <h3>Git Providers</h3>
+    <h3>🔑 Git Access Tokens</h3>
+    <div class="section-description">
+      <p>Store your Git provider access tokens for seamless repository access. These tokens enable repository creation, cloning, and push/pull operations via HTTPS.</p>
+    </div>
+    
     <div class="token-list">
+      <!-- GitHub Token -->
       <div class="token-item">
-        <img src="/icons/github.svg" alt="GitHub">
-        <div class="token-info">
-          <label>GitHub Personal Access Token</label>
-          <input type="password" placeholder="ghp_xxxxxxxxxxxx" id="github-token">
-          <small>Permissions: repo, user, delete_repo</small>
+        <div class="token-header">
+          <img src="/icons/github.svg" alt="GitHub" class="provider-icon">
+          <div class="token-title">
+            <h4>GitHub Personal Access Token</h4>
+            <span class="token-status" id="github-status">Not configured</span>
+          </div>
+          <div class="token-actions-header">
+            <button class="btn-link" onclick="showTokenHelp('github')">❓ How to create</button>
+          </div>
         </div>
-        <div class="token-actions">
-          <button class="btn-success" onclick="testToken('github')">Test</button>
-          <button class="btn-primary" onclick="saveToken('github')">Save</button>
+        
+        <div class="token-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="github-username">GitHub Username</label>
+              <input type="text" id="github-username" placeholder="your-username" required>
+            </div>
+            <div class="form-group">
+              <label for="github-token">Access Token</label>
+              <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" required>
+              <small class="form-hint">Required permissions: repo, user, delete_repo</small>
+            </div>
+          </div>
+          
+          <div class="token-actions">
+            <button class="btn-success" onclick="testGitToken('github')">🧪 Test Connection</button>
+            <button class="btn-primary" onclick="saveGitToken('github')">💾 Save Token</button>
+            <button class="btn-secondary" onclick="clearGitToken('github')">🗑️ Remove</button>
+          </div>
+          
+          <div class="token-capabilities" id="github-capabilities" style="display: none;">
+            <h5>Available Operations:</h5>
+            <ul class="capability-list">
+              <li>✅ Clone repositories via HTTPS</li>
+              <li>✅ Create new repositories</li>
+              <li>✅ Push/pull to existing repositories</li>
+              <li>✅ Access private repositories</li>
+            </ul>
+          </div>
         </div>
       </div>
       
+      <!-- Forgejo Token -->
       <div class="token-item">
-        <img src="/icons/forgejo.svg" alt="Forgejo">
-        <div class="token-info">
-          <label>Forgejo Access Token</label>
-          <input type="password" placeholder="xxxxxxxxxxxxxxxx" id="forgejo-token">
-          <input type="url" placeholder="https://git.company.com" id="forgejo-url">
+        <div class="token-header">
+          <img src="/icons/forgejo.svg" alt="Forgejo" class="provider-icon">
+          <div class="token-title">
+            <h4>Forgejo Access Token</h4>
+            <span class="token-status" id="forgejo-status">Not configured</span>
+          </div>
+          <div class="token-actions-header">
+            <button class="btn-link" onclick="showTokenHelp('forgejo')">❓ How to create</button>
+          </div>
         </div>
-        <div class="token-actions">
-          <button class="btn-success" onclick="testToken('forgejo')">Test</button>
-          <button class="btn-primary" onclick="saveToken('forgejo')">Save</button>
+        
+        <div class="token-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="forgejo-url">Forgejo Server URL</label>
+              <input type="url" id="forgejo-url" placeholder="https://git.company.com" required>
+            </div>
+            <div class="form-group">
+              <label for="forgejo-username">Username</label>
+              <input type="text" id="forgejo-username" placeholder="your-username" required>
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group full-width">
+              <label for="forgejo-token">Access Token</label>
+              <input type="password" id="forgejo-token" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" required>
+              <small class="form-hint">Required permissions: write:repository, write:user, write:issue</small>
+            </div>
+          </div>
+          
+          <div class="token-actions">
+            <button class="btn-success" onclick="testGitToken('forgejo')">🧪 Test Connection</button>
+            <button class="btn-primary" onclick="saveGitToken('forgejo')">💾 Save Token</button>
+            <button class="btn-secondary" onclick="clearGitToken('forgejo')">🗑️ Remove</button>
+          </div>
+          
+          <div class="token-capabilities" id="forgejo-capabilities" style="display: none;">
+            <h5>Available Operations:</h5>
+            <ul class="capability-list">
+              <li>✅ Clone repositories via HTTPS</li>
+              <li>✅ Push-to-create repositories (no API needed!)</li>
+              <li>✅ Push/pull to existing repositories</li>
+              <li>✅ Access private repositories</li>
+              <li>✅ Integrated CI/CD with Forgejo Actions</li>
+            </ul>
+          </div>
         </div>
+      </div>
+      
+      <!-- Add More Providers -->
+      <div class="add-provider-section">
+        <button class="btn-outline add-provider-btn" onclick="showAddProviderModal()">
+          ➕ Add Another Git Provider
+        </button>
+        <small>Support for GitLab, Bitbucket, and custom Git servers</small>
       </div>
     </div>
   </div>
