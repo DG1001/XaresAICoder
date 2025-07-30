@@ -4,8 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 class DockerService {
   constructor() {
     this.docker = new Docker();
-    // Docker Compose prefixes network names with project name
-    this.network = process.env.DOCKER_NETWORK || 'xaresaicoder_xares-aicoder-network';
+    // External persistent network name (no Docker Compose prefix)
+    this.network = process.env.DOCKER_NETWORK || 'xares-aicoder-network';
     this.activeContainers = new Map();
     // Domain and port configuration
     this.baseDomain = process.env.BASE_DOMAIN || 'localhost';
@@ -282,6 +282,17 @@ class DockerService {
         return { success: true, message: 'Workspace is already running' };
       }
 
+      // Check if container is orphaned (not connected to network)
+      const isOrphaned = await this.isContainerOrphaned(container);
+      if (isOrphaned) {
+        console.log(`Container ${containerName} is orphaned, attempting network recovery...`);
+        const recoveryResult = await this.recoverOrphanedContainer(container, containerName);
+        if (!recoveryResult.success) {
+          throw new Error(`Network recovery failed: ${recoveryResult.error}`);
+        }
+        console.log(`Network recovery successful for ${containerName}`);
+      }
+
       await container.start();
       
       // Update our in-memory cache
@@ -383,6 +394,120 @@ class DockerService {
     
     // Only clean up project metadata for containers that no longer exist
     // This is safe and helps keep the project list accurate
+  }
+
+  // Network validation and recovery methods
+
+  async ensureNetworkExists() {
+    try {
+      const network = this.docker.getNetwork(this.network);
+      await network.inspect();
+      return true;
+    } catch (error) {
+      if (error.statusCode === 404) {
+        console.error(`Network '${this.network}' does not exist!`);
+        console.error('Please run: ./setup-network.sh to create the required network');
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async isContainerOrphaned(container) {
+    try {
+      const containerInfo = await container.inspect();
+      const networks = containerInfo.NetworkSettings.Networks;
+      
+      // Check if container is connected to our required network
+      if (!networks || !networks[this.network]) {
+        return true; // Orphaned - not connected to required network
+      }
+      
+      // Check if the network actually exists
+      const networkExists = await this.ensureNetworkExists();
+      if (!networkExists) {
+        return true; // Network doesn't exist, container is orphaned
+      }
+      
+      return false; // Container is properly connected
+    } catch (error) {
+      console.error('Error checking container orphan status:', error);
+      return true; // Assume orphaned on error to be safe
+    }
+  }
+
+  async recoverOrphanedContainer(container, containerName) {
+    try {
+      console.log(`Attempting to recover orphaned container: ${containerName}`);
+      
+      // Ensure the network exists
+      const networkExists = await this.ensureNetworkExists();
+      if (!networkExists) {
+        return { 
+          success: false, 
+          error: `Required network '${this.network}' does not exist. Run ./setup-network.sh first.` 
+        };
+      }
+      
+      // Get the network object
+      const network = this.docker.getNetwork(this.network);
+      
+      // Connect container to network with alias
+      await network.connect({
+        Container: containerName,
+        EndpointConfig: {
+          Aliases: [containerName]
+        }
+      });
+      
+      console.log(`Successfully connected ${containerName} to network ${this.network}`);
+      return { success: true, message: 'Container recovered successfully' };
+      
+    } catch (error) {
+      console.error(`Failed to recover container ${containerName}:`, error);
+      
+      // If connection failed, check if it's because it's already connected
+      if (error.message && error.message.includes('already exists')) {
+        console.log(`Container ${containerName} is already connected to network`);
+        return { success: true, message: 'Container was already connected' };
+      }
+      
+      return { 
+        success: false, 
+        error: `Network recovery failed: ${error.message}` 
+      };
+    }
+  }
+
+  async validateNetworkHealth() {
+    try {
+      const networkExists = await this.ensureNetworkExists();
+      if (!networkExists) {
+        return {
+          healthy: false,
+          error: `Network '${this.network}' does not exist`,
+          recommendation: 'Run ./setup-network.sh to create the required network'
+        };
+      }
+      
+      // Get network details
+      const network = this.docker.getNetwork(this.network);
+      const networkInfo = await network.inspect();
+      
+      return {
+        healthy: true,
+        networkId: networkInfo.Id,
+        subnet: networkInfo.IPAM.Config?.[0]?.Subnet || 'Unknown',
+        connectedContainers: Object.keys(networkInfo.Containers || {}).length,
+        details: networkInfo
+      };
+    } catch (error) {
+      return {
+        healthy: false,
+        error: error.message,
+        recommendation: 'Check Docker daemon and network configuration'
+      };
+    }
   }
 }
 

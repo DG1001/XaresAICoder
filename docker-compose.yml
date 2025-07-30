@@ -2,7 +2,7 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "${BASE_PORT:-80}:${BASE_PORT:-80}"
+      - "${HOST_PORT:-${BASE_PORT:-80}}:${BASE_PORT:-80}"
     volumes:
       - ./nginx.conf.template:/etc/nginx/templates/default.conf.template
       - ./frontend:/usr/share/nginx/html/frontend
@@ -19,7 +19,7 @@ services:
     build: ./server
     environment:
       - SERVER_PORT=3000
-      - DOCKER_NETWORK=xaresaicoder_xares-aicoder-network
+      - DOCKER_NETWORK=${DOCKER_NETWORK:-xares-aicoder-network}
       - WORKSPACE_TIMEOUT_MINUTES=${WORKSPACE_TIMEOUT_MINUTES:-120}
       - MAX_WORKSPACES_PER_USER=${MAX_WORKSPACES_PER_USER:-5}
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
@@ -34,7 +34,7 @@ services:
 
 networks:
   xares-aicoder-network:
-    driver: bridge
+    external: true
 
 volumes:
   workspace_data:

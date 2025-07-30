@@ -53,14 +53,21 @@ Pre-configured workspace with recommended AI coding assistants:
    cd XaresAICoder
    ```
 
-2. **Deploy with automated script (Recommended)**:
+2. **Set up the Docker network** (Required):
+   ```bash
+   ./setup-network.sh
+   ```
+   
+   This creates a persistent Docker network that survives restarts and allows workspace containers to be restarted successfully.
+
+3. **Deploy with automated script (Recommended)**:
    ```bash
    ./deploy.sh
    ```
    
    The script will guide you through environment setup and handle all build steps.
 
-3. **Or deploy manually**:
+4. **Or deploy manually**:
    ```bash
    # Build the code-server image
    cd code-server && docker build -t xares-aicoder-codeserver:latest . && cd ..
@@ -68,13 +75,12 @@ Pre-configured workspace with recommended AI coding assistants:
    # Create environment file
    cp .env.example .env
    # Edit .env with your preferences
-   ```
-
+   
    # Deploy the application
    docker-compose up --build
    ```
 
-4. **Access the platform**:
+5. **Access the platform**:
    Open http://localhost in your browser (or your configured domain)
 
 ### First Project
