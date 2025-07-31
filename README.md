@@ -43,7 +43,7 @@ Pre-configured workspace with recommended AI coding assistants:
 
 - **Docker** (with Docker Compose v1 or v2)
 - **4GB+ RAM** available for containers  
-- **Modern web browser**
+- **Modern web browser** (Chrome/Chromium recommended, Firefox may have minor workspace creation issues on some Linux environments)
 
 ### 🚀 One-Command Installation
 
