@@ -41,11 +41,30 @@ Pre-configured workspace with recommended AI coding assistants:
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- 4GB+ RAM available for containers
-- Modern web browser
+- **Docker** (with Docker Compose v1 or v2)
+- **4GB+ RAM** available for containers  
+- **Modern web browser**
 
-### Installation
+### 🚀 One-Command Installation
+
+```bash
+# Clone and deploy in one go
+git clone <repository-url>
+cd XaresAICoder
+./deploy.sh
+```
+
+**That's it!** The deploy script automatically:
+- ✅ Detects Docker Compose version (v1 or v2)
+- ✅ Sets up persistent Docker network  
+- ✅ Builds custom VS Code image with AI tools
+- ✅ Configures environment settings
+- ✅ Deploys and health-checks the application
+
+### Manual Installation (Advanced)
+
+<details>
+<summary>Click to expand manual setup steps</summary>
 
 1. **Clone the repository**:
    ```bash
@@ -53,21 +72,12 @@ Pre-configured workspace with recommended AI coding assistants:
    cd XaresAICoder
    ```
 
-2. **Set up the Docker network** (Required):
+2. **Set up the Docker network**:
    ```bash
    ./setup-network.sh
    ```
-   
-   This creates a persistent Docker network that survives restarts and allows workspace containers to be restarted successfully.
 
-3. **Deploy with automated script (Recommended)**:
-   ```bash
-   ./deploy.sh
-   ```
-   
-   The script will guide you through environment setup and handle all build steps.
-
-4. **Or deploy manually**:
+3. **Build and configure**:
    ```bash
    # Build the code-server image
    cd code-server && docker build -t xares-aicoder-codeserver:latest . && cd ..
@@ -76,12 +86,61 @@ Pre-configured workspace with recommended AI coding assistants:
    cp .env.example .env
    # Edit .env with your preferences
    
-   # Deploy the application
-   docker-compose up --build
+   # Deploy the application  
+   docker compose up --build -d
+   # OR for legacy Docker Compose v1:
+   # docker-compose up --build -d
    ```
 
-5. **Access the platform**:
-   Open http://localhost in your browser (or your configured domain)
+</details>
+
+### 🌐 Access Your Platform
+
+After deployment completes, open your browser to:
+- **Default**: http://localhost
+- **Custom domain**: Your configured domain from the deploy script
+
+### ⚙️ Deployment Options
+
+The deploy script supports various options for different scenarios:
+
+```bash
+# Full deployment (recommended for first-time setup)
+./deploy.sh
+
+# Skip image rebuild (faster for updates)  
+./deploy.sh --skip-build
+
+# Skip environment setup (use existing .env)
+./deploy.sh --skip-env
+
+# Skip network setup (use existing network)
+./deploy.sh --skip-network
+
+# Only build the VS Code image
+./deploy.sh --build-only
+
+# See all options
+./deploy.sh --help
+```
+
+### 🔧 Management Commands
+
+After deployment, use these commands to manage your platform:
+
+```bash
+# View logs
+docker compose logs        # or docker-compose logs
+
+# Stop services  
+docker compose down        # or docker-compose down
+
+# Restart services
+docker compose restart     # or docker-compose restart
+
+# Update deployment
+git pull && ./deploy.sh --skip-network
+```
 
 ### First Project
 
@@ -147,13 +206,17 @@ cd ..
 
 ```bash
 # Start all services
-docker-compose up --build
+docker compose up --build
+# OR for Docker Compose v1:
+# docker-compose up --build
 
 # View logs
-docker-compose logs -f server
+docker compose logs -f server
+# OR: docker-compose logs -f server
 
 # Stop services
-docker-compose down
+docker compose down
+# OR: docker-compose down
 ```
 
 ### API Endpoints
@@ -207,6 +270,56 @@ Each workspace container:
 - **Memory**: 4GB
 - **Disk**: 10GB
 - **Network**: Isolated bridge network
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### "Network overlaps with other one" during setup
+```bash
+# Fix: Network subnet conflict
+# Edit setup-network.sh and change the subnet
+# From: NETWORK_SUBNET="172.19.0.0/16" 
+# To:   NETWORK_SUBNET="172.21.0.0/16"  # or another free subnet
+```
+
+#### "502 Bad Gateway" when accessing workspace
+```bash
+# Check if containers are on the same network
+docker network inspect xares-aicoder-network
+
+# Restart services to fix network issues
+docker compose down && docker compose up -d
+```
+
+#### "Cannot restart workspace after coder restart"
+```bash
+# This should be fixed automatically with the new persistent network
+# If issues persist, check network documentation:
+cat docs/NETWORK_TROUBLESHOOTING.md
+```
+
+#### Docker Compose not found
+```bash
+# Install Docker Compose v2 (recommended)
+# Already included with Docker Desktop
+
+# Or install Docker Compose v1 (legacy)
+sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+```
+
+### Getting Help
+
+1. **Check logs**: `docker compose logs` or `docker-compose logs`
+2. **Network issues**: See `docs/NETWORK_TROUBLESHOOTING.md`
+3. **Health check**: Visit `http://localhost/api/health`
+4. **Reset everything**: 
+   ```bash
+   docker compose down
+   docker system prune -f
+   ./deploy.sh
+   ```
 
 ## AI Development Tools
 

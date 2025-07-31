@@ -34,6 +34,20 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to detect and set Docker Compose command
+setup_docker_compose_cmd() {
+    if command_exists docker && docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+        print_status "Using Docker Compose v2 (docker compose)"
+    elif command_exists docker-compose; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+        print_status "Using Docker Compose v1 (docker-compose)"
+    else
+        return 1
+    fi
+    return 0
+}
+
 # Check prerequisites
 check_prerequisites() {
     print_status "Checking prerequisites..."
@@ -43,8 +57,12 @@ check_prerequisites() {
         exit 1
     fi
     
-    if ! command_exists docker-compose; then
-        print_error "Docker Compose is not installed or not in PATH"
+    # Setup Docker Compose command (v1 or v2)
+    if ! setup_docker_compose_cmd; then
+        print_error "Docker Compose is not available"
+        print_error "Please install either:"
+        print_error "  - Docker Compose v2 (included with Docker Desktop)"
+        print_error "  - Docker Compose v1 (standalone docker-compose)"
         exit 1
     fi
     
@@ -153,17 +171,34 @@ setup_environment() {
     fi
 }
 
+# Function to setup network
+setup_network() {
+    print_status "Setting up Docker network..."
+    
+    if [ -f "./setup-network.sh" ]; then
+        if ./setup-network.sh; then
+            print_success "Docker network setup completed"
+        else
+            print_error "Failed to setup Docker network"
+            exit 1
+        fi
+    else
+        print_error "setup-network.sh not found"
+        exit 1
+    fi
+}
+
 # Function to deploy application
 deploy_application() {
     print_status "Deploying XaresAICoder application..."
     
     # Stop existing containers
     print_status "Stopping existing containers..."
-    docker-compose down --remove-orphans
+    $DOCKER_COMPOSE_CMD down --remove-orphans
     
     # Build and start services
     print_status "Building and starting services..."
-    if docker-compose up --build -d; then
+    if $DOCKER_COMPOSE_CMD up --build -d; then
         print_success "Services started successfully"
     else
         print_error "Failed to start services"
@@ -199,7 +234,7 @@ deploy_application() {
         else
             if [ $i -eq 10 ]; then
                 print_error "Health check failed after 10 attempts"
-                print_status "Check the logs with: docker-compose logs"
+                print_status "Check the logs with: $DOCKER_COMPOSE_CMD logs"
                 exit 1
             fi
             print_status "Health check attempt $i/10 failed, retrying in 3 seconds..."
@@ -239,9 +274,9 @@ show_deployment_info() {
     echo "     ${PROTOCOL}://[workspace-id].${BASE_DOMAIN}$([ "$BASE_PORT" != "80" ] && [ "$BASE_PORT" != "443" ] && echo ":${BASE_PORT}")"
     echo
     echo "  🐳 Management Commands:"
-    echo "     View logs:    docker-compose logs"
-    echo "     Stop:         docker-compose down"
-    echo "     Restart:      docker-compose restart"
+    echo "     View logs:    $DOCKER_COMPOSE_CMD logs"
+    echo "     Stop:         $DOCKER_COMPOSE_CMD down"
+    echo "     Restart:      $DOCKER_COMPOSE_CMD restart"
     echo "=============================================="
     echo
 }
@@ -253,6 +288,7 @@ show_usage() {
     echo "Options:"
     echo "  --skip-build          Skip building the code-server image"
     echo "  --skip-env            Skip environment setup (use existing .env)"
+    echo "  --skip-network        Skip Docker network setup (use existing network)"
     echo "  --build-only          Only build the code-server image, don't deploy"
     echo "  --help               Show this help message"
     echo
@@ -267,6 +303,7 @@ show_usage() {
 main() {
     local skip_build=false
     local skip_env=false
+    local skip_network=false
     local build_only=false
     
     # Parse command line arguments
@@ -278,6 +315,10 @@ main() {
                 ;;
             --skip-env)
                 skip_env=true
+                shift
+                ;;
+            --skip-network)
+                skip_network=true
                 shift
                 ;;
             --build-only)
@@ -321,6 +362,13 @@ main() {
         setup_environment
     else
         print_status "Skipping environment setup"
+    fi
+    
+    # Setup Docker network (required for workspace persistence)
+    if [ "$skip_network" = false ]; then
+        setup_network
+    else
+        print_status "Skipping Docker network setup"
     fi
     
     # Deploy application
