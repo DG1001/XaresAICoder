@@ -20,6 +20,10 @@ cat > /home/coder/.local/share/code-server/User/settings.json << 'SETTINGS_EOF'
         "8000": {
             "label": "Django Application",
             "onAutoForward": "openBrowserOnce"
+        },
+        "8080": {
+            "label": "Spring Boot Application",
+            "onAutoForward": "openBrowserOnce"
         }
     },
     "workbench.startupEditor": "readme",
@@ -60,7 +64,8 @@ echo "3. Start coding with AI assistance!"
 echo ""
 echo "📁 Project Templates:"
 echo "- Flask app: setup_flask_project"
-echo "- React app: setup_node_react_project" 
+echo "- React app: setup_node_react_project"
+echo "- Spring Boot app: setup_java_spring_project"
 echo "- Or create your own project structure"
 echo ""
 echo "💡 Pro Tips:"
@@ -870,6 +875,670 @@ GITIGNORE_EOF
     echo "🌐 VS Code will automatically detect port 3000 and provide access URLs!"
 }
 
+# Java Spring Boot project setup function
+setup_java_spring_project() {
+    echo "Setting up Java Spring Boot project structure..."
+    cd /workspace
+    
+    # Check if Java is installed, if not install it
+    if ! command -v java &> /dev/null; then
+        echo "Installing Java 17..."
+        sudo apt-get update
+        sudo apt-get install -y openjdk-17-jdk maven
+    fi
+    
+    # Check if Maven is installed
+    if ! command -v mvn &> /dev/null; then
+        echo "Installing Maven..."
+        sudo apt-get install -y maven
+    fi
+    
+    # Create Maven pom.xml
+    cat > pom.xml << 'POM_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" 
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.1.5</version>
+        <relativePath/>
+    </parent>
+    
+    <groupId>com.xaresaicoder</groupId>
+    <artifactId>spring-boot-app</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>XaresAICoder Spring Boot App</name>
+    <description>Spring Boot application created with XaresAICoder</description>
+    
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+    
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+POM_EOF
+
+    # Create Maven wrapper
+    cat > mvnw << 'MVNW_EOF'
+#!/bin/sh
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Maven Wrapper script
+
+MAVEN_PROJECTBASEDIR=${MAVEN_BASEDIR:-"$BASE_DIR"}
+
+# OS specific support.  $var _must_ be set to either true or false.
+cygwin=false;
+darwin=false;
+mingw=false
+case "`uname`" in
+  CYGWIN*) cygwin=true ;;
+  MINGW*) mingw=true;;
+  Darwin*) darwin=true
+    # Use /usr/libexec/java_home if available, otherwise fall back to JAVA_HOME
+    if [ -z "$JAVA_HOME" ]; then
+      if [ -x "/usr/libexec/java_home" ]; then
+        export JAVA_HOME="`/usr/libexec/java_home`"
+      else
+        export JAVA_HOME="/Library/Java/Home"
+      fi
+    fi
+    ;;
+esac
+
+exec mvn "$@"
+MVNW_EOF
+    chmod +x mvnw
+
+    # Create Maven wrapper for Windows (optional)
+    cat > mvnw.cmd << 'MVNW_CMD_EOF'
+@REM Licensed to the Apache Software Foundation (ASF) under one
+@REM or more contributor license agreements.  See the NOTICE file
+@REM distributed with this work for additional information
+@REM regarding copyright ownership.  The ASF licenses this file
+@REM to you under the Apache License, Version 2.0 (the
+@REM "License"); you may not use this file except in compliance
+@REM with the License.  You may obtain a copy of the License at
+@REM
+@REM    https://www.apache.org/licenses/LICENSE-2.0
+@REM
+@REM Unless required by applicable law or agreed to in writing,
+@REM software distributed under the License is distributed on an
+@REM "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+@REM KIND, either express or implied.  See the License for the
+@REM specific language governing permissions and limitations
+@REM under the License.
+
+mvn %*
+MVNW_CMD_EOF
+
+    # Create source directory structure
+    mkdir -p src/main/java/com/xaresaicoder/springbootapp
+    mkdir -p src/main/resources
+    mkdir -p src/test/java/com/xaresaicoder/springbootapp
+
+    # Create main application class
+    cat > src/main/java/com/xaresaicoder/springbootapp/SpringBootAppApplication.java << 'MAIN_EOF'
+package com.xaresaicoder.springbootapp;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class SpringBootAppApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBootAppApplication.class, args);
+    }
+
+}
+MAIN_EOF
+
+    # Create a welcome controller
+    cat > src/main/java/com/xaresaicoder/springbootapp/controller/WelcomeController.java << 'CONTROLLER_EOF'
+package com.xaresaicoder.springbootapp.controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.HashMap;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/")
+public class WelcomeController {
+
+    @GetMapping
+    public String welcome() {
+        return """
+                <html>
+                <head>
+                    <title>XaresAICoder Spring Boot App</title>
+                    <style>
+                        body { 
+                            font-family: 'Segoe UI', Arial, sans-serif; 
+                            max-width: 800px; 
+                            margin: 50px auto; 
+                            padding: 20px; 
+                            background: #f5f5f5; 
+                        }
+                        .container { 
+                            background: white; 
+                            padding: 40px; 
+                            border-radius: 10px; 
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+                        }
+                        h1 { color: #2d5aa0; margin-bottom: 20px; }
+                        h2 { color: #5a7ab0; margin-top: 30px; }
+                        .next-steps { background: #e8f4fd; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                        ul { line-height: 1.8; }
+                        code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+                        .status { color: #28a745; font-weight: bold; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>🎉 Welcome to XaresAICoder!</h1>
+                        <p class="status">Your Spring Boot application is running successfully.</p>
+                        
+                        <div class="next-steps">
+                            <h2>Next steps:</h2>
+                            <ul>
+                                <li>Edit <code>src/main/java/com/xaresaicoder/springbootapp/</code> to build your application</li>
+                                <li>Check the <a href="/api/status">API Status</a> endpoint</li>
+                                <li>Use the terminal: <code>mvn spring-boot:run</code> to restart the app</li>
+                                <li>Use AI tools for development assistance</li>
+                            </ul>
+                        </div>
+                        
+                        <h2>Tech Stack</h2>
+                        <ul>
+                            <li><strong>Java 17</strong> - Modern LTS Java version</li>
+                            <li><strong>Spring Boot 3.1</strong> - Latest Spring Boot framework</li>
+                            <li><strong>Spring Web</strong> - RESTful web services</li>
+                            <li><strong>Spring Data JPA</strong> - Database integration</li>
+                            <li><strong>H2 Database</strong> - In-memory database for development</li>
+                            <li><strong>Maven</strong> - Build and dependency management</li>
+                        </ul>
+                    </div>
+                </body>
+                </html>
+                """;
+    }
+
+    @GetMapping("/api/status")
+    public Map<String, Object> apiStatus() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("status", "running");
+        status.put("message", "Spring Boot API is working!");
+        status.put("framework", "Spring Boot");
+        status.put("javaVersion", System.getProperty("java.version"));
+        status.put("springBootVersion", "3.1.5");
+        return status;
+    }
+}
+CONTROLLER_EOF
+
+    # Create controller directory
+    mkdir -p src/main/java/com/xaresaicoder/springbootapp/controller
+
+    # Create application.properties
+    cat > src/main/resources/application.properties << 'PROPS_EOF'
+# Server Configuration
+server.port=8080
+server.servlet.context-path=/
+
+# Application Configuration
+spring.application.name=xares-spring-boot-app
+
+# Database Configuration (H2 in-memory for development)
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+
+# H2 Console (for development)
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
+
+# JPA Configuration
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.jpa.hibernate.ddl-auto=create-drop
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+
+# DevTools
+spring.devtools.restart.enabled=true
+spring.devtools.livereload.enabled=true
+
+# Logging
+logging.level.com.xaresaicoder.springbootapp=DEBUG
+logging.level.org.springframework.web=DEBUG
+PROPS_EOF
+
+    # Create a simple test
+    cat > src/test/java/com/xaresaicoder/springbootapp/SpringBootAppApplicationTests.java << 'TEST_EOF'
+package com.xaresaicoder.springbootapp;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class SpringBootAppApplicationTests {
+
+    @Test
+    void contextLoads() {
+        // This test will pass if the application context loads successfully
+    }
+
+}
+TEST_EOF
+
+    # Create controller test
+    cat > src/test/java/com/xaresaicoder/springbootapp/controller/WelcomeControllerTest.java << 'CONTROLLER_TEST_EOF'
+package com.xaresaicoder.springbootapp.controller;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@WebMvcTest(WelcomeController.class)
+class WelcomeControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Test
+    void welcomePage_ShouldReturnHtml() throws Exception {
+        mockMvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/html;charset=UTF-8"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Welcome to XaresAICoder")));
+    }
+
+    @Test
+    void apiStatus_ShouldReturnJson() throws Exception {
+        mockMvc.perform(get("/api/status"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/json"))
+                .andExpect(jsonPath("$.status").value("running"))
+                .andExpect(jsonPath("$.framework").value("Spring Boot"));
+    }
+}
+CONTROLLER_TEST_EOF
+
+    # Create README.md
+    cat > README.md << 'README_EOF'
+# Spring Boot Project
+
+This is a Spring Boot application created with XaresAICoder using Java 17 and Spring Boot 3.1.
+
+## Setup
+
+1. Compile the project:
+   ```bash
+   mvn clean compile
+   ```
+
+2. Run the application:
+   ```bash
+   mvn spring-boot:run
+   ```
+
+3. **Access your app:**
+   
+   When you start the Spring Boot app, VS Code will automatically detect port 8080
+   and provide the correct URL via port forwarding notifications.
+   Simply click the provided link to access your application!
+
+## Available Commands
+
+- `mvn spring-boot:run` - Start the Spring Boot application
+- `mvn clean compile` - Compile the project
+- `mvn test` - Run unit tests
+- `mvn clean package` - Build JAR file
+- `mvn clean install` - Install to local Maven repository
+
+## Development
+
+- Edit `src/main/java/com/xaresaicoder/springbootapp/` to add your controllers and logic
+- Add new dependencies to `pom.xml`
+- Configure application properties in `src/main/resources/application.properties`
+- The application supports hot reload with Spring DevTools
+
+## Project Structure
+
+```
+src/
+├── main/
+│   ├── java/com/xaresaicoder/springbootapp/
+│   │   ├── SpringBootAppApplication.java    # Main application class
+│   │   └── controller/
+│   │       └── WelcomeController.java       # REST controller
+│   └── resources/
+│       └── application.properties           # Configuration
+└── test/
+    └── java/com/xaresaicoder/springbootapp/
+        ├── SpringBootAppApplicationTests.java       # Main test
+        └── controller/
+            └── WelcomeControllerTest.java            # Controller tests
+```
+
+## Features
+
+- **Spring Boot 3.1** - Latest Spring Boot framework
+- **Java 17** - Modern LTS Java version
+- **Spring Web** - RESTful web services
+- **Spring Data JPA** - Database abstraction layer
+- **H2 Database** - In-memory database for development
+- **Spring DevTools** - Hot reload and development tools
+- **JUnit 5** - Modern testing framework
+
+## Database
+
+The application uses H2 in-memory database for development:
+- **Console**: http://localhost:8080/h2-console
+- **URL**: `jdbc:h2:mem:testdb`
+- **Username**: `sa`
+- **Password**: (empty)
+
+## AI Coding Assistance
+
+XaresAICoder includes powerful AI coding tools. Choose the one that best fits your workflow:
+
+### 🤖 OpenCode SST - Multi-model AI Assistant
+Best for: Project analysis, multi-model support, collaborative development
+
+```bash
+# Quick setup
+setup_opencode
+
+# Get started
+opencode          # Start interactive session
+# Then type: /init  # Initialize project analysis
+```
+
+**Key Commands:**
+- `/init` - Analyze your project
+- `/share` - Share session for collaboration
+- `/help` - Show available commands
+
+### 🤖 Aider - AI Pair Programming
+Best for: Interactive coding, file editing, git integration
+
+```bash
+# Setup (requires API key)
+export OPENAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, GEMINI_API_KEY
+setup_aider
+
+# Get started
+aider             # Start interactive pair programming
+```
+
+**Features:**
+- Direct file editing with AI
+- Automatic git commits
+- Supports multiple AI models
+- Works with your existing codebase
+
+### 🤖 Gemini CLI - Google's AI Assistant  
+Best for: Code generation, debugging, Google ecosystem integration
+
+```bash
+# Setup (requires API key from https://makersuite.google.com/app/apikey)
+export GEMINI_API_KEY=your_key_here
+setup_gemini
+
+# Get started
+gemini            # Start interactive session
+```
+
+**Features:**
+- Natural language code generation
+- Code explanation and debugging
+- Project analysis and suggestions
+
+### 🤖 Claude Code - Anthropic's Agentic Tool
+Best for: Deep codebase understanding, multi-file editing, advanced workflows
+
+```bash
+# Setup (requires Claude Pro/Max or API billing)
+setup_claude
+
+# Get started
+claude            # Start agentic coding session
+```
+
+**Features:**
+- Understands entire codebase
+- Multi-file editing capabilities
+- Git workflow automation
+- Advanced reasoning and planning
+
+## Quick Setup for All Tools
+
+Run this command to see setup instructions for all AI tools:
+```bash
+setup_ai_tools
+```
+
+## Next Steps
+
+1. **Install VS Code Extensions** for Java development:
+   - Extension Pack for Java (Microsoft)
+   - Spring Boot Extension Pack
+   - Continue - AI code completion and chat
+   - Cline (Claude Dev) - AI file editor and assistant
+
+2. **Set up AI tools** using the commands above
+
+3. **Start building** your Spring Boot application with AI assistance!
+
+## API Endpoints
+
+- `GET /` - Welcome page with project information
+- `GET /api/status` - API status check (JSON response)
+- `GET /h2-console` - H2 database console (development only)
+
+## Testing
+
+Run tests with Maven:
+```bash
+mvn test
+```
+
+Tests include:
+- Application context loading test
+- Controller unit tests with MockMvc
+- JSON response validation
+README_EOF
+
+    # Create VS Code workspace settings for Java development
+    mkdir -p .vscode
+    cat > .vscode/settings.json << 'VSCODE_SETTINGS_EOF'
+{
+    "java.home": "/usr/lib/jvm/java-17-openjdk-amd64",
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-17",
+            "path": "/usr/lib/jvm/java-17-openjdk-amd64"
+        }
+    ],
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.saveActions.organizeImports": true,
+    "java.format.settings.url": "https://raw.githubusercontent.com/google/styleguide/gh-pages/eclipse-java-google-style.xml",
+    "maven.executable.path": "/usr/bin/mvn",
+    "spring-boot.ls.java.home": "/usr/lib/jvm/java-17-openjdk-amd64",
+    "remote.autoForwardPorts": true,
+    "remote.portsAttributes": {
+        "8080": {
+            "label": "Spring Boot Application",
+            "onAutoForward": "openBrowserOnce"
+        }
+    }
+}
+VSCODE_SETTINGS_EOF
+
+    # Create .gitignore for Java/Maven projects
+    cat > .gitignore << 'GITIGNORE_EOF'
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE files (keep .vscode for project settings)
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+
+# VS Code Java extension
+.vscode/launch.json
+.vscode/tasks.json
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Application specific
+application-local.properties
+GITIGNORE_EOF
+    
+    echo "✅ Java Spring Boot project setup complete!"
+    echo ""
+    echo "📁 Files created:"
+    echo "  - pom.xml (Maven configuration and dependencies)"
+    echo "  - src/main/java/ (Java source code)"
+    echo "  - SpringBootAppApplication.java (main application class)"
+    echo "  - WelcomeController.java (REST controller)"
+    echo "  - application.properties (Spring Boot configuration)"
+    echo "  - src/test/java/ (unit tests)"
+    echo "  - README.md (project documentation)"
+    echo "  - .gitignore (Git ignore rules)"
+    echo ""
+    echo "🚀 To get started:"
+    echo "  1. mvn clean compile"
+    echo "  2. mvn spring-boot:run"
+    echo ""
+    echo "🌐 VS Code will automatically detect port 8080 and provide access URLs!"
+}
+
 # AI Tool Setup Functions
 
 
@@ -993,7 +1662,7 @@ setup_ai_tools() {
 }
 
 # Export all functions
-export -f setup_flask_project setup_node_react_project setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
+export -f setup_flask_project setup_node_react_project setup_java_spring_project setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."

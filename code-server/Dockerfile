@@ -93,8 +93,8 @@ exec "$@"\n\
 USER coder
 
 # Expose code-server port
-EXPOSE 8080
+EXPOSE 8082
 
 # Use entrypoint script to ensure extensions are installed
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["code-server", "--bind-addr", "0.0.0.0:8080", "--auth", "none", "/workspace"]
+CMD ["code-server", "--bind-addr", "0.0.0.0:8082", "--auth", "none", "/workspace"]

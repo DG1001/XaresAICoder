@@ -23,8 +23,8 @@ class WorkspaceService {
         throw new Error('Project name and type are required');
       }
 
-      if (!['python-flask', 'node-react'].includes(projectType)) {
-        throw new Error('Invalid project type. Supported: python-flask, node-react');
+      if (!['python-flask', 'node-react', 'java-spring'].includes(projectType)) {
+        throw new Error('Invalid project type. Supported: python-flask, node-react, java-spring');
       }
 
       // Check workspace limit

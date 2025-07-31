@@ -664,7 +664,8 @@ class XaresAICoder {
     getProjectTypeLabel(type) {
         const labels = {
             'python-flask': 'Python Flask',
-            'node-react': 'Node.js React'
+            'node-react': 'Node.js React',
+            'java-spring': 'Java Spring Boot'
         };
         return labels[type] || type;
     }

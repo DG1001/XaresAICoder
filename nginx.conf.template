@@ -71,7 +71,7 @@ server {
         server_name ~^(?<workspace_id>[a-f0-9\-]+)\.${BASE_DOMAIN}$;
 
         location / {
-            set $upstream workspace-$workspace_id:8080;
+            set $upstream workspace-$workspace_id:8082;
             
             # Proxy to code-server container
             proxy_pass http://$upstream;

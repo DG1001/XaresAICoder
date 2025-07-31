@@ -41,10 +41,11 @@ class DockerService {
         name: containerName,
         Env: envVars,
         ExposedPorts: {
-          '8080/tcp': {}, // code-server
+          '8082/tcp': {}, // code-server
           '3000/tcp': {}, // Node.js apps
           '5000/tcp': {}, // Flask/Python apps
           '8000/tcp': {}, // Django/other Python apps
+          '8080/tcp': {}, // Spring Boot apps
           '4200/tcp': {}, // Angular
           '3001/tcp': {}, // React dev server alt
           '9000/tcp': {}  // Various apps
@@ -65,7 +66,7 @@ class DockerService {
           }
         },
         WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8080', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
+        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
       });
 
       await container.start();
@@ -127,6 +128,11 @@ class DockerService {
         commands.push('setup_node_react_project');
         commands.push('git add .');
         commands.push('git commit -m "Initial Node.js React project setup"');
+      } else if (projectType === 'java-spring') {
+        console.log('Adding Java/Spring project setup commands');
+        commands.push('setup_java_spring_project');
+        commands.push('git add .');
+        commands.push('git commit -m "Initial Java Spring Boot project setup"');
       }
 
       // Run commands as root but set proper ownership afterward
@@ -172,7 +178,7 @@ class DockerService {
         
         // Simple approach: just check if we can execute curl successfully
         const exec = await container.exec({
-          Cmd: ['/usr/bin/curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:8080/', '--max-time', '3'],
+          Cmd: ['/usr/bin/curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:8082/', '--max-time', '3'],
           AttachStdout: true,
           AttachStderr: false
         });
