@@ -5,6 +5,7 @@ class XaresAICoder {
         this.projects = [];
         this.pollingInterval = null;
         this.creatingProjects = new Set(); // Track projects being created
+        this.config = null; // Store app configuration
         this.init();
     }
 
@@ -14,7 +15,13 @@ class XaresAICoder {
         return '/api';
     }
 
-    init() {
+    async init() {
+        // Load configuration first
+        await this.loadConfiguration();
+        
+        // Setup UI based on configuration
+        this.setupUI();
+        
         this.bindEvents();
         this.loadProjects();
         
@@ -23,6 +30,58 @@ class XaresAICoder {
         
         // Start polling for project status updates
         this.startPolling();
+    }
+
+    async loadConfiguration() {
+        try {
+            const response = await fetch(`${this.apiBase}/config`);
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.config = data;
+                console.log('Configuration loaded:', this.config);
+            } else {
+                console.error('Failed to load configuration:', data);
+                // Set default configuration
+                this.config = {
+                    gitServerEnabled: false,
+                    baseDomain: 'localhost',
+                    basePort: '80',
+                    protocol: 'http'
+                };
+            }
+        } catch (error) {
+            console.error('Error loading configuration:', error);
+            // Set default configuration
+            this.config = {
+                gitServerEnabled: false,
+                baseDomain: 'localhost',
+                basePort: '80',
+                protocol: 'http'
+            };
+        }
+    }
+
+    setupUI() {
+        // Show/hide Git server navigation based on configuration
+        const gitServerNav = document.querySelector('.nav-item[data-tab="git-server"]');
+        const gitServerTab = document.getElementById('git-server-tab');
+        
+        if (this.config.gitServerEnabled) {
+            if (gitServerNav) gitServerNav.style.display = 'flex';
+            // Don't override the tab display - let CSS classes handle visibility
+            
+            // Update Git server URL in the tab if available
+            if (this.config.gitServerUrl) {
+                const gitServerLink = document.querySelector('#git-server-tab a[href="/git/"]');
+                if (gitServerLink) {
+                    gitServerLink.href = this.config.gitServerUrl;
+                }
+            }
+        } else {
+            if (gitServerNav) gitServerNav.style.display = 'none';
+            // The tab will remain hidden via CSS classes when not active
+        }
     }
 
     bindEvents() {
@@ -87,11 +146,22 @@ class XaresAICoder {
         
         // Remove active class from all nav items and tab panels
         document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-        document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.classList.remove('active');
+            // Also ensure only the target tab is visible
+            if (panel.id === `${targetTab}-tab`) {
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+            }
+        });
         
         // Add active class to clicked nav item and corresponding tab panel
         clickedItem.classList.add('active');
-        document.getElementById(`${targetTab}-tab`).classList.add('active');
+        const targetTabElement = document.getElementById(`${targetTab}-tab`);
+        if (targetTabElement) {
+            targetTabElement.classList.add('active');
+        }
     }
 
     handlePasswordProtectionToggle(e) {
