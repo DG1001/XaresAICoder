@@ -1,6 +1,6 @@
 # XaresAICoder User Guide
 
-Welcome to XaresAICoder, a browser-based AI coding platform that integrates VS Code with OpenCode SST for AI-powered development.
+Welcome to XaresAICoder, a browser-based AI coding platform that integrates VS Code with multiple AI coding assistants for enhanced development productivity.
 
 ## Getting Started
 
@@ -18,46 +18,108 @@ Welcome to XaresAICoder, a browser-based AI coding platform that integrates VS C
 Your workspace comes pre-configured with:
 - VS Code extensions for Python development
 - Git repository initialized
-- OpenCode SST CLI installed
+- Multiple AI coding tools available
 - Python Flask project template (if selected)
+- GitHub CLI (gh) for repository management
 
-### 3. Setting Up OpenCode SST
+### 3. AI Coding Tools Setup
 
-OpenCode SST is your AI coding assistant. To get started:
+XaresAICoder provides multiple AI coding assistants. Here's how to get started with each:
 
-1. Open the terminal in VS Code (Terminal → New Terminal)
-2. Authenticate with OpenCode SST:
-   ```bash
-   opencode auth login
-   ```
-3. Enter your OpenCode SST API key when prompted
-4. Start using AI assistance:
-   ```bash
-   opencode "create a REST API endpoint for user registration"
-   ```
+#### Quick Setup for All Tools
+```bash
+setup_ai_tools  # Shows setup instructions for all available AI tools
+```
 
-## OpenCode SST Usage
+#### OpenCode SST - Multi-model AI Assistant
+Best for project analysis and collaborative development:
+```bash
+setup_opencode      # Quick setup
+opencode auth login # Authenticate
+opencode            # Start interactive session
+# Then type: /init  # Initialize project analysis
+```
 
-### Basic Commands
+#### Aider - AI Pair Programming
+Best for interactive coding with direct file editing:
+```bash
+export OPENAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, GEMINI_API_KEY
+setup_aider
+aider  # Start pair programming session
+```
+
+#### Gemini CLI - Google's AI Assistant
+Best for code generation and debugging:
+```bash
+export GEMINI_API_KEY=your_key_here  # Get from https://makersuite.google.com/app/apikey
+setup_gemini
+gemini  # Start interactive session
+```
+
+#### Claude Code - Anthropic's Agentic Tool
+Best for deep codebase understanding and advanced workflows:
+```bash
+setup_claude
+claude  # Start agentic coding session
+```
+
+## AI Coding Tools Usage
+
+### OpenCode SST Commands
 
 - **Authentication**: `opencode auth login`
-- **Get help**: `opencode --help`
-- **Code generation**: `opencode "your request"`
-- **File-specific help**: `opencode "add error handling to app.py"`
+- **Interactive mode**: `opencode` (then use `/init`, `/share`, `/help`)
+- **Direct requests**: `opencode "your request"`
+- **Project analysis**: Use `/init` command in interactive mode
 
-### Example Requests
+### Aider Commands
 
-- `opencode "create a database model for users"`
-- `opencode "add unit tests for the login function"`
-- `opencode "optimize this function for better performance"`
-- `opencode "add input validation to the form"`
+- **Start session**: `aider`
+- **Add files**: `aider file1.py file2.py` (edit specific files)
+- **Git integration**: Aider automatically commits changes
+- **Model selection**: Supports OpenAI, Anthropic, Google, and local models
 
-### Best Practices
+### Gemini CLI Commands
+
+- **Interactive mode**: `gemini`
+- **Direct requests**: `gemini "explain this code"`
+- **Code generation**: Natural language to code conversion
+- **Debugging help**: Error analysis and solutions
+
+### Claude Code Commands
+
+- **Agentic session**: `claude`
+- **Multi-file editing**: Understands entire codebase context
+- **Git workflows**: Advanced repository operations
+- **Complex reasoning**: Handles multi-step development tasks
+
+### VS Code AI Extensions
+
+#### Continue Extension
+Install from marketplace: `continue.continue`
+- Inline code completion
+- Sidebar chat interface
+- Multiple AI provider support
+
+#### Cline (Claude Dev) Extension
+Install from marketplace: `saoudrizwan.claude-dev`
+- Direct file editing with Claude AI
+- Multi-file operations
+- Terminal integration
+
+### Best Practices for All AI Tools
 
 1. **Be specific**: Provide clear, detailed requests
 2. **Context matters**: Include relevant file names or function names
-3. **Iterate**: Start with basic functionality and refine
+3. **Choose the right tool**: 
+   - **OpenCode SST**: Project analysis, collaboration
+   - **Aider**: Interactive pair programming
+   - **Gemini**: Quick code generation
+   - **Claude Code**: Complex multi-file tasks
+   - **Continue**: Inline completions
+   - **Cline**: VS Code integrated editing
 4. **Review code**: Always review AI-generated code before using it
+5. **Combine tools**: Use different tools for different tasks
 
 ## Project Management
 
@@ -105,9 +167,19 @@ Your Python Flask workspace includes:
    python app.py
    ```
 
-4. Use OpenCode SST for development:
+4. Use AI tools for development:
    ```bash
-   opencode "add a database connection to my Flask app"
+   # OpenCode SST for project analysis
+   opencode
+   # Then: /init
+   
+   # Aider for interactive development
+   aider app.py
+   
+   # Gemini for quick code generation
+   gemini "add a database connection to my Flask app"
+   
+   # Continue extension for inline completions (in VS Code)
    ```
 
 ### Helper Function
@@ -138,10 +210,31 @@ setup_flask_project
 - Try refreshing the project list
 - The workspace may have timed out - create a new one
 
-**OpenCode SST not working**
+**AI Tools not working**
+
+For OpenCode SST:
 - Ensure you've authenticated: `opencode auth login`
 - Check your API key is valid
 - Verify OpenCode SST is in your PATH: `which opencode`
+
+For Aider:
+- Set your API key: `export OPENAI_API_KEY=your_key` (or ANTHROPIC_API_KEY, GEMINI_API_KEY)
+- Run setup: `setup_aider`
+- Check installation: `which aider`
+
+For Gemini CLI:
+- Set your API key: `export GEMINI_API_KEY=your_key`
+- Get API key from: https://makersuite.google.com/app/apikey
+- Run setup: `setup_gemini`
+
+For Claude Code:
+- Requires Claude Pro/Max subscription or API billing
+- Run setup: `setup_claude`
+- Follow authentication prompts
+
+For VS Code Extensions (Continue, Cline):
+- Install from Extensions marketplace
+- Configure API keys in extension settings
 
 **Git issues**
 - Git is pre-configured with default user settings
@@ -158,17 +251,23 @@ setup_flask_project
 
 ### Getting Help
 
-1. **OpenCode SST**: Use `opencode --help` for AI assistance
+1. **AI Tools**: 
+   - OpenCode SST: `opencode --help` or use `/help` in interactive mode
+   - Aider: Built-in help and documentation
+   - Gemini: Interactive help within the tool
+   - Claude Code: Comprehensive built-in guidance
 2. **VS Code**: Use the built-in help and documentation
 3. **Flask**: Refer to the official Flask documentation
 4. **Platform issues**: Check the error messages in the browser console
+5. **Setup issues**: Run `setup_ai_tools` for tool-specific guidance
 
 ### Performance Tips
 
 1. **Close unused terminals** to save resources
 2. **Commit your work regularly** using Git
-3. **Use OpenCode SST efficiently** - be specific with requests
+3. **Use AI tools efficiently** - choose the right tool for each task
 4. **Monitor workspace timeout** - save work before 120 minutes
+5. **Leverage GitHub CLI** - use `gh` commands for repository management
 
 ## Advanced Usage
 
@@ -189,12 +288,46 @@ DATABASE_URL=sqlite:///app.db
 SECRET_KEY=your-secret-key
 ```
 
-### Multiple Files with OpenCode SST
+### Multi-File Development with AI Tools
 
-When working with multiple files, provide context:
+**Aider** - Best for multi-file editing:
 ```bash
-opencode "update the user model in models.py to include email validation"
-opencode "create a view in views.py that uses the user model"
+aider models.py views.py  # Edit multiple files together
+# Aider understands relationships between files
+```
+
+**Claude Code** - Best for complex multi-file projects:
+```bash
+claude  # Understands entire codebase context
+# Can handle complex refactoring across multiple files
+```
+
+**OpenCode SST** - Good for project-wide analysis:
+```bash
+opencode
+# Use /init to analyze entire project structure
+```
+
+**Traditional single-file requests**:
+```bash
+gemini "update the user model in models.py to include email validation"
+```
+
+### GitHub Integration
+
+Use GitHub CLI for seamless Git workflows:
+```bash
+# Authenticate with GitHub
+gh auth login
+
+# Create repository
+gh repo create my-project --public
+
+# Push to GitHub
+git push -u origin main
+
+# Create pull request
+gh pr create --title "Feature: User authentication"
 ```
 
 ## Security Notes
