@@ -122,6 +122,11 @@ class DockerService {
         commands.push('setup_flask_project');
         commands.push('git add .');
         commands.push('git commit -m "Initial Flask project setup"');
+      } else if (projectType === 'node-react') {
+        console.log('Adding Node.js/React project setup commands');
+        commands.push('setup_node_react_project');
+        commands.push('git add .');
+        commands.push('git commit -m "Initial Node.js React project setup"');
       }
 
       // Run commands as root but set proper ownership afterward

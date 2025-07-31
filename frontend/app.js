@@ -169,10 +169,6 @@ class XaresAICoder {
             return;
         }
 
-        if (projectType === 'node-react') {
-            this.showError('Node.js React projects are coming soon! Please select Python Flask for now.');
-            return;
-        }
 
         this.showLoading(true);
 
