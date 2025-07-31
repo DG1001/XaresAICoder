@@ -31,10 +31,10 @@ Pre-configured workspace with recommended AI coding assistants:
 - **SSH support** - Secure authentication for GitHub and other services
 
 ### 🚀 **Development Features**
-- **Python Flask** project templates with virtual environments
-- **Automatic Project Initialization** with Git repository setup
-- **VS Code Port Forwarding** with automatic browser opening
-- **Professional Web Interface** with tabbed navigation
+- **Multiple Project Templates**: Python Flask, Node.js React, Java Spring Boot
+- **Automatic Project Initialization** with Git repository setup and complete project scaffolding
+- **VS Code Port Forwarding** with automatic browser opening for all frameworks
+- **Professional Web Interface** with tabbed navigation and real-time status updates
 - **Resource Management** with configurable timeouts and limits
 
 ## Quick Start
@@ -145,10 +145,13 @@ git pull && ./deploy.sh --skip-network
 ### First Project
 
 1. Enter a project name
-2. Select "Python Flask" as the project type
+2. Select your preferred project type:
+   - **Python Flask**: Full-stack web applications with Flask framework
+   - **Node.js React**: Modern web applications with React 18 and Vite
+   - **Java Spring Boot**: Enterprise applications with Spring Boot 3.1 and Java 17
 3. **Optional**: Check "Password Protect Workspace" for secure access
 4. Click "Create Workspace"
-5. Wait for the workspace to be created
+5. Wait for the workspace to be created (Java projects may take longer)
 6. VS Code will open in a new tab
 
 ### GitHub Integration
@@ -422,18 +425,58 @@ setup_ai_tools
 
 ### Python Flask
 
-Includes:
-- Virtual environment setup
-- Flask and python-dotenv installed
-- Sample application (app.py)
-- Requirements file
-- Git repository initialization
+**Complete Flask Development Environment**
+- Virtual environment setup with `venv`
+- Flask 2.3+ and python-dotenv pre-installed
+- Professional welcome application with routing examples
+- Requirements.txt with common dependencies
+- VS Code Python debugging configuration
+- Git repository initialization with initial commit
+- **Port**: 5000 (automatically forwarded)
+
+### Node.js React
+
+**Modern React Development Stack**
+- Node.js 18+ with npm package management
+- React 18 with TypeScript support
+- Vite build tool for fast development and HMR
+- Professional component structure with routing
+- Tailwind CSS for styling
+- ESLint and Prettier for code quality
+- Git repository initialization with initial commit
+- **Port**: 3000 (Vite dev server, automatically forwarded)
+
+### Java Spring Boot
+
+**Enterprise Java Development Environment**
+- OpenJDK 17 (LTS) with Maven build system
+- Spring Boot 3.1+ with Spring Web starter
+- Professional project structure with controller, service, and model layers
+- Maven wrapper for consistent builds
+- Application properties configuration
+- Spring Boot DevTools for hot reloading
+- Git repository initialization with initial commit
+- **Port**: 8080 (Spring Boot default, automatically forwarded)
+
+### Template Features
+
+**All templates include:**
+- 🔧 **Professional project structure** with best practices
+- 🎯 **VS Code workspace configuration** optimized for each technology
+- 📦 **Package management** setup (pip, npm, maven)
+- 🔄 **Git initialization** with meaningful first commit
+- 🚀 **Development server** with auto-reload capabilities
+- 📝 **Welcome application** demonstrating key concepts
+- 🛠️ **Debugging configuration** for VS Code
+- 📋 **README files** with getting started instructions
 
 ### Adding New Templates
 
-1. Update `setup-scripts/workspace-init.sh`
-2. Add project type to API validation
-3. Update frontend project type selector
+1. Update `code-server/setup-scripts/workspace-init.sh` with new setup function
+2. Add project type validation in `server/src/services/workspace.js`
+3. Add initialization logic in `server/src/services/docker.js`
+4. Update frontend dropdown in `frontend/index.html`
+5. Add project type handling in `frontend/app.js`
 
 ## Port Forwarding & Application Access
 
@@ -450,8 +493,9 @@ When you start an application (e.g., Flask on port 5000) in your workspace:
 ### Supported Ports
 
 - **Port 5000**: Flask/Python applications  
-- **Port 3000**: Node.js applications
+- **Port 3000**: Node.js/React applications (Vite dev server)
 - **Port 8000**: Django applications
+- **Port 8080**: Java Spring Boot applications
 - **Port 4200**: Angular applications
 - **Additional ports**: Automatically forwarded as needed
 
@@ -473,6 +517,14 @@ Port forwarding is pre-configured with optimal settings:
   "remote.portsAttributes": {
     "5000": {
       "label": "Flask Application",
+      "onAutoForward": "openBrowserOnce"
+    },
+    "3000": {
+      "label": "React Development Server",
+      "onAutoForward": "openBrowserOnce"
+    },
+    "8080": {
+      "label": "Spring Boot Application",
       "onAutoForward": "openBrowserOnce"
     }
   }
@@ -682,7 +734,6 @@ docker system prune -a
 
 ### 🚧 **Current Limitations**
 
-- **Project Templates**: Only Python Flask supported (Node.js in development)
 - **User Management**: No multi-user authentication (designed for local use)
 - **Storage**: Local storage only (no cloud persistence)
 - **Deployment**: Development-focused (production deployment in roadmap)
@@ -746,13 +797,14 @@ services:
 
 ### 🚀 **Future Enhancements**
 
-- **Multi-language Support**: Node.js, Java, Go, Rust project templates
+- **Additional Languages**: Go, Rust, Python Django, PHP Laravel project templates
 - **User Authentication**: Multi-user support with authentication system
 - **Integrated Git Server**: Forgejo integration for complete on-premise solution
 - **Deployment Pipeline**: One-click deployment to cloud platforms
 - **Database Persistence**: User projects and settings persistence
 - **Team Collaboration**: Shared workspaces and real-time collaboration
 - **Custom Domains**: Production deployment with custom domain support
+- **Template Customization**: User-defined project templates and configurations
 
 ## Contributing
 
