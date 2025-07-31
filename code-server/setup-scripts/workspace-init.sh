@@ -1661,8 +1661,241 @@ setup_ai_tools() {
     echo "🔑 Don't forget to set up your API keys for the tools you want to use!"
 }
 
+# Empty project setup function
+setup_empty_project() {
+    echo "🏗️  Setting up empty project..."
+    cd /workspace
+    
+    # Create a comprehensive README file
+    cat > README.md << 'README_EOF'
+# My XaresAICoder Project
+
+Welcome to your new development workspace! This is a clean slate for you to build whatever you want.
+
+## 🚀 Getting Started
+
+This workspace comes with:
+- ✅ **Git repository** initialized and ready for commits
+- ✅ **VS Code** configured for development
+- ✅ **AI coding tools** available in the terminal
+- ✅ **Port forwarding** set up for web applications
+
+## 🛠️ What's Next?
+
+1. **Choose your stack**: Install the tools and frameworks you need
+2. **Start coding**: Create your project files and structure
+3. **Use AI assistance**: Try the available AI tools to boost your productivity
+4. **Deploy**: Use port forwarding to test your web applications
+
+## 🤖 Available AI Tools
+
+All AI tools are pre-installed and ready to use:
+
+### Command Line Tools
+- `opencode` - Multi-model AI assistant with project analysis
+- `aider` - AI pair programming with file editing
+- `gemini` - Google's AI for code generation
+- `claude` - Anthropic's agentic coding tool
+
+### VS Code Extensions (install from marketplace)
+- **Continue** - AI code completion and chat (`continue.continue`)
+- **Cline (Claude Dev)** - AI file editor (`saoudrizwan.claude-dev`)
+
+## 🌐 Port Forwarding
+
+When you start a web server, VS Code will automatically detect it and offer to open it in your browser. Common ports are pre-configured:
+
+- **Port 3000**: Node.js/React applications
+- **Port 5000**: Flask/Python applications  
+- **Port 8000**: Django applications
+- **Port 8080**: Java Spring Boot applications
+- **Port 4200**: Angular applications
+
+## 📝 Tips
+
+- Use `git status` to check your repository status
+- Run `setup_ai_tools` to see setup instructions for all AI tools
+- Install language extensions in VS Code for better development experience
+- Use the integrated terminal for all your development commands
+
+## 🔧 Common Setup Commands
+
+### Node.js/JavaScript
+```bash
+npm init -y
+npm install express
+```
+
+### Python
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install flask fastapi django
+```
+
+### Java
+```bash
+# Maven project
+mvn archetype:generate -DgroupId=com.example -DartifactId=my-app
+
+# Gradle project  
+gradle init --type java-application
+```
+
+### Go
+```bash
+go mod init my-project
+```
+
+Happy coding! 🎉
+README_EOF
+
+    # Create a basic .gitignore
+    cat > .gitignore << 'GITIGNORE_EOF'
+# Dependencies
+node_modules/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Build outputs
+dist/
+build/
+*.o
+*.so
+*.dylib
+*.exe
+*.dll
+*.jar
+*.war
+*.ear
+*.class
+target/
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+GITIGNORE_EOF
+
+    # Create a simple VS Code workspace configuration
+    mkdir -p .vscode
+    cat > .vscode/settings.json << 'SETTINGS_EOF'
+{
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": true,
+    "editor.renderWhitespace": "boundary",
+    "editor.wordWrap": "on",
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "git.enableSmartCommit": true,
+    "git.confirmSync": false,
+    "remote.autoForwardPorts": true,
+    "remote.portsAttributes": {
+        "3000": {
+            "label": "Development Server",
+            "onAutoForward": "openBrowserOnce"
+        },
+        "5000": {
+            "label": "Flask/Python Application",
+            "onAutoForward": "openBrowserOnce"
+        },
+        "8000": {
+            "label": "Django/FastAPI Application", 
+            "onAutoForward": "openBrowserOnce"
+        },
+        "8080": {
+            "label": "Java Spring Boot Application",
+            "onAutoForward": "openBrowserOnce"
+        },
+        "4200": {
+            "label": "Angular Application",
+            "onAutoForward": "openBrowserOnce"
+        }
+    }
+}
+SETTINGS_EOF
+
+    # Create extensions recommendations
+    cat > .vscode/extensions.json << 'EXTENSIONS_EOF'
+{
+    "recommendations": [
+        "continue.continue",
+        "saoudrizwan.claude-dev",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "ms-python.python",
+        "ms-vscode.vscode-typescript-next",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-eslint"
+    ]
+}
+EXTENSIONS_EOF
+
+    echo "✅ Empty project created successfully!"
+    echo ""
+    echo "🎯 Your workspace includes:"
+    echo "   • README.md with comprehensive getting started guide"
+    echo "   • .gitignore with common patterns for multiple languages"
+    echo "   • VS Code settings optimized for development"
+    echo "   • Port forwarding configured for common frameworks"
+    echo "   • Extension recommendations for enhanced productivity"
+    echo ""
+    echo "🚀 Next steps:"
+    echo "   1. Read the README.md for detailed instructions"
+    echo "   2. Choose your technology stack and start coding"
+    echo "   3. Use 'setup_ai_tools' to explore available AI assistance"
+    echo "   4. Install recommended VS Code extensions for better development experience"
+}
+
 # Export all functions
-export -f setup_flask_project setup_node_react_project setup_java_spring_project setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
+export -f setup_flask_project setup_node_react_project setup_java_spring_project setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."

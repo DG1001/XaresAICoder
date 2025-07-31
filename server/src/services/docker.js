@@ -133,6 +133,11 @@ class DockerService {
         commands.push('setup_java_spring_project');
         commands.push('git add .');
         commands.push('git commit -m "Initial Java Spring Boot project setup"');
+      } else if (projectType === 'empty') {
+        console.log('Adding empty project setup commands');
+        commands.push('setup_empty_project');
+        commands.push('git add .');
+        commands.push('git commit -m "Initial empty project setup"');
       }
 
       // Run commands as root but set proper ownership afterward

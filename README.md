@@ -146,6 +146,7 @@ git pull && ./deploy.sh --skip-network
 
 1. Enter a project name
 2. Select your preferred project type:
+   - **Empty Project**: Clean slate with just README and git initialization
    - **Python Flask**: Full-stack web applications with Flask framework
    - **Node.js React**: Modern web applications with React 18 and Vite
    - **Java Spring Boot**: Enterprise applications with Spring Boot 3.1 and Java 17
@@ -422,6 +423,17 @@ setup_ai_tools
 ```
 
 ## Project Templates
+
+### Empty Project
+
+**Clean Development Starting Point**
+- Comprehensive README.md with getting started guide
+- Multi-language .gitignore with common patterns
+- VS Code workspace settings optimized for development
+- Port forwarding configuration for common frameworks (3000, 5000, 8000, 8080, 4200)
+- VS Code extension recommendations for enhanced productivity
+- Git repository initialization with initial commit
+- **Perfect for**: Starting from scratch, learning new technologies, custom project structures
 
 ### Python Flask
 
