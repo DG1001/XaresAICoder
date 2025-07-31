@@ -44,13 +44,7 @@ class WorkspaceService {
         passwordHash = await bcrypt.hash(options.password, 10);
       }
 
-      // Create Docker container with auth options
-      const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
-        passwordProtected: options.passwordProtected || false,
-        password: options.password || null
-      });
-
-      // Store project metadata
+      // Store project metadata immediately with "creating" status
       const project = {
         projectId,
         projectName: projectName.trim(),
@@ -60,22 +54,26 @@ class WorkspaceService {
         passwordHash: passwordHash, // Store hashed password
         createdAt: new Date(),
         lastAccessed: new Date(),
-        status: 'running',
-        workspaceUrl: workspace.workspaceUrl
+        status: 'creating',
+        workspaceUrl: null // Will be set when container is ready
       };
 
       this.projects.set(projectId, project);
 
-      // Save to disk
+      // Save to disk immediately
       await this.saveProjectsToDisk();
 
+      // Start container creation asynchronously
+      this.createWorkspaceAsync(projectId, projectType, options);
+
+      // Return immediately with creating status
       return {
         projectId,
         projectName: project.projectName,
         projectType,
         passwordProtected: project.passwordProtected,
-        workspaceUrl: workspace.workspaceUrl,
-        status: 'running',
+        workspaceUrl: null,
+        status: 'creating',
         createdAt: project.createdAt,
         ...(project.passwordProtected && options.password && { password: options.password })
       };
@@ -83,6 +81,44 @@ class WorkspaceService {
     } catch (error) {
       console.error('Error creating project:', error);
       throw error;
+    }
+  }
+
+  async createWorkspaceAsync(projectId, projectType, options) {
+    try {
+      console.log(`Starting asynchronous workspace creation for project ${projectId}`);
+      
+      // Create Docker container with auth options
+      const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
+        passwordProtected: options.passwordProtected || false,
+        password: options.password || null
+      });
+
+      // Update project with workspace URL and running status
+      const project = this.projects.get(projectId);
+      if (project) {
+        project.status = 'running';
+        project.workspaceUrl = workspace.workspaceUrl;
+        project.lastAccessed = new Date();
+        
+        // Save updated project to disk
+        await this.saveProjectsToDisk();
+        
+        console.log(`Workspace creation completed for project ${projectId}: ${workspace.workspaceUrl}`);
+      } else {
+        console.error(`Project ${projectId} not found when trying to update after container creation`);
+      }
+
+    } catch (error) {
+      console.error(`Error in async workspace creation for project ${projectId}:`, error);
+      
+      // Update project status to error
+      const project = this.projects.get(projectId);
+      if (project) {
+        project.status = 'error';
+        project.lastAccessed = new Date();
+        await this.saveProjectsToDisk();
+      }
     }
   }
 
@@ -97,7 +133,17 @@ class WorkspaceService {
 
     // Get current status from Docker
     const dockerStatus = await dockerService.getProjectStatus(projectId);
-    project.status = dockerStatus.status;
+    
+    // Special handling for creating projects:
+    // Only update to running if we have a workspaceUrl (meaning async creation completed)
+    // This prevents premature status updates when container starts but isn't ready
+    if (project.status === 'creating' && !project.workspaceUrl) {
+      // Keep as creating until async process completes
+      // Docker might show "running" but workspace isn't ready yet
+    } else {
+      // For non-creating projects, update status from Docker
+      project.status = dockerStatus.status;
+    }
 
     return {
       ...project,
@@ -217,7 +263,16 @@ class WorkspaceService {
       userProjects.map(async (p) => {
         try {
           const dockerStatus = await dockerService.getProjectStatus(p.projectId);
-          p.status = dockerStatus.status;
+          
+          // Special handling for creating projects:
+          // Only update to running if we have a workspaceUrl (meaning async creation completed)
+          if (p.status === 'creating' && !p.workspaceUrl) {
+            // Keep as creating until async process completes
+            // Docker might show "running" but workspace isn't ready yet
+          } else {
+            // For non-creating projects, update status from Docker
+            p.status = dockerStatus.status;
+          }
           
           return {
             projectId: p.projectId,

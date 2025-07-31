@@ -3,6 +3,8 @@ class XaresAICoder {
     constructor() {
         this.apiBase = this.detectApiBase();
         this.projects = [];
+        this.pollingInterval = null;
+        this.creatingProjects = new Set(); // Track projects being created
         this.init();
     }
 
@@ -18,6 +20,9 @@ class XaresAICoder {
         
         // Load projects from localStorage for offline display
         this.loadProjectsFromStorage();
+        
+        // Start polling for project status updates
+        this.startPolling();
     }
 
     bindEvents() {
@@ -170,8 +175,6 @@ class XaresAICoder {
         }
 
 
-        this.showLoading(true);
-
         const requestBody = {
             projectName,
             projectType
@@ -197,9 +200,12 @@ class XaresAICoder {
                 throw new Error(data.message || 'Failed to create project');
             }
 
-            // Success! Open the workspace
+            // Success! Project is being created in background
             const project = data.project;
             this.saveProjectToStorage(project);
+            
+            // Add to creating projects set for polling
+            this.creatingProjects.add(project.projectId);
             
             // Clear form
             e.target.reset();
@@ -210,17 +216,15 @@ class XaresAICoder {
             passwordGroup.style.display = 'none';
             passwordInput.value = '';
             
-            // Show success message with instructions
-            this.showWorkspaceReady(project);
+            // Show simple success message
+            this.showCreateSuccess(project);
             
-            // Refresh project list
+            // Refresh project list to show the creating workspace
             this.loadProjects();
 
         } catch (error) {
             console.error('Error creating project:', error);
             this.showError(error.message || 'Failed to create project. Please try again.');
-        } finally {
-            this.showLoading(false);
         }
     }
 
@@ -247,6 +251,77 @@ class XaresAICoder {
         this.renderProjects();
     }
 
+    startPolling() {
+        // Poll every 3 seconds for status updates
+        this.pollingInterval = setInterval(() => {
+            this.pollProjectStatus();
+        }, 3000);
+    }
+
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+    }
+
+    async pollProjectStatus() {
+        // Only poll if we have projects being created or might need updates
+        if (this.creatingProjects.size === 0 && !this.hasProjectsNeedingUpdates()) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/projects/`);
+            const data = await response.json();
+
+            if (response.ok) {
+                const oldProjects = [...this.projects];
+                this.projects = data.projects || [];
+                this.saveProjectsToStorage(this.projects);
+                
+                // Check for status changes
+                this.handleStatusChanges(oldProjects, this.projects);
+                this.renderProjects();
+            }
+        } catch (error) {
+            console.error('Error polling project status:', error);
+        }
+    }
+
+    hasProjectsNeedingUpdates() {
+        // Check if any projects might need status updates (creating, starting, stopping)
+        return this.projects.some(p => 
+            p.status === 'creating' || 
+            this.creatingProjects.has(p.projectId) ||
+            (p.status === 'running' && !p.workspaceUrl) // Running but not ready
+        );
+    }
+
+    handleStatusChanges(oldProjects, newProjects) {
+        const oldProjectMap = new Map(oldProjects.map(p => [p.projectId, p]));
+        
+        newProjects.forEach(newProject => {
+            const oldProject = oldProjectMap.get(newProject.projectId);
+            
+            // Project just finished creating - check if it now has a workspaceUrl
+            if (oldProject && 
+                (oldProject.status === 'creating' || (oldProject.status === 'running' && !oldProject.workspaceUrl)) &&
+                newProject.status === 'running' && newProject.workspaceUrl) {
+                this.creatingProjects.delete(newProject.projectId);
+                this.showWorkspaceReady(newProject);
+            }
+            
+            // Project creation failed
+            if (oldProject && 
+                (oldProject.status === 'creating' || (oldProject.status === 'running' && !oldProject.workspaceUrl)) &&
+                newProject.status === 'error') {
+                this.creatingProjects.delete(newProject.projectId);
+                this.showError(`Failed to create workspace "${newProject.projectName}". Please try again.`);
+            }
+        });
+    }
+
     renderProjects() {
         const projectsList = document.getElementById('projectsList');
         const noProjects = document.getElementById('noProjects');
@@ -267,7 +342,7 @@ class XaresAICoder {
                         ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
                     </h4>
                     <div class="project-meta">
-                        <span class="project-status ${this.getStatusClass(project.status)}">${this.getStatusLabel(project.status)}</span>
+                        <span class="project-status ${this.getStatusClass(project.status, project.workspaceUrl)}">${this.getStatusLabel(project.status, project.workspaceUrl)}</span>
                         <span>${this.getProjectTypeLabel(project.projectType)}</span>
                         <span>Created ${this.formatDate(project.createdAt)}</span>
                     </div>
@@ -449,10 +524,20 @@ class XaresAICoder {
         const isRunning = project.status === 'running';
         const isStopped = project.status === 'stopped';
         const isError = project.status === 'error';
+        const isCreating = project.status === 'creating';
+        const isRunningButNotReady = isRunning && !project.workspaceUrl;
 
         let buttons = '';
 
-        if (isRunning) {
+        if (isCreating || isRunningButNotReady) {
+            // Show loading indicator while creating or if running but not ready
+            buttons += `
+                <div class="creating-indicator">
+                    <div class="spinner" style="display: inline-block; width: 16px; height: 16px; margin-right: 8px;"></div>
+                    Creating workspace...
+                </div>
+            `;
+        } else if (isRunning && project.workspaceUrl) {
             buttons += `
                 <button class="btn-open" onclick="app.openWorkspace('${project.projectId}', '${project.workspaceUrl}')">
                     Open Workspace
@@ -475,11 +560,14 @@ class XaresAICoder {
             `;
         }
 
-        buttons += `
-            <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', '${this.escapeHtml(project.projectName)}')">
-                Delete
-            </button>
-        `;
+        // Only show delete button if not creating
+        if (!isCreating) {
+            buttons += `
+                <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', '${this.escapeHtml(project.projectName)}')">
+                    Delete
+                </button>
+            `;
+        }
 
         return buttons;
     }
@@ -521,6 +609,12 @@ class XaresAICoder {
             btnText.textContent = 'Create Workspace';
             spinner.style.display = 'none';
         }
+    }
+
+    showCreateSuccess(project) {
+        // Simple success message without auto-redirect
+        console.log(`Workspace "${project.projectName}" is being created in the background...`);
+        // Optional: Could show a toast notification here
     }
 
     showWorkspaceReady(project) {
@@ -670,20 +764,32 @@ class XaresAICoder {
         return labels[type] || type;
     }
 
-    getStatusLabel(status) {
+    getStatusLabel(status, workspaceUrl = null) {
+        // If running but no workspaceUrl, show as Creating
+        if (status === 'running' && !workspaceUrl) {
+            return 'Creating';
+        }
+        
         const labels = {
             'running': 'Running',
             'stopped': 'Stopped',
+            'creating': 'Creating',
             'error': 'Error',
             'not_found': 'Not Found'
         };
         return labels[status] || status;
     }
 
-    getStatusClass(status) {
+    getStatusClass(status, workspaceUrl = null) {
+        // If running but no workspaceUrl, show as Creating
+        if (status === 'running' && !workspaceUrl) {
+            return 'status-creating';
+        }
+        
         const classes = {
             'running': 'status-running',
             'stopped': 'status-stopped',
+            'creating': 'status-creating',
             'error': 'status-error',
             'not_found': 'status-error'
         };
