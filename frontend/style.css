@@ -697,6 +697,78 @@ body {
     font-weight: 500;
 }
 
+/* Git Commands Styling */
+.git-commands {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.command-section {
+    background: var(--vscode-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.command-section h5 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--vscode-text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.command-section code {
+    display: block;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    background: var(--vscode-sidebar-bg);
+    color: var(--vscode-text-accent);
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--vscode-border);
+    margin-bottom: 8px;
+    word-break: break-all;
+    line-height: 1.4;
+}
+
+.command-section code:last-child {
+    margin-bottom: 0;
+}
+
+.command-section p {
+    font-size: 13px;
+    color: var(--vscode-text-muted);
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.setup-note {
+    background: var(--vscode-hover-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 16px;
+}
+
+.setup-note p {
+    font-size: 13px;
+    color: var(--vscode-text);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.setup-note code {
+    display: inline;
+    padding: 2px 4px;
+    margin: 0;
+    font-size: 12px;
+}
+
 /* Code Elements */
 code {
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
