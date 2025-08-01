@@ -2,7 +2,11 @@ FROM codercom/code-server:latest
 
 USER root
 
-# Install system dependencies including Node.js
+# Install Node.js 20.x from NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+# Install other system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -12,8 +16,6 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     wget \
     unzip \
-    nodejs \
-    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages for Flask development using --break-system-packages
