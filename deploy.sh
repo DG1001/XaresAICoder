@@ -215,39 +215,76 @@ setup_git_server() {
     if [ "$git_server_enabled" = "true" ]; then
         print_status "Setting up Forgejo Git server..."
         
-        # Wait for Forgejo to start
-        print_status "Waiting for Git server to initialize..."
-        sleep 5
+        # Export environment variables for the setup script
+        local BASE_DOMAIN=$(grep "^BASE_DOMAIN=" .env | cut -d'=' -f2)
+        local BASE_PORT=$(grep "^BASE_PORT=" .env | cut -d'=' -f2)
+        local PROTOCOL=$(grep "^PROTOCOL=" .env | cut -d'=' -f2)
+        local GIT_ADMIN_USER=$(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2)
+        local GIT_ADMIN_PASSWORD=$(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)
+        local GIT_ADMIN_EMAIL=$(grep "^GIT_ADMIN_EMAIL=" .env | cut -d'=' -f2)
+        local GIT_SITE_NAME=$(grep "^GIT_SITE_NAME=" .env | cut -d'=' -f2)
         
-        # Source environment variables for the setup script
-        export $(grep -E "^(BASE_DOMAIN|BASE_PORT|PROTOCOL|GIT_.*)" .env | xargs)
+        # Set defaults if not found
+        BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+        BASE_PORT=${BASE_PORT:-80}
+        PROTOCOL=${PROTOCOL:-http}
+        GIT_ADMIN_USER=${GIT_ADMIN_USER:-developer}
+        GIT_ADMIN_PASSWORD=${GIT_ADMIN_PASSWORD:-admin123!}
+        GIT_ADMIN_EMAIL=${GIT_ADMIN_EMAIL:-gitadmin@xaresaicoder.local}
+        GIT_SITE_NAME=${GIT_SITE_NAME:-XaresAICoder Git Server}
         
-        # Create admin user for Forgejo (using environment variables configuration)
-        print_status "Creating Forgejo admin user..."
+        # Export variables for the setup script
+        export BASE_DOMAIN BASE_PORT PROTOCOL GIT_ADMIN_USER GIT_ADMIN_PASSWORD GIT_ADMIN_EMAIL GIT_SITE_NAME
+        export FORGEJO_CONTAINER_NAME="xaresaicoder-forgejo"
         
-        local admin_user=$(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2)
-        local admin_pass=$(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)
-        local admin_email=$(grep "^GIT_ADMIN_EMAIL=" .env | cut -d'=' -f2)
-        
-        # Use defaults if not found in .env
-        admin_user=${admin_user:-developer}
-        admin_pass=${admin_pass:-admin123!}
-        admin_email=${admin_email:-developer@xaresaicoder.local}
-        
-        # Check if admin user already exists
-        if docker exec "$FORGEJO_CONTAINER_NAME" su -c "forgejo admin user list" git | grep -q "$admin_user"; then
-            print_success "Admin user '$admin_user' already exists"
-        else
-            # Create admin user
-            if docker exec "$FORGEJO_CONTAINER_NAME" su -c "forgejo admin user create --admin --username '$admin_user' --password '$admin_pass' --email '$admin_email'" git; then
-                print_success "Admin user '$admin_user' created successfully!"
+        # Check if setup script exists
+        if [ -f "./setup-forgejo.sh" ]; then
+            print_status "Running Forgejo automated setup script..."
+            if ./setup-forgejo.sh; then
+                return 0
             else
-                print_warning "Failed to create admin user, but Git server is ready"
+                print_warning "Forgejo setup script failed - trying manual setup"
             fi
+        else
+            print_warning "Setup script not found - trying manual setup"
         fi
         
-        print_success "Git server is ready at $BASE_URL/"
-        print_info "Admin credentials: $admin_user / $admin_pass"
+        # Fallback manual setup if script failed or doesn't exist
+        print_status "Attempting manual Forgejo setup..."
+        
+        # Wait for Forgejo to be ready
+        local max_attempts=20
+        local attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+            if docker exec "$FORGEJO_CONTAINER_NAME" curl -f -s http://localhost:3000/ > /dev/null 2>&1; then
+                print_success "Forgejo is ready!"
+                break
+            fi
+            
+            print_status "Attempt $attempt/$max_attempts - waiting for Forgejo..."
+            sleep 3
+            ((attempt++))
+        done
+        
+        if [ $attempt -gt $max_attempts ]; then
+            print_error "Forgejo failed to start within expected time"
+            return 1
+        fi
+        
+        # Create admin user directly
+        print_status "Creating admin user '$GIT_ADMIN_USER'..."
+        if docker exec -u git "$FORGEJO_CONTAINER_NAME" forgejo admin user create \
+            --admin \
+            --username "$GIT_ADMIN_USER" \
+            --password "$GIT_ADMIN_PASSWORD" \
+            --email "$GIT_ADMIN_EMAIL" 2>/dev/null; then
+            print_success "Admin user '$GIT_ADMIN_USER' created successfully!"
+        else
+            print_warning "Failed to create admin user (may already exist)"
+        fi
+        
+        print_success "Git server setup completed"
         return 0
     else
         print_status "Git server is disabled (ENABLE_GIT_SERVER=false)"
