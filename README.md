@@ -27,6 +27,7 @@ Pre-configured workspace with recommended AI coding assistants:
 
 ### 🔧 **Development Tools**
 - **Integrated Git Server** - Optional self-hosted Forgejo Git server with GitHub Actions compatibility
+- **Automatic Git Repository Creation** - One-click Git repo creation and workspace configuration
 - **GitHub CLI (gh)** - Complete GitHub integration for repository management
 - **Git** - Version control with automatic repository initialization
 - **SSH support** - Secure authentication for GitHub and other services
@@ -155,9 +156,10 @@ git pull && ./deploy.sh --skip-network
    - **Node.js React**: Modern web applications with React 18 and Vite
    - **Java Spring Boot**: Enterprise applications with Spring Boot 3.1 and Java 17
 3. **Optional**: Check "Password Protect Workspace" for secure access
-4. Click "Create Workspace"
-5. Wait for the workspace to be created (Java projects may take longer)
-6. VS Code will open in a new tab
+4. **Optional**: Check "Create Git Repository" to automatically create and configure a Git repository (requires Git server)
+5. Click "Create Workspace"
+6. Wait for the workspace to be created (Java projects may take longer)
+7. VS Code will open in a new tab with pre-configured Git remote (if Git repository was created)
 
 ### GitHub Integration
 
@@ -231,13 +233,14 @@ docker compose down
 ### API Endpoints
 
 #### Project Management
-- `POST /api/projects/create` - Create new project with optional password protection
+- `POST /api/projects/create` - Create new project with optional password protection and Git repository
   ```json
   {
     "projectName": "my-project",
     "projectType": "python-flask",
     "passwordProtected": true,  // optional
-    "password": "secure-password"  // required if passwordProtected is true
+    "password": "secure-password",  // required if passwordProtected is true
+    "createGitRepo": true  // optional, creates Git repository if Git server is enabled
   }
   ```
 - `GET /api/projects/:id` - Get project details with real-time status
@@ -780,7 +783,19 @@ XaresAICoder includes an optional self-hosted Git server powered by **Forgejo** 
 | **Enterprise Features** | ✅ Advanced capabilities | Issue tracking, PR workflows |
 | **API Compatible** | ✅ GitHub-compatible API | Easy integration with tools |
 
-#### **Workspace Git Integration**
+#### **Automatic Git Repository Creation**
+
+**🚀 One-Click Git Integration**: When creating a workspace, simply check "Create Git Repository" and XaresAICoder automatically:
+
+✅ **Creates Git repository** in Forgejo with intelligent name handling  
+✅ **Configures workspace** with pre-configured Git remote  
+✅ **Makes initial commit** with all project template files  
+✅ **Pushes to remote** so your code is immediately backed up  
+✅ **Handles name conflicts** by appending random suffixes (e.g., `myproject-bdef`)  
+
+**Visual Integration**: Projects with Git repositories show a clickable Git icon in the project list for instant repository access.
+
+#### **Manual Git Integration**
 
 **Create repositories directly from your workspace:**
 
@@ -798,8 +813,6 @@ git clone http://developer:admin123!@forgejo:3000/developer/my-project.git
 git remote add origin http://developer:admin123!@forgejo:3000/developer/my-project.git
 git push -u origin main
 ```
-
-**Complete command-line workflow - no web interface needed for basic operations!**
 
 #### **Features**
 
