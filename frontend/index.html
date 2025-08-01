@@ -208,6 +208,12 @@
                             
                             <div class="git-commands">
                                 <div class="command-section">
+                                    <h5>🆕 Create New Repository</h5>
+                                    <code>curl -u developer:admin123! -X POST \<br>&nbsp;&nbsp;-H "Content-Type: application/json" \<br>&nbsp;&nbsp;-d '{"name":"my-project","description":"My new project","private":false}' \<br>&nbsp;&nbsp;http://forgejo:3000/api/v1/user/repos</code>
+                                    <p>Replace <code>my-project</code> with your desired repository name.</p>
+                                </div>
+                                
+                                <div class="command-section">
                                     <h5>🔗 Clone Repository</h5>
                                     <code>git clone http://developer:admin123\!@forgejo:3000/developer/repo.git</code>
                                 </div>
@@ -228,7 +234,8 @@
                             </div>
                             
                             <div class="setup-note">
-                                <p><strong>Note:</strong> These URLs work from inside workspace containers. Replace <code>repo</code> with your actual repository name.</p>
+                                <p><strong>Note:</strong> These URLs work from inside workspace containers. Replace <code>my-project</code> and <code>repo</code> with your actual repository name.</p>
+                                <p><strong>Workflow:</strong> Create repo → Clone/Add remote → Push your code. No need to use the web interface for basic repository creation!</p>
                             </div>
                         </div>
                     </div>
