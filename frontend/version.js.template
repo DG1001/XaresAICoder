@@ -1,0 +1,13 @@
+// Version information - automatically generated during deployment
+window.APP_VERSION = {
+    version: '{{VERSION}}',
+    gitTag: '{{GIT_TAG}}',
+    gitHash: '{{GIT_HASH}}',
+    buildDate: '{{BUILD_DATE}}',
+    buildEnv: '{{BUILD_ENV}}'
+};
+
+// Export for use in other modules
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = window.APP_VERSION;
+}

@@ -34,6 +34,9 @@ class XaresAICoder {
         
         // Start polling for project status updates
         this.startPolling();
+        
+        // Display version information
+        this.displayVersionInfo();
     }
 
     async loadConfiguration() {
@@ -1109,6 +1112,63 @@ class XaresAICoder {
         if (indicator) {
             indicator.style.display = 'none';
         }
+    }
+
+    // Version Display Methods
+    displayVersionInfo() {
+        const versionElement = document.getElementById('version-info');
+        if (!versionElement) {
+            return;
+        }
+
+        // Get version information from the global variable
+        if (typeof window.APP_VERSION !== 'undefined') {
+            const version = window.APP_VERSION;
+            const versionText = this.formatVersionInfo(version);
+            versionElement.textContent = versionText;
+            versionElement.title = this.getVersionTooltip(version);
+        } else {
+            versionElement.textContent = 'XaresAICoder';
+            versionElement.title = 'Version information not available';
+        }
+    }
+
+    formatVersionInfo(version) {
+        // Format: "XaresAICoder v1.2.3"
+        if (version.gitTag && version.gitTag !== 'v0.0.0-dev') {
+            return `XaresAICoder ${version.gitTag}`;
+        } else if (version.version) {
+            return `XaresAICoder ${version.version}`;
+        } else {
+            return 'XaresAICoder';
+        }
+    }
+
+    getVersionTooltip(version) {
+        const parts = [];
+        
+        if (version.version) {
+            parts.push(`Version: ${version.version}`);
+        }
+        
+        if (version.gitTag) {
+            parts.push(`Git Tag: ${version.gitTag}`);
+        }
+        
+        if (version.gitHash && version.gitHash !== 'unknown') {
+            parts.push(`Commit: ${version.gitHash}`);
+        }
+        
+        if (version.buildDate) {
+            const buildDate = new Date(version.buildDate);
+            parts.push(`Built: ${buildDate.toLocaleString()}`);
+        }
+        
+        if (version.buildEnv) {
+            parts.push(`Environment: ${version.buildEnv}`);
+        }
+        
+        return parts.join('\n');
     }
 
     loadProjectsFromStorage() {

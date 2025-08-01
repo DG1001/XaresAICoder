@@ -292,6 +292,27 @@ setup_git_server() {
     fi
 }
 
+# Function to build frontend with version information
+build_frontend_version() {
+    print_status "Building frontend with version information..."
+    
+    # Set build environment
+    export BUILD_ENV="production"
+    
+    # Run the frontend version builder
+    if [ -f "./build-frontend-version-simple.sh" ]; then
+        if ./build-frontend-version-simple.sh; then
+            print_success "Frontend version build completed"
+        else
+            print_error "Failed to build frontend version information"
+            exit 1
+        fi
+    else
+        print_error "build-frontend-version-simple.sh not found"
+        exit 1
+    fi
+}
+
 # Function to generate nginx configuration
 generate_nginx_config() {
     local git_server_enabled=$(grep "^ENABLE_GIT_SERVER=" .env | cut -d'=' -f2)
@@ -323,6 +344,9 @@ deploy_application() {
     local enable_git_server=${1:-false}
     
     print_status "Deploying XaresAICoder application..."
+    
+    # Build frontend with version information
+    build_frontend_version
     
     # Generate appropriate nginx configuration
     generate_nginx_config

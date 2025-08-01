@@ -127,6 +127,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    padding-bottom: 24px; /* Account for version footer */
 }
 
 /* Title Bar */
@@ -1177,5 +1178,47 @@ code {
     /* Add some padding for potential notches/safe areas */
     .title-bar {
         padding-top: env(safe-area-inset-top, 20px);
+    }
+}
+
+/* Version Footer */
+.version-footer {
+    position: fixed;
+    bottom: 0;
+    left: 240px; /* Account for activity bar width */
+    right: 0;
+    background: var(--vscode-sidebar-bg);
+    border-top: 1px solid var(--vscode-border);
+    padding: 4px 16px;
+    font-size: 11px;
+    color: var(--vscode-text-muted);
+    z-index: 100;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.version-footer:hover {
+    background: var(--vscode-hover-bg);
+    color: var(--vscode-text);
+}
+
+#version-info {
+    cursor: default;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Version Footer Responsive */
+@media (max-width: 768px) {
+    .version-footer {
+        left: 0;
+        padding: 6px 16px;
+        text-align: center;
+    }
+}
+
+@media (display-mode: standalone) {
+    .version-footer {
+        /* Add padding for potential home indicator */
+        padding-bottom: env(safe-area-inset-bottom, 4px);
     }
 }

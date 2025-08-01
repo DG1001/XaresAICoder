@@ -1,9 +1,9 @@
 // XaresAICoder Service Worker
 // Provides caching and offline functionality for PWA
 
-const CACHE_NAME = 'xaresaicoder-v1.0.0';
-const STATIC_CACHE_NAME = 'xaresaicoder-static-v1.0.0';
-const DYNAMIC_CACHE_NAME = 'xaresaicoder-dynamic-v1.0.0';
+const CACHE_NAME = 'xaresaicoder-v4_1_0';
+const STATIC_CACHE_NAME = 'xaresaicoder-static-v4_1_0';
+const DYNAMIC_CACHE_NAME = 'xaresaicoder-dynamic-v4_1_0';
 
 // Assets to cache immediately (shell)
 const STATIC_ASSETS = [
