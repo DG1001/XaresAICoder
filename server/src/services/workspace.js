@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const bcrypt = require('bcrypt');
 const dockerService = require('./docker');
+const gitService = require('./git');
 
 class WorkspaceService {
   constructor() {
@@ -52,6 +53,8 @@ class WorkspaceService {
         userId,
         passwordProtected: options.passwordProtected || false,
         passwordHash: passwordHash, // Store hashed password
+        createGitRepo: options.createGitRepo || false,
+        gitRepository: null, // Will be set if Git repo is created
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'creating',
@@ -72,6 +75,7 @@ class WorkspaceService {
         projectName: project.projectName,
         projectType,
         passwordProtected: project.passwordProtected,
+        createGitRepo: project.createGitRepo,
         workspaceUrl: null,
         status: 'creating',
         createdAt: project.createdAt,
@@ -88,23 +92,53 @@ class WorkspaceService {
     try {
       console.log(`Starting asynchronous workspace creation for project ${projectId}`);
       
-      // Create Docker container with auth options
+      let gitRepository = null;
+      
+      // Create Git repository if requested and Git server is available
+      if (options.createGitRepo && gitService.isGitServerAvailable()) {
+        try {
+          console.log(`Creating Git repository for project ${projectId}`);
+          const project = this.projects.get(projectId);
+          if (project) {
+            const repoResult = await gitService.createGitRepository(
+              project.projectName,
+              `Repository for ${project.projectName} (${projectType})`,
+              false // public by default
+            );
+            
+            if (repoResult.success) {
+              gitRepository = repoResult.repository;
+              console.log(`Git repository created: ${gitRepository.name}`);
+            }
+          }
+        } catch (gitError) {
+          console.error(`Failed to create Git repository for project ${projectId}:`, gitError);
+          // Continue with workspace creation even if Git repo creation fails
+        }
+      }
+      
+      // Create Docker container with auth options and Git config
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
         passwordProtected: options.passwordProtected || false,
-        password: options.password || null
+        password: options.password || null,
+        gitRepository: gitRepository
       });
 
-      // Update project with workspace URL and running status
+      // Update project with workspace URL, Git info, and running status
       const project = this.projects.get(projectId);
       if (project) {
         project.status = 'running';
         project.workspaceUrl = workspace.workspaceUrl;
+        project.gitRepository = gitRepository;
         project.lastAccessed = new Date();
         
         // Save updated project to disk
         await this.saveProjectsToDisk();
         
         console.log(`Workspace creation completed for project ${projectId}: ${workspace.workspaceUrl}`);
+        if (gitRepository) {
+          console.log(`Git repository configured: ${gitRepository.webUrl}`);
+        }
       } else {
         console.error(`Project ${projectId} not found when trying to update after container creation`);
       }
@@ -281,6 +315,7 @@ class WorkspaceService {
             passwordProtected: p.passwordProtected || false,
             status: p.status,
             workspaceUrl: p.workspaceUrl,
+            gitRepository: p.gitRepository || null,
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };
@@ -293,6 +328,7 @@ class WorkspaceService {
             passwordProtected: p.passwordProtected || false,
             status: 'error',
             workspaceUrl: p.workspaceUrl,
+            gitRepository: p.gitRepository || null,
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };

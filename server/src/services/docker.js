@@ -21,8 +21,8 @@ class DockerService {
       // Build the code-server image if it doesn't exist
       await this.ensureCodeServerImage();
 
-      // Setup authentication
-      const { passwordProtected = false, password = null } = authOptions;
+      // Setup authentication and Git configuration
+      const { passwordProtected = false, password = null, gitRepository = null } = authOptions;
       let authFlag = 'none'; // Default to no auth
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
@@ -34,6 +34,13 @@ class DockerService {
       if (passwordProtected && password) {
         authFlag = 'password';
         envVars.push(`PASSWORD=${password}`);
+      }
+
+      // Add Git repository configuration to environment if available
+      if (gitRepository) {
+        envVars.push(`GIT_REPO_NAME=${gitRepository.name}`);
+        envVars.push(`GIT_REMOTE_URL=${gitRepository.internalCloneUrl}`);
+        envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
       }
 
       const container = await this.docker.createContainer({
@@ -118,6 +125,14 @@ class DockerService {
         'git config user.email "user@xaresaicoder.local"'
       ];
 
+      // Add Git remote configuration if repository was created
+      // We'll check for environment variables in the container
+      commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then');
+      commands.push('  echo "Configuring Git remote for repository: $GIT_REPO_NAME"');
+      commands.push('  git remote add origin "$GIT_REMOTE_URL"');
+      commands.push('  git branch -M main');
+      commands.push('fi');
+
       if (projectType === 'python-flask') {
         console.log('Adding Flask project setup commands');
         commands.push('setup_flask_project');
@@ -140,6 +155,12 @@ class DockerService {
         commands.push('git commit -m "Initial empty project setup"');
       }
 
+      // Push to remote repository if configured
+      commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then');
+      commands.push('  echo "Pushing to remote repository: $GIT_REPO_NAME"');
+      commands.push('  git push -u origin main');
+      commands.push('fi');
+
       // Run commands as root but set proper ownership afterward
       for (const cmd of commands) {
         console.log(`Executing: ${cmd}`);
@@ -149,7 +170,7 @@ class DockerService {
           Cmd: ['bash', '-c', fullCmd],
           AttachStdout: true,
           AttachStderr: true,
-          Env: ['HOME=/home/coder', 'USER=coder']
+          Env: ['HOME=/home/coder', 'USER=coder'] // Git env vars are already in container env
         });
         
         const stream = await exec.start();

@@ -6,7 +6,7 @@ const router = express.Router();
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, passwordProtected, password } = req.body;
+    const { projectName, projectType, passwordProtected, password, createGitRepo } = req.body;
     
     if (!projectName || !projectType) {
       return res.status(400).json({
@@ -34,7 +34,8 @@ router.post('/create', async (req, res) => {
 
     const project = await workspaceService.createProject(projectName, projectType, {
       passwordProtected: !!passwordProtected,
-      password: passwordProtected ? password : null
+      password: passwordProtected ? password : null,
+      createGitRepo: !!createGitRepo
     });
     
     res.status(201).json({
