@@ -23,15 +23,19 @@ class GitService {
    * @returns {Promise<Object>} Repository creation result
    */
   async createGitRepository(repoName, description = '', isPrivate = false) {
+    console.log(`Git repository creation requested: ${repoName} (enabled: ${this.isGitServerAvailable()})`);
+    
     if (!this.isGitServerAvailable()) {
       throw new Error('Git server is not enabled or available');
     }
 
     // Validate repository name
     const validatedName = this.validateRepositoryName(repoName);
+    console.log(`Repository name validated: ${repoName} -> ${validatedName}`);
     
     // Check if repository already exists and generate unique name if needed
     const uniqueRepoName = await this.generateUniqueRepoName(validatedName);
+    console.log(`Unique repository name: ${uniqueRepoName}`);
 
     const repoData = {
       name: uniqueRepoName,
@@ -42,7 +46,11 @@ class GitService {
     };
 
     try {
-      const response = await fetch(`${this.forgejoUrl}/api/v1/user/repos`, {
+      const apiUrl = `${this.forgejoUrl}/api/v1/user/repos`;
+      console.log(`Making API call to create repository: ${apiUrl}`);
+      console.log(`Repository data:`, repoData);
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -51,6 +59,8 @@ class GitService {
         body: JSON.stringify(repoData)
       });
 
+      console.log(`Git repository API response: ${response.status} ${response.statusText}`);
+
       if (!response.ok) {
         const errorData = await response.text();
         console.error('Failed to create Git repository:', response.status, errorData);
@@ -58,7 +68,28 @@ class GitService {
       }
 
       const repository = await response.json();
+      console.log(`Repository created successfully:`, {
+        name: repository.name, 
+        html_url: repository.html_url,
+        clone_url: repository.clone_url
+      });
       
+      // Construct proper web URL using our environment config instead of Forgejo's response
+      const protocol = process.env.PROTOCOL || 'http';
+      const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+      const basePort = process.env.BASE_PORT || '80';
+      
+      let webUrl;
+      if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
+        // Standard ports - don't include port in URL
+        webUrl = `${protocol}://${baseDomain}/git/${this.adminUser}/${repository.name}`;
+      } else {
+        // Non-standard ports - include port in URL
+        webUrl = `${protocol}://${baseDomain}:${basePort}/git/${this.adminUser}/${repository.name}`;
+      }
+      
+      console.log(`Constructed web URL: ${webUrl} (from env: ${protocol}://${baseDomain}:${basePort})`);
+
       return {
         success: true,
         repository: {
@@ -66,7 +97,7 @@ class GitService {
           fullName: repository.full_name,
           cloneUrl: repository.clone_url,
           internalCloneUrl: `http://${this.adminUser}:${this.adminPassword}@forgejo:3000/${this.adminUser}/${repository.name}.git`,
-          webUrl: repository.html_url,
+          webUrl: webUrl, // Use our constructed URL instead of repository.html_url
           description: repository.description,
           private: repository.private
         }
@@ -177,11 +208,25 @@ class GitService {
    * @returns {Object} Git configuration for workspace
    */
   getWorkspaceGitConfig(repoName) {
+    // Construct web URL with proper port handling
+    const protocol = process.env.PROTOCOL || 'http';
+    const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+    const basePort = process.env.BASE_PORT || '80';
+    
+    let webUrl;
+    if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
+      // Standard ports - don't include port in URL
+      webUrl = `${protocol}://${baseDomain}/git/${this.adminUser}/${repoName}`;
+    } else {
+      // Non-standard ports - include port in URL
+      webUrl = `${protocol}://${baseDomain}:${basePort}/git/${this.adminUser}/${repoName}`;
+    }
+    
     return {
       remoteUrl: `http://${this.adminUser}:${this.adminPassword}@forgejo:3000/${this.adminUser}/${repoName}.git`,
       remoteName: 'origin',
       defaultBranch: 'main',
-      webUrl: `${process.env.PROTOCOL || 'http'}://${process.env.BASE_DOMAIN || 'localhost'}:${process.env.BASE_PORT || 80}/git/${this.adminUser}/${repoName}`
+      webUrl: webUrl
     };
   }
 
@@ -191,18 +236,21 @@ class GitService {
    */
   async testGitServerConnection() {
     if (!this.isGitServerAvailable()) {
+      console.log('Git server is disabled (ENABLE_GIT_SERVER != true)');
       return false;
     }
 
     try {
+      console.log(`Testing Git server connectivity to: ${this.forgejoUrl}/api/v1/version`);
       const response = await fetch(`${this.forgejoUrl}/api/v1/version`, {
         method: 'GET',
         timeout: 5000
       });
       
+      console.log(`Git server connectivity test result: ${response.ok} (status: ${response.status})`);
       return response.ok;
     } catch (error) {
-      console.error('Git server connection test failed:', error);
+      console.error('Git server connection test failed:', error.message);
       return false;
     }
   }
