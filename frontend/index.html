@@ -24,6 +24,12 @@
                     </svg>
                     <span>Projects</span>
                 </div>
+                <div class="nav-item" data-tab="git-server" style="display: none;">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                    </svg>
+                    <span>Git Server</span>
+                </div>
                 <div class="nav-item" data-tab="ai-tools">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M6 2a.75.75 0 0 1 .696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5H12.596l-1.846 4.615a.75.75 0 0 1-1.393 0L6 4.869 4.357 8.115a.75.75 0 0 1-1.393 0L1.118 4.615A.75.75 0 0 1 1.75 4H5.25a.75.75 0 0 1 0 1.5H2.404l1.339 3.346L5.304 2.47A.75.75 0 0 1 6 2z"/>
@@ -150,6 +156,88 @@
                         </svg>
                         <h4>No projects yet</h4>
                         <p>Create your first project to get started with AI-powered development</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Git Server Tab -->
+            <div class="tab-panel git-server-tab" id="git-server-tab">
+                <div class="panel-header">
+                    <h2>Git Server</h2>
+                </div>
+
+                <div class="content-section">
+                    <div class="git-server-info">
+                        <h3>🚀 Forgejo Git Server</h3>
+                        <p>Your integrated self-hosted Git server with GitHub Actions compatibility. Manage repositories, collaborate on code, and automate your workflows.</p>
+                        
+                        <div class="git-server-actions">
+                            <a href="/git/" target="_blank" class="btn-primary">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                                </svg>
+                                Open Forgejo Git Server
+                            </a>
+                        </div>
+
+                        <div class="git-features">
+                            <h4>Features</h4>
+                            <div class="features-grid">
+                                <div class="feature-item">
+                                    <h5>📦 Repository Management</h5>
+                                    <p>Create, clone, and manage Git repositories with full version control</p>
+                                </div>
+                                <div class="feature-item">
+                                    <h5>🔄 GitHub Actions Compatible</h5>
+                                    <p>Run CI/CD pipelines with full GitHub Actions workflow support</p>
+                                </div>
+                                <div class="feature-item">
+                                    <h5>👥 Team Collaboration</h5>
+                                    <p>Issue tracking, pull requests, and code review workflows</p>
+                                </div>
+                                <div class="feature-item">
+                                    <h5>🔐 Self-Hosted Security</h5>
+                                    <p>Complete control over your code with on-premise hosting</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="git-setup">
+                            <h4>Workspace Git Commands</h4>
+                            <p>Use these commands <strong>inside your workspace containers</strong> to work with Git repositories:</p>
+                            
+                            <div class="git-commands">
+                                <div class="command-section">
+                                    <h5>🆕 Create New Repository</h5>
+                                    <code>curl -u developer:admin123! -X POST \<br>&nbsp;&nbsp;-H "Content-Type: application/json" \<br>&nbsp;&nbsp;-d '{"name":"my-project","description":"My new project","private":false}' \<br>&nbsp;&nbsp;http://forgejo:3000/api/v1/user/repos</code>
+                                    <p>Replace <code>my-project</code> with your desired repository name.</p>
+                                </div>
+                                
+                                <div class="command-section">
+                                    <h5>🔗 Clone Repository</h5>
+                                    <code>git clone http://developer:admin123\!@forgejo:3000/developer/repo.git</code>
+                                </div>
+                                
+                                <div class="command-section">
+                                    <h5>📂 Add Remote to Existing Project</h5>
+                                    <code>git remote add origin http://developer:admin123\!@forgejo:3000/developer/repo.git</code>
+                                    <br>
+                                    <code>git push -u origin main</code>
+                                </div>
+                                
+                                <div class="command-section">
+                                    <h5>🌐 Web Access</h5>
+                                    <p>Manage repositories through the web interface:</p>
+                                    <code>http://localhost/git/</code>
+                                    <p>Login: <strong>developer</strong> / <strong>admin123!</strong></p>
+                                </div>
+                            </div>
+                            
+                            <div class="setup-note">
+                                <p><strong>Note:</strong> These URLs work from inside workspace containers. Replace <code>my-project</code> and <code>repo</code> with your actual repository name.</p>
+                                <p><strong>Workflow:</strong> Create repo → Clone/Add remote → Push your code. No need to use the web interface for basic repository creation!</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

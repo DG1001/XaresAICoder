@@ -17,6 +17,29 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Configuration endpoint
+app.get('/api/config', (req, res) => {
+  const config = {
+    gitServerEnabled: process.env.ENABLE_GIT_SERVER === 'true',
+    baseDomain: process.env.BASE_DOMAIN || 'localhost',
+    basePort: process.env.BASE_PORT || '80',
+    protocol: process.env.PROTOCOL || 'http'
+  };
+  
+  if (config.gitServerEnabled) {
+    // Construct Git server URL
+    if (config.basePort === '80' && config.protocol === 'http') {
+      config.gitServerUrl = `${config.protocol}://${config.baseDomain}/git/`;
+    } else if (config.basePort === '443' && config.protocol === 'https') {
+      config.gitServerUrl = `${config.protocol}://${config.baseDomain}/git/`;
+    } else {
+      config.gitServerUrl = `${config.protocol}://${config.baseDomain}:${config.basePort}/git/`;
+    }
+  }
+  
+  res.json(config);
+});
+
 // Routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/workspace', workspaceRouter);

@@ -4,7 +4,7 @@ services:
     ports:
       - "${HOST_PORT:-${BASE_PORT:-80}}:${BASE_PORT:-80}"
     volumes:
-      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template
+      - ./build/nginx.conf.template:/etc/nginx/templates/default.conf.template
       - ./frontend:/usr/share/nginx/html/frontend
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
@@ -25,6 +25,7 @@ services:
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
       - BASE_PORT=${BASE_PORT:-80}
       - PROTOCOL=${PROTOCOL:-http}
+      - ENABLE_GIT_SERVER=${ENABLE_GIT_SERVER:-false}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
@@ -32,9 +33,48 @@ services:
       - xares-aicoder-network
     restart: unless-stopped
 
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:9
+    container_name: xaresaicoder-forgejo
+    profiles: ["git-server"]
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - FORGEJO__database__DB_TYPE=sqlite3
+      - FORGEJO__database__PATH=/data/gitea/gitea.db
+      - FORGEJO__server__DOMAIN=${BASE_DOMAIN:-localhost}
+      - FORGEJO__server__SSH_DOMAIN=${BASE_DOMAIN:-localhost}
+      - FORGEJO__server__ROOT_URL=${PROTOCOL:-http}://${BASE_DOMAIN:-localhost}:${BASE_PORT:-80}/git/
+      - FORGEJO__server__HTTP_PORT=3000
+      - FORGEJO__server__SSH_PORT=2222
+      - FORGEJO__server__LFS_START_SERVER=true
+      - FORGEJO__server__OFFLINE_MODE=true
+      - FORGEJO__actions__ENABLED=true
+      - FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org
+      - FORGEJO__security__INSTALL_LOCK=true
+      - FORGEJO__security__SECRET_KEY=your-secret-key-change-this-in-production
+      - FORGEJO__security__INTERNAL_TOKEN=
+      - FORGEJO__service__DISABLE_REGISTRATION=true
+      - FORGEJO__service__DEFAULT_ALLOW_CREATE_ORGANIZATION=true
+      - FORGEJO__log__LEVEL=info
+    volumes:
+      - forgejo_data:/data
+    ports:
+      - "2222:22"  # SSH access for git operations
+    networks:
+      - xares-aicoder-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
 networks:
   xares-aicoder-network:
     external: true
 
 volumes:
   workspace_data:
+  forgejo_data:

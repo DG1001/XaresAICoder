@@ -114,6 +114,8 @@ build_code_server_image() {
 
 # Function to setup environment
 setup_environment() {
+    local enable_git_server=${1:-false}
+    
     print_status "Setting up environment configuration..."
     
     # If no .env exists, help user create one
@@ -157,10 +159,27 @@ setup_environment() {
         print_success ".env file already exists"
     fi
     
+    # Configure Git server based on flag
+    if [ "$enable_git_server" = true ]; then
+        print_status "Enabling Git server configuration..."
+        if grep -q "^ENABLE_GIT_SERVER=" .env; then
+            sed -i 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=true/' .env
+        else
+            echo "ENABLE_GIT_SERVER=true" >> .env
+        fi
+    else
+        print_status "Disabling Git server configuration..."
+        if grep -q "^ENABLE_GIT_SERVER=" .env; then
+            sed -i 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=false/' .env
+        else
+            echo "ENABLE_GIT_SERVER=false" >> .env
+        fi
+    fi
+    
     # Show current configuration
     print_status "Current configuration:"
     echo "----------------------------------------"
-    grep -E "BASE_DOMAIN|BASE_PORT|PROTOCOL" .env | sed 's/^/  /'
+    grep -E "BASE_DOMAIN|BASE_PORT|PROTOCOL|ENABLE_GIT_SERVER" .env | sed 's/^/  /'
     echo "----------------------------------------"
     
     # Ask if user wants to edit
@@ -188,21 +207,161 @@ setup_network() {
     fi
 }
 
+# Function to setup Git server
+setup_git_server() {
+    # Check if Git server is enabled
+    local git_server_enabled=$(grep "^ENABLE_GIT_SERVER=" .env | cut -d'=' -f2)
+    
+    if [ "$git_server_enabled" = "true" ]; then
+        print_status "Setting up Forgejo Git server..."
+        
+        # Export environment variables for the setup script
+        local BASE_DOMAIN=$(grep "^BASE_DOMAIN=" .env | cut -d'=' -f2)
+        local BASE_PORT=$(grep "^BASE_PORT=" .env | cut -d'=' -f2)
+        local PROTOCOL=$(grep "^PROTOCOL=" .env | cut -d'=' -f2)
+        local GIT_ADMIN_USER=$(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2)
+        local GIT_ADMIN_PASSWORD=$(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)
+        local GIT_ADMIN_EMAIL=$(grep "^GIT_ADMIN_EMAIL=" .env | cut -d'=' -f2)
+        local GIT_SITE_NAME=$(grep "^GIT_SITE_NAME=" .env | cut -d'=' -f2)
+        
+        # Set defaults if not found
+        BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+        BASE_PORT=${BASE_PORT:-80}
+        PROTOCOL=${PROTOCOL:-http}
+        GIT_ADMIN_USER=${GIT_ADMIN_USER:-developer}
+        GIT_ADMIN_PASSWORD=${GIT_ADMIN_PASSWORD:-admin123!}
+        GIT_ADMIN_EMAIL=${GIT_ADMIN_EMAIL:-gitadmin@xaresaicoder.local}
+        GIT_SITE_NAME=${GIT_SITE_NAME:-XaresAICoder Git Server}
+        
+        # Export variables for the setup script
+        export BASE_DOMAIN BASE_PORT PROTOCOL GIT_ADMIN_USER GIT_ADMIN_PASSWORD GIT_ADMIN_EMAIL GIT_SITE_NAME
+        export FORGEJO_CONTAINER_NAME="xaresaicoder-forgejo"
+        
+        # Check if setup script exists
+        if [ -f "./setup-forgejo.sh" ]; then
+            print_status "Running Forgejo automated setup script..."
+            if ./setup-forgejo.sh; then
+                return 0
+            else
+                print_warning "Forgejo setup script failed - trying manual setup"
+            fi
+        else
+            print_warning "Setup script not found - trying manual setup"
+        fi
+        
+        # Fallback manual setup if script failed or doesn't exist
+        print_status "Attempting manual Forgejo setup..."
+        
+        # Wait for Forgejo to be ready
+        local max_attempts=20
+        local attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+            if docker exec "$FORGEJO_CONTAINER_NAME" curl -f -s http://localhost:3000/ > /dev/null 2>&1; then
+                print_success "Forgejo is ready!"
+                break
+            fi
+            
+            print_status "Attempt $attempt/$max_attempts - waiting for Forgejo..."
+            sleep 3
+            ((attempt++))
+        done
+        
+        if [ $attempt -gt $max_attempts ]; then
+            print_error "Forgejo failed to start within expected time"
+            return 1
+        fi
+        
+        # Create admin user directly
+        print_status "Creating admin user '$GIT_ADMIN_USER'..."
+        if docker exec -u git "$FORGEJO_CONTAINER_NAME" forgejo admin user create \
+            --admin \
+            --username "$GIT_ADMIN_USER" \
+            --password "$GIT_ADMIN_PASSWORD" \
+            --email "$GIT_ADMIN_EMAIL" 2>/dev/null; then
+            print_success "Admin user '$GIT_ADMIN_USER' created successfully!"
+        else
+            print_warning "Failed to create admin user (may already exist)"
+        fi
+        
+        print_success "Git server setup completed"
+        return 0
+    else
+        print_status "Git server is disabled (ENABLE_GIT_SERVER=false)"
+        return 0
+    fi
+}
+
+# Function to generate nginx configuration
+generate_nginx_config() {
+    local git_server_enabled=$(grep "^ENABLE_GIT_SERVER=" .env | cut -d'=' -f2)
+    
+    print_status "Generating nginx configuration..."
+    
+    # Ensure build directory exists
+    mkdir -p build
+    
+    # Start with base template - generate to build directory
+    cp nginx-base.conf.template build/nginx.conf.template
+    
+    if [ "$git_server_enabled" = "true" ]; then
+        print_status "Including Git server configuration in nginx"
+        # Replace placeholder with Git server configuration
+        sed -i '/# GIT_SERVER_PLACEHOLDER/r nginx-git.conf.template' build/nginx.conf.template
+        sed -i '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
+    else
+        print_status "Excluding Git server configuration from nginx"
+        # Remove placeholder line
+        sed -i '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
+    fi
+    
+    print_status "Nginx configuration generated at build/nginx.conf.template"
+}
+
 # Function to deploy application
 deploy_application() {
+    local enable_git_server=${1:-false}
+    
     print_status "Deploying XaresAICoder application..."
+    
+    # Generate appropriate nginx configuration
+    generate_nginx_config
     
     # Stop existing containers
     print_status "Stopping existing containers..."
     $DOCKER_COMPOSE_CMD down --remove-orphans
     
+    # Prepare Docker Compose services list
+    local compose_services="server nginx"
+    local git_server_enabled=$(grep "^ENABLE_GIT_SERVER=" .env | cut -d'=' -f2)
+    
+    if [ "$git_server_enabled" = "true" ]; then
+        compose_services="$compose_services forgejo"
+        print_status "Git server enabled - including Forgejo service"
+    else
+        print_status "Git server disabled - excluding Forgejo service"
+    fi
+    
     # Build and start services
     print_status "Building and starting services..."
-    if $DOCKER_COMPOSE_CMD up --build -d; then
-        print_success "Services started successfully"
+    if [ "$git_server_enabled" = "true" ]; then
+        # Start all services including Git server using profile
+        print_status "Enabling Git server profile"
+        if $DOCKER_COMPOSE_CMD --profile git-server up --build -d; then
+            print_success "Services started successfully (with Git server)"
+        else
+            print_error "Failed to start services"
+            exit 1
+        fi
     else
-        print_error "Failed to start services"
-        exit 1
+        # Start only core services (without Git server profile)
+        print_status "Starting core services only"
+        if $DOCKER_COMPOSE_CMD up --build -d; then
+            print_success "Services started successfully (core only)"
+        else
+            print_error "Failed to start services"
+            exit 1
+        fi
     fi
     
     # Wait a moment for services to initialize
@@ -241,6 +400,17 @@ deploy_application() {
             sleep 3
         fi
     done
+    
+    # Setup Git server if enabled
+    if [ "$git_server_enabled" = "true" ]; then
+        if setup_git_server; then
+            print_success "Git server setup completed successfully!"
+        else
+            print_warning "Git server setup failed - manual setup required"
+            print_status "Visit http://localhost/git/ to complete the installation manually"
+            print_status "The Git server container is running and ready for manual setup"
+        fi
+    fi
 }
 
 # Function to show deployment information
@@ -249,6 +419,7 @@ show_deployment_info() {
     BASE_DOMAIN=$(grep "^BASE_DOMAIN=" .env | cut -d'=' -f2)
     BASE_PORT=$(grep "^BASE_PORT=" .env | cut -d'=' -f2)
     PROTOCOL=$(grep "^PROTOCOL=" .env | cut -d'=' -f2)
+    GIT_SERVER_ENABLED=$(grep "^ENABLE_GIT_SERVER=" .env | cut -d'=' -f2)
     
     # Construct URLs
     if [ "$BASE_PORT" = "80" ] && [ "$PROTOCOL" = "http" ]; then
@@ -269,6 +440,15 @@ show_deployment_info() {
     echo "  🔧 API Health Check:"
     echo "     $MAIN_URL/api/health"
     echo
+    
+    # Show Git server info if enabled
+    if [ "$GIT_SERVER_ENABLED" = "true" ]; then
+        echo "  🗂️  Git Server (Forgejo):"
+        echo "     $MAIN_URL/git/"
+        echo "     Admin: $(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2) / $(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)"
+        echo
+    fi
+    
     echo "  📊 Workspace Pattern:"
     echo "     Workspaces will be accessible at:"
     echo "     ${PROTOCOL}://[workspace-id].${BASE_DOMAIN}$([ "$BASE_PORT" != "80" ] && [ "$BASE_PORT" != "443" ] && echo ":${BASE_PORT}")"
@@ -290,10 +470,12 @@ show_usage() {
     echo "  --skip-env            Skip environment setup (use existing .env)"
     echo "  --skip-network        Skip Docker network setup (use existing network)"
     echo "  --build-only          Only build the code-server image, don't deploy"
+    echo "  --git-server          Enable integrated Forgejo Git server"
     echo "  --help               Show this help message"
     echo
     echo "Examples:"
     echo "  $0                           # Full deployment (recommended)"
+    echo "  $0 --git-server             # Deploy with integrated Git server"
     echo "  $0 --skip-build             # Deploy without rebuilding image"
     echo "  $0 --build-only             # Only build the code-server image"
     echo
@@ -305,6 +487,7 @@ main() {
     local skip_env=false
     local skip_network=false
     local build_only=false
+    local enable_git_server=false
     
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
@@ -323,6 +506,10 @@ main() {
                 ;;
             --build-only)
                 build_only=true
+                shift
+                ;;
+            --git-server)
+                enable_git_server=true
                 shift
                 ;;
             --help)
@@ -359,7 +546,7 @@ main() {
     
     # Setup environment
     if [ "$skip_env" = false ]; then
-        setup_environment
+        setup_environment "$enable_git_server"
     else
         print_status "Skipping environment setup"
     fi
@@ -372,7 +559,7 @@ main() {
     fi
     
     # Deploy application
-    deploy_application
+    deploy_application "$enable_git_server"
     
     # Show deployment information
     show_deployment_info

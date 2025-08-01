@@ -158,6 +158,15 @@ body {
     display: block;
 }
 
+/* Git server tab is controlled by JavaScript based on configuration */
+.git-server-tab {
+    display: none !important;
+}
+
+.git-server-tab.active {
+    display: block !important;
+}
+
 /* Panel Header */
 .panel-header {
     display: flex;
@@ -577,6 +586,90 @@ body {
     border: 1px solid var(--vscode-border);
 }
 
+/* Git Server Styles */
+.git-server-info {
+    max-width: 800px;
+}
+
+.git-server-info h3 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--vscode-text);
+    margin-bottom: 12px;
+}
+
+.git-server-info p {
+    font-size: 14px;
+    color: var(--vscode-text-muted);
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+
+.git-server-actions {
+    margin-bottom: 32px;
+}
+
+.git-features h4,
+.git-setup h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--vscode-text);
+    margin-bottom: 16px;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+}
+
+.feature-item {
+    background: var(--vscode-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.feature-item h5 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--vscode-text);
+    margin-bottom: 8px;
+}
+
+.feature-item p {
+    font-size: 13px;
+    color: var(--vscode-text-muted);
+    line-height: 1.4;
+    margin: 0;
+}
+
+.git-setup {
+    background: var(--vscode-sidebar-bg);
+    border-radius: 8px;
+    padding: 20px;
+    border: 1px solid var(--vscode-border);
+}
+
+.git-setup p {
+    font-size: 14px;
+    color: var(--vscode-text);
+    margin-bottom: 16px;
+}
+
+.setup-steps ol {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--vscode-text);
+}
+
+.setup-steps li {
+    font-size: 13px;
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
 .quick-setup h3 {
     font-size: 16px;
     font-weight: 600;
@@ -602,6 +695,78 @@ body {
     font-size: 13px;
     color: var(--vscode-text-accent);
     font-weight: 500;
+}
+
+/* Git Commands Styling */
+.git-commands {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.command-section {
+    background: var(--vscode-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.command-section h5 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--vscode-text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.command-section code {
+    display: block;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    background: var(--vscode-sidebar-bg);
+    color: var(--vscode-text-accent);
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--vscode-border);
+    margin-bottom: 8px;
+    word-break: break-all;
+    line-height: 1.4;
+}
+
+.command-section code:last-child {
+    margin-bottom: 0;
+}
+
+.command-section p {
+    font-size: 13px;
+    color: var(--vscode-text-muted);
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.setup-note {
+    background: var(--vscode-hover-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 16px;
+}
+
+.setup-note p {
+    font-size: 13px;
+    color: var(--vscode-text);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.setup-note code {
+    display: inline;
+    padding: 2px 4px;
+    margin: 0;
+    font-size: 12px;
 }
 
 /* Code Elements */

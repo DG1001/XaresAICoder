@@ -26,6 +26,7 @@ Pre-configured workspace with recommended AI coding assistants:
 - **Claude Code** - Anthropic's agentic tool for deep codebase understanding
 
 ### 🔧 **Development Tools**
+- **Integrated Git Server** - Optional self-hosted Forgejo Git server with GitHub Actions compatibility
 - **GitHub CLI (gh)** - Complete GitHub integration for repository management
 - **Git** - Version control with automatic repository initialization
 - **SSH support** - Secure authentication for GitHub and other services
@@ -108,6 +109,9 @@ The deploy script supports various options for different scenarios:
 # Full deployment (recommended for first-time setup)
 ./deploy.sh
 
+# Deploy with integrated Git server (Forgejo)
+./deploy.sh --git-server
+
 # Skip image rebuild (faster for updates)  
 ./deploy.sh --skip-build
 
@@ -172,9 +176,10 @@ See [GITHUB_WORKFLOWS.md](GITHUB_WORKFLOWS.md) for detailed GitHub integration g
 
 ### Services
 
-- **nginx**: Reverse proxy with subdomain routing for applications
+- **nginx**: Reverse proxy with subdomain routing for applications and Git server
 - **server**: Node.js API for project management and container orchestration  
 - **code-server containers**: Dynamic VS Code instances with integrated AI tools
+- **forgejo** (optional): Self-hosted Git server with GitHub Actions compatibility
 
 ### Components
 
@@ -750,62 +755,106 @@ docker system prune -a
 - **Storage**: Local storage only (no cloud persistence)
 - **Deployment**: Development-focused (production deployment in roadmap)
 
-### 🔗 **Integrated Git Server (Future Enhancement)**
+### 🔗 **Integrated Git Server (Optional)**
 
-XaresAICoder can be extended with an integrated self-hosted Git server for complete on-premise development workflows, eliminating dependencies on external Git providers.
+XaresAICoder includes an optional self-hosted Git server powered by **Forgejo** for complete on-premise development workflows, eliminating dependencies on external Git providers.
 
-#### **Forgejo vs Gitea Comparison**
+#### **Quick Start with Git Server**
 
-| Feature | Forgejo | Gitea |
-|---------|---------|-------|
-| **GitHub Actions Compatibility** | ✅ Full compatibility (Forgejo Actions) | ⚠️ Limited (Gitea Actions) |
-| **CI/CD Pipeline** | ✅ Native GitHub Actions workflow support | ⚠️ Basic workflow support |
-| **Development Velocity** | ✅ Faster feature development | ➖ Slower release cycle |
-| **Enterprise Features** | ✅ More aggressive feature additions | ➖ Conservative approach |
-| **Community Governance** | ✅ Community-driven (nonprofit) | ⚠️ Company-controlled |
-| **Backward Compatibility** | ✅ Full Gitea compatibility | ✅ Native |
-| **Migration Path** | ✅ Direct upgrade from Gitea | N/A |
+```bash
+# Deploy with integrated Git server
+./deploy.sh --git-server
 
-**Recommended Choice: Forgejo** for XaresAICoder integration due to superior CI/CD capabilities and GitHub Actions compatibility.
+# Access your Git server
+# Web Interface: http://localhost/git/
+# Login: developer / admin123!
+```
 
-#### **Integration Benefits**
+#### **Why Forgejo?**
+
+| Feature | Forgejo | Benefits |
+|---------|---------|----------|
+| **GitHub Actions Compatibility** | ✅ Full compatibility | Use existing CI/CD workflows |
+| **Self-Hosted** | ✅ Complete ownership | No external dependencies |
+| **Community-Driven** | ✅ Nonprofit governance | Faster feature development |
+| **Enterprise Features** | ✅ Advanced capabilities | Issue tracking, PR workflows |
+| **API Compatible** | ✅ GitHub-compatible API | Easy integration with tools |
+
+#### **Workspace Git Integration**
+
+**Create repositories directly from your workspace:**
+
+```bash
+# 🆕 Create New Repository
+curl -u developer:admin123! -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-project","description":"My new project","private":false}' \
+  http://forgejo:3000/api/v1/user/repos
+
+# 🔗 Clone Repository  
+git clone http://developer:admin123!@forgejo:3000/developer/my-project.git
+
+# 📂 Add Remote to Existing Project
+git remote add origin http://developer:admin123!@forgejo:3000/developer/my-project.git
+git push -u origin main
+```
+
+**Complete command-line workflow - no web interface needed for basic operations!**
+
+#### **Features**
 
 - **🏢 Complete On-Premise Solution**: No external dependencies on GitHub/GitLab
-- **🔄 CI/CD Integration**: GitHub Actions compatible workflows with Forgejo Actions
-- **🔐 Centralized Credential Management**: Single authentication for Git and CI/CD
-- **📊 Advanced Analytics**: Repository insights and development metrics
-- **👥 Team Collaboration**: Issue tracking, pull requests, and code review
-- **🚀 Push-to-Deploy**: Automatic deployment pipelines from git push
+- **🔄 GitHub Actions Compatible**: Run existing CI/CD workflows with Forgejo Actions  
+- **🔐 Integrated Authentication**: Pre-configured admin user (`developer` / `admin123!`)
+- **📊 Repository Management**: Issue tracking, pull requests, and code review
+- **👥 Team Collaboration**: Multi-user support with role-based permissions
+- **🚀 API-First**: Full REST API for automation and integration
+- **🌐 Web Interface**: Professional Git management interface at `/git/`
 
-#### **Planned Architecture**
+#### **Configuration**
+
+Git server settings are configured in `.env`:
+
+```bash
+# Git Server Configuration
+ENABLE_GIT_SERVER=true
+GIT_ADMIN_USER=developer
+GIT_ADMIN_PASSWORD=admin123!
+GIT_ADMIN_EMAIL=gitadmin@xaresaicoder.local
+GIT_SITE_NAME=XaresAICoder Git Server
+```
+
+#### **Architecture**
 
 ```yaml
-# Additional services for git integration
 services:
   forgejo:
     image: codeberg.org/forgejo/forgejo:9
+    profiles: ["git-server"]  # Optional deployment
     environment:
-      - FORGEJO__database__DB_TYPE=sqlite3
+      - FORGEJO__security__INSTALL_LOCK=true
       - FORGEJO__actions__ENABLED=true
     volumes:
       - forgejo_data:/data
-    ports:
-      - "3001:3000"
-    
-  forgejo-runner:
-    image: code.forgejo.org/forgejo/runner:9
-    depends_on:
-      - forgejo
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - xares-aicoder-network
 ```
 
-#### **Workflow Integration**
+#### **Git Server Management**
 
-1. **Workspace Creation**: Automatically creates Git repository in Forgejo
-2. **Credential Injection**: Seamlessly injects Git authentication into workspaces
-3. **CI/CD Setup**: Pre-configured GitHub Actions workflows for common project types
-4. **Deployment Pipeline**: One-click deployment from Git repository to production
+```bash
+# Enable Git server (in .env)
+ENABLE_GIT_SERVER=true
+
+# Deploy with Git server
+./deploy.sh --git-server
+
+# Access web interface
+open http://localhost/git/
+
+# Check Git server status
+curl http://localhost/api/config
+```
 
 ### 🚀 **Future Enhancements**
 
