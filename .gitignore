@@ -20,6 +20,7 @@ build/
 
 # Generated files
 frontend/version.js
+frontend/sw.js
 
 # IDE files
 .vscode/

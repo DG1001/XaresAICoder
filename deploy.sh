@@ -330,22 +330,22 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 EOF
     
-    # Update service worker cache names and add version.js to assets
+    # Generate service worker from template
     local safe_version=$(echo "$version" | sed 's/[^a-zA-Z0-9]/_/g')
     
-    # Create a temporary file for sed operations
-    local temp_file=$(mktemp 2>/dev/null || echo "/tmp/sw_temp_$$")
+    print_status "Generating service worker from template..."
     
-    # Update cache names in service worker
-    sed "s/xaresaicoder-v1\.0\.0/xaresaicoder-${safe_version}/g" frontend/sw.js > "$temp_file"
-    sed "s/xaresaicoder-static-v1\.0\.0/xaresaicoder-static-${safe_version}/g" "$temp_file" > frontend/sw.js
-    sed "s/xaresaicoder-dynamic-v1\.0\.0/xaresaicoder-dynamic-${safe_version}/g" frontend/sw.js > "$temp_file"
+    if [ ! -f "frontend/sw.js.template" ]; then
+        print_error "Service worker template not found: frontend/sw.js.template"
+        exit 1
+    fi
     
-    # Add version.js to the static assets list
-    sed "s|'/app.js',|'/app.js',\n  '/version.js',|" "$temp_file" > frontend/sw.js
+    # Generate sw.js from template
+    cp frontend/sw.js.template frontend/sw.js
     
-    # Clean up temp file
-    rm -f "$temp_file"
+    # Replace placeholders
+    sed -i "s/{{CACHE_VERSION}}/$safe_version/g" frontend/sw.js
+    sed -i "s|{{STATIC_ASSETS_EXTRA}}|  '/version.js',\\n|g" frontend/sw.js
     
     print_success "Frontend version build completed: $version"
 }
