@@ -203,15 +203,32 @@
                         </div>
 
                         <div class="git-setup">
-                            <h4>Quick Setup</h4>
-                            <p>Access your Git server at <strong>/git/</strong> and complete the initial setup.</p>
-                            <div class="setup-steps">
-                                <ol>
-                                    <li>Click "Open Forgejo Git Server" to access the web interface</li>
-                                    <li>Complete the initial setup wizard</li>
-                                    <li>Create your first repository</li>
-                                    <li>Clone it in your workspace with: <code>git clone http://localhost/git/username/repo.git</code></li>
-                                </ol>
+                            <h4>Workspace Git Commands</h4>
+                            <p>Use these commands <strong>inside your workspace containers</strong> to work with Git repositories:</p>
+                            
+                            <div class="git-commands">
+                                <div class="command-section">
+                                    <h5>🔗 Clone Repository</h5>
+                                    <code>git clone http://developer:admin123\!@forgejo:3000/developer/repo.git</code>
+                                </div>
+                                
+                                <div class="command-section">
+                                    <h5>📂 Add Remote to Existing Project</h5>
+                                    <code>git remote add origin http://developer:admin123\!@forgejo:3000/developer/repo.git</code>
+                                    <br>
+                                    <code>git push -u origin main</code>
+                                </div>
+                                
+                                <div class="command-section">
+                                    <h5>🌐 Web Access</h5>
+                                    <p>Manage repositories through the web interface:</p>
+                                    <code>http://localhost/git/</code>
+                                    <p>Login: <strong>developer</strong> / <strong>admin123!</strong></p>
+                                </div>
+                            </div>
+                            
+                            <div class="setup-note">
+                                <p><strong>Note:</strong> These URLs work from inside workspace containers. Replace <code>repo</code> with your actual repository name.</p>
                             </div>
                         </div>
                     </div>
