@@ -4,6 +4,10 @@ A professional browser-based AI-powered development environment that integrates 
 
 ## Overview
 
+
+https://github.com/user-attachments/assets/127a1253-5df2-4a5e-937d-a25840439ccd
+
+
 XaresAICoder provides isolated development workspaces running VS Code in the browser, with five integrated AI coding tools for comprehensive development assistance. Each workspace runs in a separate Docker container with resource limits, automatic cleanup, and seamless subdomain-based port forwarding.
 
 ## Features
