@@ -10,9 +10,9 @@ BASE_URL="${PROTOCOL:-http}://${BASE_DOMAIN:-localhost}:${BASE_PORT:-80}/git"
 FORGEJO_INTERNAL_URL="http://${FORGEJO_CONTAINER_NAME}:3000"
 
 # Git server admin configuration
-ADMIN_USER="${GIT_ADMIN_USER:-admin}"
+ADMIN_USER="${GIT_ADMIN_USER:-developer}"
 ADMIN_PASSWORD="${GIT_ADMIN_PASSWORD:-admin123!}"
-ADMIN_EMAIL="${GIT_ADMIN_EMAIL:-admin@xaresaicoder.local}"
+ADMIN_EMAIL="${GIT_ADMIN_EMAIL:-gitadmin@xaresaicoder.local}"
 SITE_NAME="${GIT_SITE_NAME:-XaresAICoder Git Server}"
 SITE_DESCRIPTION="${GIT_SITE_DESCRIPTION:-Integrated Git server for XaresAICoder development environment}"
 
@@ -152,6 +152,27 @@ setup_forgejo() {
     fi
 }
 
+# Function to ensure admin user exists
+ensure_admin_user() {
+    log_info "Ensuring admin user '$ADMIN_USER' exists..."
+    
+    # Try to create the admin user (will fail if user already exists, which is fine)
+    local user_create_result=$(docker exec -u git "$FORGEJO_CONTAINER_NAME" forgejo admin user create \
+        --admin \
+        --username "$ADMIN_USER" \
+        --password "$ADMIN_PASSWORD" \
+        --email "$ADMIN_EMAIL" \
+        2>&1 || echo "User creation failed or user exists")
+    
+    if echo "$user_create_result" | grep -q "successfully created"; then
+        log_success "Admin user '$ADMIN_USER' created successfully!"
+    elif echo "$user_create_result" | grep -q "already exists\|name already in use"; then
+        log_success "Admin user '$ADMIN_USER' already exists"
+    else
+        log_warning "Could not verify admin user creation: $user_create_result"
+    fi
+}
+
 # Function to enable Actions if not already enabled
 enable_actions() {
     log_info "Configuring Forgejo Actions..."
@@ -223,6 +244,10 @@ main() {
     # Check if already configured
     if is_forgejo_configured; then
         log_success "Forgejo is already configured!"
+        
+        # Ensure admin user exists even if already configured
+        ensure_admin_user
+        
         log_info "You can access it at: $BASE_URL"
         log_info "Admin credentials: $ADMIN_USER / $ADMIN_PASSWORD"
         exit 0
@@ -234,6 +259,9 @@ main() {
         
         # Wait a moment for the setup to fully complete
         sleep 5
+        
+        # Ensure admin user exists (in case form submission didn't create it properly)
+        ensure_admin_user
         
         # Enable actions configuration
         enable_actions
