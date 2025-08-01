@@ -298,19 +298,24 @@ generate_nginx_config() {
     
     print_status "Generating nginx configuration..."
     
-    # Start with base template
-    cp nginx-base.conf.template nginx.conf.template
+    # Ensure build directory exists
+    mkdir -p build
+    
+    # Start with base template - generate to build directory
+    cp nginx-base.conf.template build/nginx.conf.template
     
     if [ "$git_server_enabled" = "true" ]; then
         print_status "Including Git server configuration in nginx"
         # Replace placeholder with Git server configuration
-        sed -i '/# GIT_SERVER_PLACEHOLDER/r nginx-git.conf.template' nginx.conf.template
-        sed -i '/# GIT_SERVER_PLACEHOLDER/d' nginx.conf.template
+        sed -i '/# GIT_SERVER_PLACEHOLDER/r nginx-git.conf.template' build/nginx.conf.template
+        sed -i '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
     else
         print_status "Excluding Git server configuration from nginx"
         # Remove placeholder line
-        sed -i '/# GIT_SERVER_PLACEHOLDER/d' nginx.conf.template
+        sed -i '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
     fi
+    
+    print_status "Nginx configuration generated at build/nginx.conf.template"
 }
 
 # Function to deploy application

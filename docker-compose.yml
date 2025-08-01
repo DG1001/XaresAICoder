@@ -4,7 +4,7 @@ services:
     ports:
       - "${HOST_PORT:-${BASE_PORT:-80}}:${BASE_PORT:-80}"
     volumes:
-      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template
+      - ./build/nginx.conf.template:/etc/nginx/templates/default.conf.template
       - ./frontend:/usr/share/nginx/html/frontend
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}

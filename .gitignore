@@ -15,6 +15,9 @@ yarn-error.log*
 # Docker volumes
 workspace_data/
 
+# Build artifacts
+build/
+
 # IDE files
 .vscode/
 .idea/
