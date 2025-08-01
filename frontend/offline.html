@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - XaresAICoder</title>
+    <meta name="theme-color" content="#0366d6">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <style>
+        /* Inline styles for offline page */
+        :root {
+            --vscode-bg: #ffffff;
+            --vscode-text: #24292e;
+            --vscode-text-muted: #586069;
+            --vscode-text-accent: #0366d6;
+            --vscode-border: #e1e4e8;
+            --vscode-hover-bg: #f1f8ff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.5;
+            color: var(--vscode-text);
+            background: var(--vscode-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .offline-container {
+            text-align: center;
+            max-width: 500px;
+            padding: 40px;
+            border: 1px solid var(--vscode-border);
+            border-radius: 8px;
+            background: var(--vscode-bg);
+        }
+
+        .offline-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+            opacity: 0.7;
+        }
+
+        .offline-icon svg {
+            width: 100%;
+            height: 100%;
+            fill: var(--vscode-text-muted);
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--vscode-text);
+        }
+
+        p {
+            font-size: 16px;
+            color: var(--vscode-text-muted);
+            margin-bottom: 24px;
+        }
+
+        .offline-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: 1px solid var(--vscode-border);
+            border-radius: 6px;
+            background: var(--vscode-bg);
+            color: var(--vscode-text);
+            text-decoration: none;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover {
+            background: var(--vscode-hover-bg);
+            border-color: var(--vscode-text-accent);
+        }
+
+        .btn-primary {
+            background: var(--vscode-text-accent);
+            color: white;
+            border-color: var(--vscode-text-accent);
+        }
+
+        .btn-primary:hover {
+            background: #0258c7;
+            border-color: #0258c7;
+        }
+
+        .offline-info {
+            margin-top: 32px;
+            padding: 16px;
+            background: var(--vscode-hover-bg);
+            border-radius: 6px;
+            border: 1px solid var(--vscode-border);
+        }
+
+        .offline-info h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--vscode-text);
+        }
+
+        .offline-info ul {
+            list-style: none;
+            text-align: left;
+        }
+
+        .offline-info li {
+            font-size: 14px;
+            color: var(--vscode-text-muted);
+            margin-bottom: 8px;
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .offline-info li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .connection-status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-offline {
+            background: #ffeaea;
+            color: #d73a49;
+            border: 1px solid #f97583;
+        }
+
+        .status-online {
+            background: #e6ffed;
+            color: #28a745;
+            border: 1px solid #34d058;
+        }
+
+        @media (max-width: 480px) {
+            .offline-container {
+                padding: 24px;
+            }
+            
+            .offline-actions {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.91 2.91 7.09 2.91 1 9z"/>
+                <path d="M5 13l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.86 9.14 5 13z"/>
+                <path d="M9 17l2 2c.55-.55 1.45-.55 2 0l2-2C13.45 15.45 10.55 15.45 9 17z"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+        </div>
+        
+        <h1>You're Offline</h1>
+        <p>It looks like you've lost your internet connection. Don't worry, you can still view your recently accessed projects below.</p>
+        
+        <div class="offline-actions">
+            <button class="btn btn-primary" onclick="location.reload()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Try Again
+            </button>
+            
+            <a href="/" class="btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9,22 9,12 15,12 15,22"/>
+                </svg>
+                Go Home
+            </a>
+        </div>
+
+        <div id="connectionStatus" class="connection-status status-offline">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px; vertical-align: text-bottom;">
+                <circle cx="12" cy="12" r="2"/>
+                <path d="M20.2 20.2c2.04-2.03 2.04-5.37 0-7.4"/>
+                <path d="M3.8 3.8c-2.04 2.03-2.04 5.37 0 7.4"/>
+                <path d="M15.3 8.7a4 4 0 0 1 0 5.66"/>
+                <path d="M8.7 15.3a4 4 0 0 1 0-5.66"/>
+            </svg>
+            Connection Status: Offline
+        </div>
+
+        <div class="offline-info">
+            <h3>What you can do offline:</h3>
+            <ul>
+                <li>View previously loaded project information</li>
+                <li>Browse your recent projects from cache</li>
+                <li>Access the AI tools documentation</li>
+                <li>View Git server information and commands</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Monitor connection status
+        function updateConnectionStatus() {
+            const statusElement = document.getElementById('connectionStatus');
+            
+            if (navigator.onLine) {
+                statusElement.className = 'connection-status status-online';
+                statusElement.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px; vertical-align: text-bottom;">
+                        <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.91 2.91 7.09 2.91 1 9z"/>
+                        <path d="M5 13l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.86 9.14 5 13z"/>
+                        <path d="M9 17l2 2c.55-.55 1.45-.55 2 0l2-2C13.45 15.45 10.55 15.45 9 17z"/>
+                    </svg>
+                    Connection Status: Online - Ready to reconnect!
+                `;
+                
+                // Show reconnect notification
+                setTimeout(() => {
+                    if (confirm('Your connection has been restored! Would you like to reload the page?')) {
+                        location.href = '/';
+                    }
+                }, 1000);
+            } else {
+                statusElement.className = 'connection-status status-offline';
+                statusElement.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px; vertical-align: text-bottom;">
+                        <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.91 2.91 7.09 2.91 1 9z"/>
+                        <path d="M5 13l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.86 9.14 5 13z"/>
+                        <path d="M9 17l2 2c.55-.55 1.45-.55 2 0l2-2C13.45 15.45 10.55 15.45 9 17z"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                    Connection Status: Offline
+                `;
+            }
+        }
+
+        // Listen for connection changes
+        window.addEventListener('online', updateConnectionStatus);
+        window.addEventListener('offline', updateConnectionStatus);
+
+        // Initial status check
+        updateConnectionStatus();
+
+        // Periodic connectivity check
+        setInterval(() => {
+            fetch('/api/health', { 
+                method: 'HEAD',
+                cache: 'no-cache'
+            }).then(() => {
+                if (!navigator.onLine) {
+                    // Connection restored
+                    updateConnectionStatus();
+                }
+            }).catch(() => {
+                // Still offline
+            });
+        }, 5000);
+    </script>
+</body>
+</html>

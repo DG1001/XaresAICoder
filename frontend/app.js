@@ -6,6 +6,7 @@ class XaresAICoder {
         this.pollingInterval = null;
         this.creatingProjects = new Set(); // Track projects being created
         this.config = null; // Store app configuration
+        this.deferredPrompt = null; // PWA install prompt
         this.init();
     }
 
@@ -16,6 +17,9 @@ class XaresAICoder {
     }
 
     async init() {
+        // Initialize PWA features
+        this.initPWA();
+        
         // Load configuration first
         await this.loadConfiguration();
         
@@ -913,6 +917,197 @@ class XaresAICoder {
             localStorage.setItem('xares_projects', JSON.stringify(projects));
         } catch (error) {
             console.error('Error saving projects to storage:', error);
+        }
+    }
+
+    // PWA Methods
+    initPWA() {
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            this.registerServiceWorker();
+        }
+
+        // Handle PWA install prompt
+        this.setupPWAInstallPrompt();
+
+        // Add PWA-specific event listeners
+        this.addPWAEventListeners();
+    }
+
+    async registerServiceWorker() {
+        try {
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            console.log('[PWA] Service Worker registered successfully:', registration);
+
+            // Check for updates
+            registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                if (newWorker) {
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            this.showUpdateNotification();
+                        }
+                    });
+                }
+            });
+
+        } catch (error) {
+            console.error('[PWA] Service Worker registration failed:', error);
+        }
+    }
+
+    setupPWAInstallPrompt() {
+        // Listen for the beforeinstallprompt event
+        window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('[PWA] beforeinstallprompt event fired');
+            
+            // Prevent the mini-infobar from appearing on mobile
+            e.preventDefault();
+            
+            // Save the event so it can be triggered later
+            this.deferredPrompt = e;
+            
+            // Show the install button
+            this.showInstallButton();
+        });
+
+        // Listen for the app being installed
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('[PWA] App was installed');
+            this.hideInstallButton();
+            this.deferredPrompt = null;
+        });
+    }
+
+    addPWAEventListeners() {
+        // Handle offline/online status
+        window.addEventListener('online', () => {
+            console.log('[PWA] App is online');
+            this.hideOfflineIndicator();
+            // Refresh projects when coming back online
+            this.loadProjects();
+        });
+
+        window.addEventListener('offline', () => {
+            console.log('[PWA] App is offline');
+            this.showOfflineIndicator();
+        });
+
+        // Handle app visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                // App became visible, refresh data
+                this.loadProjects();
+            }
+        });
+    }
+
+    showInstallButton() {
+        // Check if install button already exists
+        let installButton = document.getElementById('pwa-install-btn');
+        
+        if (!installButton) {
+            // Create install button
+            installButton = document.createElement('button');
+            installButton.id = 'pwa-install-btn';
+            installButton.className = 'btn-primary pwa-install-btn';
+            installButton.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8.5 1.5a.5.5 0 0 0-1 0v5.793L6.354 6.146a.5.5 0 1 0-.708.708l2 2a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 7.293V1.5z"/>
+                    <path d="M3 9.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zm0-3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5zm0-3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-1a.5.5 0 0 1-.5-.5z"/>
+                    <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2.5L8 0v2.5A1.5 1.5 0 0 0 9.5 3z"/>
+                </svg>
+                Install App
+            `;
+            
+            // Add click handler
+            installButton.addEventListener('click', () => this.handleInstallClick());
+            
+            // Insert into the header
+            const titleBarContent = document.querySelector('.title-bar-content');
+            if (titleBarContent) {
+                titleBarContent.appendChild(installButton);
+            }
+        }
+        
+        installButton.style.display = 'inline-flex';
+    }
+
+    hideInstallButton() {
+        const installButton = document.getElementById('pwa-install-btn');
+        if (installButton) {
+            installButton.style.display = 'none';
+        }
+    }
+
+    async handleInstallClick() {
+        if (!this.deferredPrompt) {
+            return;
+        }
+
+        // Show the install prompt
+        this.deferredPrompt.prompt();
+
+        // Wait for the user to respond to the prompt
+        const { outcome } = await this.deferredPrompt.userChoice;
+        console.log(`[PWA] User response to install prompt: ${outcome}`);
+
+        // Clear the deferred prompt
+        this.deferredPrompt = null;
+        this.hideInstallButton();
+    }
+
+    showUpdateNotification() {
+        // Create update notification
+        const notification = document.createElement('div');
+        notification.className = 'pwa-update-notification';
+        notification.innerHTML = `
+            <div class="update-content">
+                <span>A new version of XaresAICoder is available!</span>
+                <button class="btn-secondary update-btn" onclick="this.parentElement.parentElement.remove(); location.reload();">
+                    Update Now
+                </button>
+                <button class="btn-link dismiss-btn" onclick="this.parentElement.parentElement.remove();">
+                    Dismiss
+                </button>
+            </div>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Auto-remove after 30 seconds
+        setTimeout(() => {
+            if (notification.parentElement) {
+                notification.remove();
+            }
+        }, 30000);
+    }
+
+    showOfflineIndicator() {
+        let indicator = document.getElementById('offline-indicator');
+        
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'offline-indicator';
+            indicator.className = 'offline-indicator';
+            indicator.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M10.706 3.294A12.545 12.545 0 0 0 8 3C5.259 3 2.723 3.681.63 4.85a.485.485 0 0 0-.08.94L8 13.5l7.45-7.71a.485.485 0 0 0-.08-.94C13.277 3.681 10.741 3 8 3a12.545 12.545 0 0 0-2.706.294z"/>
+                    <path d="M11.5 6.5a5 5 0 1 0-3 4.5L11.5 6.5z"/>
+                </svg>
+                You're offline - some features may be limited
+            `;
+            
+            document.body.appendChild(indicator);
+        }
+        
+        indicator.style.display = 'flex';
+    }
+
+    hideOfflineIndicator() {
+        const indicator = document.getElementById('offline-indicator');
+        if (indicator) {
+            indicator.style.display = 'none';
         }
     }
 

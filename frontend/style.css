@@ -23,6 +23,12 @@
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
     --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    
+    /* PWA Colors */
+    --pwa-install-bg: #28a745;
+    --pwa-install-hover: #218838;
+    --pwa-update-bg: #ffc107;
+    --pwa-offline-bg: #6f42c1;
 }
 
 /* Reset and Base */
@@ -985,5 +991,191 @@ code {
     .title-bar,
     .tab-panel {
         padding: 20px;
+    }
+}
+
+/* PWA Specific Styles */
+
+/* PWA Install Button */
+.pwa-install-btn {
+    background: var(--pwa-install-bg) !important;
+    border-color: var(--pwa-install-bg) !important;
+    margin-left: 16px;
+    transition: all 0.2s ease;
+}
+
+.pwa-install-btn:hover {
+    background: var(--pwa-install-hover) !important;
+    border-color: var(--pwa-install-hover) !important;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.pwa-install-btn svg {
+    transition: transform 0.2s ease;
+}
+
+.pwa-install-btn:hover svg {
+    transform: translateY(-1px);
+}
+
+/* PWA Update Notification */
+.pwa-update-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--vscode-bg);
+    border: 1px solid var(--pwa-update-bg);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: var(--shadow-lg);
+    z-index: 10000;
+    max-width: 400px;
+    animation: slideInRight 0.3s ease-out;
+}
+
+.update-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.update-content span {
+    font-size: 14px;
+    color: var(--vscode-text);
+    font-weight: 500;
+}
+
+.update-content .update-btn {
+    background: var(--pwa-update-bg);
+    color: #212529;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.update-content .update-btn:hover {
+    background: #e0a800;
+    transform: translateY(-1px);
+}
+
+.update-content .dismiss-btn {
+    background: none;
+    border: none;
+    color: var(--vscode-text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    align-self: flex-start;
+}
+
+.update-content .dismiss-btn:hover {
+    color: var(--vscode-text);
+}
+
+/* Offline Indicator */
+.offline-indicator {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--pwa-offline-bg);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: var(--shadow-lg);
+    z-index: 10000;
+    animation: slideInUp 0.3s ease-out;
+}
+
+.offline-indicator svg {
+    opacity: 0.9;
+}
+
+/* PWA Animations */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideInUp {
+    from {
+        transform: translate(-50%, 100%);
+        opacity: 0;
+    }
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+}
+
+/* PWA Media Queries */
+@media (max-width: 768px) {
+    .pwa-install-btn {
+        margin-left: 8px;
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+    
+    .pwa-update-notification {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        max-width: none;
+    }
+    
+    .offline-indicator {
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        transform: none;
+        border-radius: 8px;
+    }
+}
+
+@media (max-width: 480px) {
+    .pwa-install-btn span {
+        display: none;
+    }
+    
+    .pwa-install-btn {
+        padding: 8px;
+        min-width: auto;
+    }
+}
+
+/* PWA Standalone Mode Styles */
+@media (display-mode: standalone) {
+    body {
+        /* Add any standalone-specific styles here */
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+    }
+    
+    /* Hide install button when in standalone mode */
+    .pwa-install-btn {
+        display: none !important;
+    }
+    
+    /* Add some padding for potential notches/safe areas */
+    .title-bar {
+        padding-top: env(safe-area-inset-top, 20px);
     }
 }
