@@ -297,20 +297,57 @@ build_frontend_version() {
     print_status "Building frontend with version information..."
     
     # Set build environment
-    export BUILD_ENV="production"
+    local build_env="${BUILD_ENV:-production}"
     
-    # Run the frontend version builder
-    if [ -f "./build-frontend-version-simple.sh" ]; then
-        if ./build-frontend-version-simple.sh; then
-            print_success "Frontend version build completed"
-        else
-            print_error "Failed to build frontend version information"
-            exit 1
-        fi
+    # Get version information
+    local version="v0.0.0-dev"
+    local git_hash="unknown"
+    local build_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u)
+    
+    # Try to get git information
+    if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+        version=$(git describe --tags --exact-match HEAD 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0-dev")
+        git_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        print_status "Git version: $version, Hash: $git_hash"
     else
-        print_error "build-frontend-version-simple.sh not found"
-        exit 1
+        print_warning "Git not available or not in a git repository, using default version"
     fi
+    
+    # Create version.js file
+    cat > frontend/version.js << EOF
+// Version information - automatically generated during deployment
+window.APP_VERSION = {
+    version: '${version}',
+    gitTag: '${version}',
+    gitHash: '${git_hash}',
+    buildDate: '${build_date}',
+    buildEnv: '${build_env}'
+};
+
+// Export for use in other modules
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = window.APP_VERSION;
+}
+EOF
+    
+    # Update service worker cache names and add version.js to assets
+    local safe_version=$(echo "$version" | sed 's/[^a-zA-Z0-9]/_/g')
+    
+    # Create a temporary file for sed operations
+    local temp_file=$(mktemp 2>/dev/null || echo "/tmp/sw_temp_$$")
+    
+    # Update cache names in service worker
+    sed "s/xaresaicoder-v1\.0\.0/xaresaicoder-${safe_version}/g" frontend/sw.js > "$temp_file"
+    sed "s/xaresaicoder-static-v1\.0\.0/xaresaicoder-static-${safe_version}/g" "$temp_file" > frontend/sw.js
+    sed "s/xaresaicoder-dynamic-v1\.0\.0/xaresaicoder-dynamic-${safe_version}/g" frontend/sw.js > "$temp_file"
+    
+    # Add version.js to the static assets list
+    sed "s|'/app.js',|'/app.js',\n  '/version.js',|" "$temp_file" > frontend/sw.js
+    
+    # Clean up temp file
+    rm -f "$temp_file"
+    
+    print_success "Frontend version build completed: $version"
 }
 
 # Function to generate nginx configuration

@@ -18,6 +18,9 @@ workspace_data/
 # Build artifacts
 build/
 
+# Generated files
+frontend/version.js
+
 # IDE files
 .vscode/
 .idea/

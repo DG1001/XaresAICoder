@@ -1128,8 +1128,9 @@ class XaresAICoder {
             versionElement.textContent = versionText;
             versionElement.title = this.getVersionTooltip(version);
         } else {
-            versionElement.textContent = 'XaresAICoder';
-            versionElement.title = 'Version information not available';
+            // Fallback for development when version.js doesn't exist
+            versionElement.textContent = 'XaresAICoder (dev)';
+            versionElement.title = 'Development version - version.js will be generated during deployment';
         }
     }
 
