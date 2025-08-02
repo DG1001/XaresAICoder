@@ -11,6 +11,8 @@ class DockerService {
     this.baseDomain = process.env.BASE_DOMAIN || 'localhost';
     this.basePort = process.env.BASE_PORT || '80';
     this.protocol = process.env.PROTOCOL || 'http';
+    // Docker image configuration
+    this.codeServerImage = process.env.CODESERVER_IMAGE || 'xares-aicoder-codeserver:latest';
   }
 
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
@@ -44,7 +46,7 @@ class DockerService {
       }
 
       const container = await this.docker.createContainer({
-        Image: 'xares-aicoder-codeserver:latest',
+        Image: this.codeServerImage,
         name: containerName,
         Env: envVars,
         ExposedPorts: {
@@ -247,13 +249,13 @@ class DockerService {
 
   async ensureCodeServerImage() {
     try {
-      await this.docker.getImage('xares-aicoder-codeserver:latest').inspect();
+      await this.docker.getImage(this.codeServerImage).inspect();
     } catch (error) {
       // Image doesn't exist, need to build it
-      console.log('Building code-server image...');
+      console.log(`Building code-server image: ${this.codeServerImage}...`);
       // In a real implementation, you would build from the Dockerfile
       // For now, we'll use the official code-server image as fallback
-      throw new Error('Code-server image not found. Please build the image first with: docker build -t xares-aicoder-codeserver:latest ./code-server');
+      throw new Error(`Code-server image not found: ${this.codeServerImage}. Please build the image first with: docker build -t ${this.codeServerImage} ./code-server`);
     }
   }
 

@@ -1,0 +1,68 @@
+name: Release Documentation
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create deployment guide
+        run: |
+          mkdir -p artifacts
+          cat > artifacts/deployment-guide.md << 'EOF'
+          # XaresAICoder ${{ steps.version.outputs.version }} - Deployment Guide
+          
+          ## Docker Images
+          
+          This release includes the following pre-built Docker images:
+          
+          - **Server**: `ghcr.io/${{ github.repository }}-server:${{ steps.version.outputs.version }}`
+          - **Code-server**: `ghcr.io/${{ github.repository }}-codeserver:${{ steps.version.outputs.version }}`
+          
+          ## Quick Deployment
+          
+          ```bash
+          # Clone the repository
+          git clone https://github.com/${{ github.repository }}.git
+          cd $(basename ${{ github.repository }})
+          git checkout ${{ steps.version.outputs.version }}
+          
+          # Deploy using pre-built registry images
+          ./deploy.sh --use-registry --registry-tag ${{ steps.version.outputs.version }}
+          ```
+          
+          ## Alternative: Latest Images
+          
+          ```bash
+          # Deploy using latest tag (recommended for most users)
+          ./deploy.sh --use-registry
+          ```
+          
+          ## Local Build (if registry images are unavailable)
+          
+          ```bash
+          # Standard deployment with local image building
+          ./deploy.sh
+          ```
+          EOF
+
+      - name: Upload deployment guide
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-guide-${{ steps.version.outputs.version }}
+          path: artifacts/
+          retention-days: 365

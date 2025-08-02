@@ -522,6 +522,107 @@ show_deployment_info() {
     echo
 }
 
+# Function to detect GitHub repository owner
+detect_registry_owner() {
+    local owner=""
+    
+    # Try to detect from git remote
+    if command_exists git && git rev-parse --git-dir >/dev/null 2>&1; then
+        local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+        if [[ $remote_url =~ github\.com[:/]([^/]+)/([^/]+) ]]; then
+            owner="${BASH_REMATCH[1]}"
+            print_status "Auto-detected GitHub owner: $owner"
+        fi
+    fi
+    
+    # If we couldn't detect, ask user
+    if [ -z "$owner" ]; then
+        print_warning "Could not auto-detect GitHub repository owner"
+        read -p "Enter your GitHub username/organization: " owner
+        if [ -z "$owner" ]; then
+            print_error "GitHub owner is required for registry images"
+            exit 1
+        fi
+    fi
+    
+    echo "$owner"
+}
+
+# Function to setup registry images
+setup_registry_images() {
+    local registry_owner="$1"
+    local tag="${2:-latest}"
+    
+    print_status "Configuring pre-built images from GitHub Container Registry..."
+    
+    # Set image environment variables
+    export SERVER_IMAGE="ghcr.io/${registry_owner}/xaresaicoder-server:${tag}"
+    export CODESERVER_IMAGE="ghcr.io/${registry_owner}/xaresaicoder-codeserver:${tag}"
+    
+    print_status "Server image: $SERVER_IMAGE"
+    print_status "Code-server image: $CODESERVER_IMAGE"
+    
+    # Check if we need to authenticate to pull images
+    print_status "Checking image availability..."
+    
+    # Try to pull the images to verify they exist and we have access
+    if ! docker pull "$SERVER_IMAGE" >/dev/null 2>&1; then
+        print_warning "Could not pull server image: $SERVER_IMAGE"
+        print_warning "Make sure:"
+        print_warning "1. The image exists in the registry"
+        print_warning "2. You have access to the repository"
+        print_warning "3. You are logged in to GitHub Container Registry if the repository is private"
+        echo
+        read -p "Continue anyway? The build might fail. (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        print_success "Server image is accessible"
+    fi
+    
+    if ! docker pull "$CODESERVER_IMAGE" >/dev/null 2>&1; then
+        print_warning "Could not pull code-server image: $CODESERVER_IMAGE"
+        print_warning "Make sure:"
+        print_warning "1. The image exists in the registry"
+        print_warning "2. You have access to the repository"
+        print_warning "3. You are logged in to GitHub Container Registry if the repository is private"
+        echo
+        read -p "Continue anyway? The build might fail. (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        print_success "Code-server image is accessible"
+    fi
+    
+    # Update .env file with registry configuration
+    if [ -f ".env" ]; then
+        # Add or update registry image settings
+        if grep -q "^USE_REGISTRY_IMAGES=" .env; then
+            sed -i 's/^USE_REGISTRY_IMAGES=.*/USE_REGISTRY_IMAGES=true/' .env
+        else
+            echo "USE_REGISTRY_IMAGES=true" >> .env
+        fi
+        
+        if grep -q "^SERVER_IMAGE=" .env; then
+            sed -i "s|^SERVER_IMAGE=.*|SERVER_IMAGE=$SERVER_IMAGE|" .env
+        else
+            echo "SERVER_IMAGE=$SERVER_IMAGE" >> .env
+        fi
+        
+        if grep -q "^CODESERVER_IMAGE=" .env; then
+            sed -i "s|^CODESERVER_IMAGE=.*|CODESERVER_IMAGE=$CODESERVER_IMAGE|" .env
+        else
+            echo "CODESERVER_IMAGE=$CODESERVER_IMAGE" >> .env
+        fi
+        
+        print_success "Updated .env with registry image configuration"
+    fi
+}
+
 # Function to show usage
 show_usage() {
     echo "Usage: $0 [options]"
@@ -532,6 +633,9 @@ show_usage() {
     echo "  --skip-network        Skip Docker network setup (use existing network)"
     echo "  --build-only          Only build the code-server image, don't deploy"
     echo "  --git-server          Enable integrated Forgejo Git server"
+    echo "  --use-registry        Use pre-built images from GitHub Container Registry"
+    echo "  --registry-owner      GitHub username/organization (default: auto-detect from git)"
+    echo "  --registry-tag        Image tag to use from registry (default: latest)"
     echo "  --help               Show this help message"
     echo
     echo "Examples:"
@@ -539,6 +643,9 @@ show_usage() {
     echo "  $0 --git-server             # Deploy with integrated Git server"
     echo "  $0 --skip-build             # Deploy without rebuilding image"
     echo "  $0 --build-only             # Only build the code-server image"
+    echo "  $0 --use-registry           # Use pre-built images from GitHub registry"
+    echo "  $0 --use-registry --registry-owner myuser  # Use specific registry owner"
+    echo "  $0 --use-registry --registry-tag v1.0.0    # Use specific version tag"
     echo
 }
 
@@ -549,6 +656,9 @@ main() {
     local skip_network=false
     local build_only=false
     local enable_git_server=false
+    local use_registry=false
+    local registry_owner=""
+    local registry_tag="latest"
     
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
@@ -573,6 +683,19 @@ main() {
                 enable_git_server=true
                 shift
                 ;;
+            --use-registry)
+                use_registry=true
+                skip_build=true  # Skip building when using registry
+                shift
+                ;;
+            --registry-owner)
+                registry_owner="$2"
+                shift 2
+                ;;
+            --registry-tag)
+                registry_tag="$2"
+                shift 2
+                ;;
             --help)
                 show_usage
                 exit 0
@@ -591,6 +714,14 @@ main() {
     
     # Check prerequisites
     check_prerequisites
+    
+    # Handle registry images setup
+    if [ "$use_registry" = true ]; then
+        if [ -z "$registry_owner" ]; then
+            registry_owner=$(detect_registry_owner)
+        fi
+        setup_registry_images "$registry_owner" "$registry_tag"
+    fi
     
     # Build code-server image
     if [ "$skip_build" = false ]; then

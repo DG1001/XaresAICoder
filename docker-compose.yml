@@ -16,7 +16,10 @@ services:
       - xares-aicoder-network
 
   server:
-    build: ./server
+    image: ${SERVER_IMAGE:-xares-aicoder-server:local}
+    build: 
+      context: ./server
+      dockerfile: Dockerfile
     environment:
       - SERVER_PORT=3000
       - DOCKER_NETWORK=${DOCKER_NETWORK:-xares-aicoder-network}
@@ -26,6 +29,7 @@ services:
       - BASE_PORT=${BASE_PORT:-80}
       - PROTOCOL=${PROTOCOL:-http}
       - ENABLE_GIT_SERVER=${ENABLE_GIT_SERVER:-false}
+      - CODESERVER_IMAGE=${CODESERVER_IMAGE:-xares-aicoder-codeserver:latest}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
