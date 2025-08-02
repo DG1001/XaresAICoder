@@ -379,6 +379,7 @@ generate_nginx_config() {
 # Function to deploy application
 deploy_application() {
     local enable_git_server=${1:-false}
+    local use_registry=${2:-false}
     
     print_status "Deploying XaresAICoder application..."
     
@@ -403,12 +404,26 @@ deploy_application() {
         print_status "Git server disabled - excluding Forgejo service"
     fi
     
-    # Build and start services
-    print_status "Building and starting services..."
+    # Determine compose files and build flags
+    local compose_files=""
+    local build_flag=""
+    
+    if [ "$use_registry" = "true" ]; then
+        # Use registry override to prevent building
+        compose_files="-f docker-compose.yml -f docker-compose.registry.yml"
+        build_flag=""  # No --build flag when using registry images
+        print_status "Using pre-built images from registry (no local building)"
+    else
+        # Standard local build deployment
+        compose_files=""  # Use default docker-compose.yml only
+        build_flag="--build"
+        print_status "Building and starting services..."
+    fi
+    
     if [ "$git_server_enabled" = "true" ]; then
         # Start all services including Git server using profile
         print_status "Enabling Git server profile"
-        if $DOCKER_COMPOSE_CMD --profile git-server up --build -d; then
+        if $DOCKER_COMPOSE_CMD $compose_files --profile git-server up $build_flag -d; then
             print_success "Services started successfully (with Git server)"
         else
             print_error "Failed to start services"
@@ -417,7 +432,7 @@ deploy_application() {
     else
         # Start only core services (without Git server profile)
         print_status "Starting core services only"
-        if $DOCKER_COMPOSE_CMD up --build -d; then
+        if $DOCKER_COMPOSE_CMD $compose_files up $build_flag -d; then
             print_success "Services started successfully (core only)"
         else
             print_error "Failed to start services"
@@ -755,7 +770,7 @@ main() {
     fi
     
     # Deploy application
-    deploy_application "$enable_git_server"
+    deploy_application "$enable_git_server" "$use_registry"
     
     # Show deployment information
     show_deployment_info

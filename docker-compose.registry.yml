@@ -1,0 +1,9 @@
+# Docker Compose override for registry-only deployment
+# This file removes build contexts when using pre-built images from registry
+
+services:
+  server:
+    # Remove build context to prevent local building
+    build: null
+    # Use only the registry image
+    image: ${SERVER_IMAGE}
