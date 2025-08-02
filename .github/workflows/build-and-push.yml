@@ -13,8 +13,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_SERVER: ${{ github.repository }}-server
-  IMAGE_NAME_CODESERVER: ${{ github.repository }}-codeserver
+  IMAGE_NAME_SERVER: ${{ github.repository_owner }}/xaresaicoder-server
+  IMAGE_NAME_CODESERVER: ${{ github.repository_owner }}/xaresaicoder-codeserver
 
 jobs:
   build-server:

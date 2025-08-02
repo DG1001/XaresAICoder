@@ -531,16 +531,19 @@ detect_registry_owner() {
         local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
         if [[ $remote_url =~ github\.com[:/]([^/]+)/([^/]+) ]]; then
             owner="${BASH_REMATCH[1]}"
-            print_status "Auto-detected GitHub owner: $owner"
+            # Convert to lowercase for consistency with GitHub Container Registry
+            owner=$(echo "$owner" | tr '[:upper:]' '[:lower:]')
+            # Use stderr for status messages to avoid mixing with return value
+            print_status "Auto-detected GitHub owner: $owner" >&2
         fi
     fi
     
     # If we couldn't detect, ask user
     if [ -z "$owner" ]; then
-        print_warning "Could not auto-detect GitHub repository owner"
-        read -p "Enter your GitHub username/organization: " owner
+        print_warning "Could not auto-detect GitHub repository owner" >&2
+        read -p "Enter your GitHub username/organization: " owner >&2
         if [ -z "$owner" ]; then
-            print_error "GitHub owner is required for registry images"
+            print_error "GitHub owner is required for registry images" >&2
             exit 1
         fi
     fi
@@ -555,9 +558,10 @@ setup_registry_images() {
     
     print_status "Configuring pre-built images from GitHub Container Registry..."
     
-    # Set image environment variables
-    export SERVER_IMAGE="ghcr.io/${registry_owner}/xaresaicoder-server:${tag}"
-    export CODESERVER_IMAGE="ghcr.io/${registry_owner}/xaresaicoder-codeserver:${tag}"
+    # Set image environment variables (registry names are always lowercase)
+    local registry_owner_lower=$(echo "$registry_owner" | tr '[:upper:]' '[:lower:]')
+    export SERVER_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-server:${tag}"
+    export CODESERVER_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-codeserver:${tag}"
     
     print_status "Server image: $SERVER_IMAGE"
     print_status "Code-server image: $CODESERVER_IMAGE"
