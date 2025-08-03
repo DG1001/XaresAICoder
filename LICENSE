@@ -1,10 +1,6 @@
-XaresAICoder Dual License
+MIT License
 
 Copyright (c) 2025 XaresAICoder
-
-This software is available under two licensing options:
-
-## Option 1: MIT License (Free for All Use)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,32 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-## Option 2: Commercial License (Paid)
-
-For organizations that prefer commercial licensing with support, warranty, and
-additional features, a commercial license is available. Contact the project
-maintainers for commercial licensing terms and pricing.
-
-### Benefits of Commercial License:
-- ✅ Commercial support and warranty
-- ✅ Priority bug fixes and feature requests  
-- ✅ Custom development and integration assistance
-- ✅ Legal protection and indemnification
-- ✅ Service level agreements (SLA)
-
-### Choose Your License:
-- **Individual/Open Source Projects**: Use MIT License (Option 1) - completely free
-- **Commercial/Enterprise**: Consider Commercial License (Option 2) for additional benefits
-
-### Dependencies:
-This software includes and depends on various open source libraries and components, each with their own licenses:
-- Node.js and npm packages (various licenses)
-- Docker and Docker Compose (Apache 2.0)
-- VS Code Server (MIT License)
-- Nginx (2-clause BSD License)
-
-Please ensure compliance with all dependency licenses when redistributing or modifying this software.
-
-### Disclaimer:
-This software is provided for educational and personal use. The authors are not responsible for any damages, data loss, or security issues that may arise from its use. Always follow security best practices and review the code before deploying in any environment.

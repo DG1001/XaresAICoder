@@ -185,20 +185,13 @@ We welcome contributions! See our [Development Guide](docs/DEVELOPMENT.md) for d
 
 ## 📄 License
 
-**Dual License** - Choose what works for you:
+This project is licensed under the **MIT License**.
 
-### MIT License (Free)
 - ✅ **Completely free** for personal, educational, and commercial use
 - ✅ No restrictions on modification or distribution
-- ✅ Standard MIT License terms
+- ✅ Open source and permissive licensing
 
-### Commercial License (Paid)
-- ✅ Commercial support and warranty
-- ✅ Priority bug fixes and custom development
-- ✅ Legal protection and SLA
-
-**Individual/Open Source Projects**: Use MIT License (completely free)  
-**Enterprise/Organizations**: Consider Commercial License for additional support
+See the [LICENSE](LICENSE) file for full details.
 
 ## 🆘 Support
 
