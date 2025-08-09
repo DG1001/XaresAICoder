@@ -3,7 +3,5 @@
 
 services:
   server:
-    # Remove build context to prevent local building
-    build: null
-    # Use only the registry image
+    # Use only the registry image (build section completely removed)
     image: ${SERVER_IMAGE}
