@@ -176,6 +176,20 @@ setup_environment() {
         fi
     fi
     
+    # Ensure HOST_PORT is set (fallback to BASE_PORT if not defined)
+    if ! grep -q "^HOST_PORT=" .env; then
+        BASE_PORT=$(grep "^BASE_PORT=" .env | cut -d'=' -f2)
+        if [ -n "$BASE_PORT" ]; then
+            print_status "Setting HOST_PORT to BASE_PORT value: $BASE_PORT"
+            echo "HOST_PORT=$BASE_PORT" >> .env
+        else
+            print_status "Setting default HOST_PORT to 80"
+            echo "HOST_PORT=80" >> .env
+        fi
+    else
+        print_success "HOST_PORT already configured"
+    fi
+    
     # Show current configuration
     print_status "Current configuration:"
     echo "----------------------------------------"
