@@ -13,6 +13,7 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 ### 🎯 **Professional Development Environment**
 - **VS Code in Browser** with light theme inspired design
 - **Isolated Docker Workspaces** with automatic resource management
+- **Configurable Memory Allocation** - Choose 1GB, 2GB, or 4GB RAM per workspace
 - **Subdomain Port Forwarding** (e.g., `projectid-5000.localhost`)
 - **Real-time Container Management** with start/stop controls
 - **Optional Password Protection** for workspace security
@@ -70,10 +71,11 @@ After deployment completes, open your browser to:
    - **Python Flask**: Full-stack web applications with Flask framework
    - **Node.js React**: Modern web applications with React 18 and Vite
    - **Java Spring Boot**: Enterprise applications with Spring Boot 3.1
-3. **Optional**: Check "Password Protect Workspace" for secure access
-4. **Optional**: Check "Create Git Repository" to automatically set up Git
-5. Click "Create Workspace"
-6. VS Code opens in a new tab - start coding with AI assistance!
+3. Choose memory allocation (1GB, 2GB default, or 4GB RAM)
+4. **Optional**: Check "Password Protect Workspace" for secure access
+5. **Optional**: Check "Create Git Repository" to automatically set up Git
+6. Click "Create Workspace"
+7. VS Code opens in a new tab - start coding with AI assistance!
 
 ### AI Tools Setup
 

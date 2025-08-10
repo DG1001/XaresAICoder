@@ -6,12 +6,21 @@ const router = express.Router();
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, passwordProtected, password, createGitRepo } = req.body;
+    const { projectName, projectType, memoryLimit, passwordProtected, password, createGitRepo } = req.body;
     
     if (!projectName || !projectType) {
       return res.status(400).json({
         error: 'Missing required fields',
         message: 'projectName and projectType are required'
+      });
+    }
+
+    // Validate memory limit
+    const validMemoryLimits = ['1g', '2g', '4g'];
+    if (memoryLimit && !validMemoryLimits.includes(memoryLimit)) {
+      return res.status(400).json({
+        error: 'Invalid memory limit',
+        message: 'Memory limit must be one of: 1g, 2g, 4g'
       });
     }
 
@@ -33,6 +42,7 @@ router.post('/create', async (req, res) => {
     }
 
     const project = await workspaceService.createProject(projectName, projectType, {
+      memoryLimit: memoryLimit || '2g', // Default to 2g if not specified
       passwordProtected: !!passwordProtected,
       password: passwordProtected ? password : null,
       createGitRepo: !!createGitRepo

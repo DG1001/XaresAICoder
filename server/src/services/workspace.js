@@ -17,6 +17,7 @@ class WorkspaceService {
     // Automatic cleanup removed - users manage workspace lifecycle manually
   }
 
+
   async createProject(projectName, projectType, options = {}, userId = 'default') {
     try {
       // Validate input
@@ -50,6 +51,7 @@ class WorkspaceService {
         projectId,
         projectName: projectName.trim(),
         projectType,
+        memoryLimit: options.memoryLimit || '2g',
         userId,
         passwordProtected: options.passwordProtected || false,
         passwordHash: passwordHash, // Store hashed password
@@ -74,6 +76,7 @@ class WorkspaceService {
         projectId,
         projectName: project.projectName,
         projectType,
+        memoryLimit: project.memoryLimit,
         passwordProtected: project.passwordProtected,
         createGitRepo: project.createGitRepo,
         workspaceUrl: null,
@@ -119,6 +122,7 @@ class WorkspaceService {
       
       // Create Docker container with auth options and Git config
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
+        memoryLimit: options.memoryLimit || '2g',
         passwordProtected: options.passwordProtected || false,
         password: options.password || null,
         gitRepository: gitRepository
@@ -312,6 +316,7 @@ class WorkspaceService {
             projectId: p.projectId,
             projectName: p.projectName,
             projectType: p.projectType,
+            memoryLimit: p.memoryLimit || '2g',
             passwordProtected: p.passwordProtected || false,
             status: p.status,
             workspaceUrl: p.workspaceUrl,
@@ -412,6 +417,8 @@ class WorkspaceService {
             // Restore project data with password hash intact
             const project = {
               ...projectData,
+              // Add memoryLimit for existing projects that don't have it (migration)
+              memoryLimit: projectData.memoryLimit || '2g',
               // Update status from Docker
               status: dockerStatus.status,
               lastAccessed: new Date(projectData.lastAccessed || projectData.createdAt)

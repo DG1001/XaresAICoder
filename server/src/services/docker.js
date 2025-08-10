@@ -24,7 +24,7 @@ class DockerService {
       await this.ensureCodeServerImage();
 
       // Setup authentication and Git configuration
-      const { passwordProtected = false, password = null, gitRepository = null } = authOptions;
+      const { memoryLimit = '2g', passwordProtected = false, password = null, gitRepository = null } = authOptions;
       let authFlag = 'none'; // Default to no auth
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
@@ -45,6 +45,9 @@ class DockerService {
         envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
       }
 
+      // Convert memory limit to bytes
+      const memoryBytes = this.parseMemoryLimit(memoryLimit);
+
       const container = await this.docker.createContainer({
         Image: this.codeServerImage,
         name: containerName,
@@ -60,7 +63,7 @@ class DockerService {
           '9000/tcp': {}  // Various apps
         },
         HostConfig: {
-          Memory: 2 * 1024 * 1024 * 1024, // 2GB
+          Memory: memoryBytes,
           CpuShares: 1024, // 1 CPU cores equivalent
           NetworkMode: this.network,
           RestartPolicy: {
@@ -547,6 +550,23 @@ class DockerService {
         recommendation: 'Check Docker daemon and network configuration'
       };
     }
+  }
+
+  parseMemoryLimit(memoryLimit) {
+    // Convert memory limit string (e.g., '1g', '2g', '4g') to bytes
+    const memoryMap = {
+      '1g': 1 * 1024 * 1024 * 1024, // 1GB
+      '2g': 2 * 1024 * 1024 * 1024, // 2GB
+      '4g': 4 * 1024 * 1024 * 1024  // 4GB
+    };
+    
+    const memory = memoryMap[memoryLimit];
+    if (!memory) {
+      console.warn(`Invalid memory limit '${memoryLimit}', defaulting to 2GB`);
+      return memoryMap['2g'];
+    }
+    
+    return memory;
   }
 }
 

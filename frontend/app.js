@@ -239,6 +239,7 @@ class XaresAICoder {
         const formData = new FormData(e.target);
         const projectName = formData.get('projectName').trim();
         const projectType = formData.get('projectType');
+        const memoryLimit = formData.get('memoryLimit');
         const passwordProtected = formData.get('passwordProtected') === 'on';
         const workspacePassword = formData.get('workspacePassword');
         const createGitRepo = formData.get('createGitRepo') === 'on';
@@ -256,7 +257,8 @@ class XaresAICoder {
 
         const requestBody = {
             projectName,
-            projectType
+            projectType,
+            memoryLimit
         };
 
         if (passwordProtected) {
@@ -429,6 +431,7 @@ class XaresAICoder {
                     <div class="project-meta">
                         <span class="project-status ${this.getStatusClass(project.status, project.workspaceUrl)}">${this.getStatusLabel(project.status, project.workspaceUrl)}</span>
                         <span>${this.getProjectTypeLabel(project.projectType)}</span>
+                        <span>${this.getMemoryLimitLabel(project.memoryLimit)}</span>
                         <span>Created ${this.formatDate(project.createdAt)}</span>
                     </div>
                 </div>
@@ -865,6 +868,15 @@ class XaresAICoder {
             'java-spring': 'Java Spring Boot'
         };
         return labels[type] || type;
+    }
+
+    getMemoryLimitLabel(memoryLimit) {
+        const labels = {
+            '1g': '1GB RAM',
+            '2g': '2GB RAM', 
+            '4g': '4GB RAM'
+        };
+        return labels[memoryLimit] || '2GB RAM';
     }
 
     getStatusLabel(status, workspaceUrl = null) {
