@@ -6,7 +6,7 @@ const projectsRouter = require('./routes/projects');
 const workspaceRouter = require('./routes/workspace');
 
 const app = express();
-const PORT = process.env.SERVER_PORT || 3000;
+const PORT = 3000;
 
 // Middleware
 app.use(cors());

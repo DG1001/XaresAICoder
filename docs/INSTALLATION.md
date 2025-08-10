@@ -154,7 +154,6 @@ curl http://localhost/api/health
 | `BASE_DOMAIN` | localhost | Base domain for accessing the platform |
 | `BASE_PORT` | 80 | Port for nginx to listen on |
 | `PROTOCOL` | http | Protocol (http/https) |
-| `SERVER_PORT` | 3000 | API server internal port |
 | `WORKSPACE_TIMEOUT_MINUTES` | 120 | Workspace auto-stop timeout |
 | `MAX_WORKSPACES_PER_USER` | 5 | Maximum workspaces per user |
 | `ENABLE_GIT_SERVER` | false | Enable integrated Forgejo Git server |

@@ -408,7 +408,6 @@ pg_dump xaresaicoder > backup.sql
 
 ```bash
 # Security-related environment variables
-SERVER_PORT=3000                    # Internal API port
 WORKSPACE_TIMEOUT_MINUTES=120       # Auto-cleanup timeout
 MAX_WORKSPACES_PER_USER=5          # Resource limits
 DOCKER_NETWORK=xares-aicoder-network # Network isolation

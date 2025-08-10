@@ -21,7 +21,6 @@ services:
       context: ./server
       dockerfile: Dockerfile
     environment:
-      - SERVER_PORT=3000
       - DOCKER_NETWORK=${DOCKER_NETWORK:-xares-aicoder-network}
       - WORKSPACE_TIMEOUT_MINUTES=${WORKSPACE_TIMEOUT_MINUTES:-120}
       - MAX_WORKSPACES_PER_USER=${MAX_WORKSPACES_PER_USER:-5}

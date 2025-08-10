@@ -12,13 +12,7 @@ Complete guide to understanding and configuring XaresAICoder's port and domain s
 
 ## Configuration Variables
 
-XaresAICoder uses five key variables to handle ports and domains across different deployment architectures:
-
-### `SERVER_PORT`
-- **Purpose**: Port where the Express.js API server runs inside its container
-- **Default**: `3000`
-- **Used by**: Node.js application (`server/src/index.js`)
-- **Note**: This is internal to the server container and rarely needs to be changed
+XaresAICoder uses four key variables to handle ports and domains across different deployment architectures:
 
 ### `HOST_PORT` 
 - **Purpose**: Port that Docker exposes on the host machine for nginx access
@@ -55,7 +49,6 @@ XaresAICoder uses five key variables to handle ports and domains across differen
 
 **Configuration**:
 ```bash
-SERVER_PORT=3000
 HOST_PORT=80
 BASE_PORT=80
 BASE_DOMAIN=localhost  
@@ -85,7 +78,6 @@ Browser → localhost:80 → XaresAICoder nginx → Express API (port 3000)
 
 **Configuration**:
 ```bash
-SERVER_PORT=3000
 HOST_PORT=8000
 BASE_PORT=8000
 BASE_DOMAIN=dev.company.internal
@@ -115,7 +107,6 @@ Browser → dev.company.internal:8000 → XaresAICoder nginx → Express API
 
 **Configuration**:
 ```bash
-SERVER_PORT=3000        # Can be any port (e.g., 7200)
 HOST_PORT=7200          # Port external nginx proxies to
 BASE_PORT=80            # Creates clean URLs without port numbers
 BASE_DOMAIN=coder.example.com
@@ -249,11 +240,11 @@ BASE_PORT=443     # ❌ Wrong port for URL generation
 
 ## Quick Reference
 
-| Scenario | SERVER_PORT | HOST_PORT | BASE_PORT | BASE_DOMAIN | PROTOCOL |
-|----------|-------------|-----------|-----------|-------------|----------|
-| **Local Dev** | 3000 | 80 | 80 | localhost | http |
-| **Internal Server** | 3000 | 8000 | 8000 | internal.company.com | http |  
-| **External SSL Proxy** | 3000 | 7200 | 80 | coder.example.com | http |
+| Scenario |  HOST_PORT | BASE_PORT | BASE_DOMAIN | PROTOCOL |
+|-------------|-----------|-----------|-------------|----------|
+| **Local Dev** |  80 | 80 | localhost | http |
+| **Internal Server** |  8000 | 8000 | internal.company.com | http |  
+| **External SSL Proxy** |  7200 | 80 | coder.example.com | http |
 
 ## Related Documentation
 
