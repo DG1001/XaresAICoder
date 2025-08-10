@@ -15,6 +15,8 @@ Complete installation and configuration guide for XaresAICoder.
 - [Verification](#verification)
 - [Updates](#updates)
 
+**📚 For detailed port and domain configuration, see [Port Configuration Guide](PORT_CONFIGURATION.md)**
+
 ## Prerequisites
 
 ### System Requirements
