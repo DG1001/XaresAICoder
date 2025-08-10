@@ -16,7 +16,7 @@ upstream api_backend {
 
 # Main server for the frontend and API
 server {
-        listen ${BASE_PORT};
+        listen 80;
         server_name ${BASE_DOMAIN};
 
         # Frontend
@@ -42,7 +42,7 @@ server {
     # Pattern: projectid-port.domain (e.g., projectid-5000.localhost or projectid-5000.ci.infra)
     # NOTE: This MUST come before the general workspace pattern to match first
     server {
-        listen ${BASE_PORT};
+        listen 80;
         server_name ~^(?<workspace_id>[a-f0-9\-]+)-(?<app_port>[0-9]+)\.${BASE_DOMAIN}$;
 
         location / {
@@ -69,7 +69,7 @@ server {
     # Subdomain server for workspace code-server instances
     # Pattern: projectid.domain (e.g., projectid.localhost or projectid.ci.infra)
     server {
-        listen ${BASE_PORT};
+        listen 80;
         server_name ~^(?<workspace_id>[a-f0-9\-]+)\.${BASE_DOMAIN}$;
 
         location / {
