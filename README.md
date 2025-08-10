@@ -1,5 +1,7 @@
 # XaresAICoder
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/DG1001/XaresAICoder)
+
 A professional browser-based AI-powered development environment that integrates VS Code (code-server) with multiple AI coding assistants for enhanced productivity.
 
 ## Overview
