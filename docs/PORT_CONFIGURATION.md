@@ -149,7 +149,7 @@ Internet → External nginx (SSL) → localhost:7200 → XaresAICoder nginx → 
 
 ### Scenario 1: Local Development
 ```
-┌─────────────┐    :80     ┌─────────────────┐    :3000    ┌─────────────┐
+┌─────────────┐    :80     ┌─────────────────┐    :3000   ┌─────────────┐
 │   Browser   │ ---------> │ XaresAICoder    │ ---------> │ Express API │
 │             │            │ nginx           │            │ Server      │
 └─────────────┘            └─────────────────┘            └─────────────┘
@@ -164,7 +164,7 @@ Internet → External nginx (SSL) → localhost:7200 → XaresAICoder nginx → 
 
 ### Scenario 2: Internal Server
 ```
-┌─────────────┐   :8000    ┌─────────────────┐    :3000    ┌─────────────┐
+┌─────────────┐   :8000    ┌─────────────────┐    :3000   ┌─────────────┐
 │   Browser   │ ---------> │ XaresAICoder    │ ---------> │ Express API │
 │             │            │ nginx           │            │ Server      │
 └─────────────┘            └─────────────────┘            └─────────────┘
@@ -179,10 +179,10 @@ company.internal:8000              │
 
 ### Scenario 3: External SSL Proxy
 ```
-┌─────────────┐   :443     ┌─────────────────┐   :7200    ┌─────────────────┐    :3000
-│   Browser   │ ---------> │ External nginx  │ ---------> │ XaresAICoder    │ -------->
-│             │   HTTPS    │ (SSL Proxy)     │    HTTP    │ nginx           │
-└─────────────┘            └─────────────────┘            └─────────────────┘
+┌─────────────┐   :443     ┌─────────────────┐   :7200    ┌─────────────────┐    :3000  ┌─────────────┐
+│   Browser   │ ---------> │ External nginx  │ ---------> │ XaresAICoder    │ --------> │ Express API │
+│             │   HTTPS    │ (SSL Proxy)     │    HTTP    │ nginx           │           │ Server      │ 
+└─────────────┘            └─────────────────┘            └─────────────────┘           └─────────────┘
     ▲                               │                               │
     │ HTTP→HTTPS redirect           │ SSL termination               │ docker network
     └───────────────────────────────┘                               ▼
@@ -191,10 +191,6 @@ company.internal:8000              │
                                                            │ Containers      │
                                                            └─────────────────┘
                                                            
-┌─────────────┐
-│ Express API │
-│ Server      │ 
-└─────────────┘
 ```
 
 ## Common Misconfigurations
