@@ -52,10 +52,11 @@ echo "  • OpenCode SST - Multi-model AI assistant (pre-installed)"
 echo "  • Aider - AI pair programming in terminal (pre-installed)"
 echo "  • Gemini CLI - Google's AI coding assistant (pre-installed)"
 echo "  • Claude Code - Anthropic's AI coding tool (pre-installed)"
+echo "  • Qwen Code - AI workflow automation tool (pre-installed)"
 echo ""
 echo "⚡ Quick Setup:"
 echo "  • Command line tools: setup_ai_tools"
-echo "  • Individual setup: setup_opencode, setup_aider, setup_gemini, setup_claude"
+echo "  • Individual setup: setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen"
 echo ""
 echo "🚀 Quick Start:"
 echo "1. Install AI extensions from VS Code marketplace (Continue, Cline)"
@@ -252,6 +253,24 @@ claude            # Start agentic coding session
 - Multi-file editing capabilities
 - Git workflow automation
 - Advanced reasoning and planning
+
+### 🤖 Qwen Code - AI Workflow Automation
+Best for: Code exploration, workflow automation, comprehensive analysis
+
+```bash
+# Setup (free tier with 2,000 daily requests)
+setup_qwen
+
+# Get started
+qwen-code         # Start workflow automation session
+```
+
+**Features:**
+- Code understanding and exploration
+- Workflow automation
+- Performance and security analysis
+- Documentation and test generation
+- Intelligent refactoring assistance
 
 ## Quick Setup for All Tools
 
@@ -773,6 +792,24 @@ claude            # Start agentic coding session
 - Multi-file editing capabilities
 - Git workflow automation
 - Advanced reasoning and planning
+
+### 🤖 Qwen Code - AI Workflow Automation
+Best for: Code exploration, workflow automation, comprehensive analysis
+
+```bash
+# Setup (free tier with 2,000 daily requests)
+setup_qwen
+
+# Get started
+qwen-code         # Start workflow automation session
+```
+
+**Features:**
+- Code understanding and exploration
+- Workflow automation
+- Performance and security analysis
+- Documentation and test generation
+- Intelligent refactoring assistance
 
 ## Quick Setup for All Tools
 
@@ -1389,6 +1426,24 @@ claude            # Start agentic coding session
 - Git workflow automation
 - Advanced reasoning and planning
 
+### 🤖 Qwen Code - AI Workflow Automation
+Best for: Code exploration, workflow automation, comprehensive analysis
+
+```bash
+# Setup (free tier with 2,000 daily requests)
+setup_qwen
+
+# Get started
+qwen-code         # Start workflow automation session
+```
+
+**Features:**
+- Code understanding and exploration
+- Workflow automation
+- Performance and security analysis
+- Documentation and test generation
+- Intelligent refactoring assistance
+
 ## Quick Setup for All Tools
 
 Run this command to see setup instructions for all AI tools:
@@ -1615,6 +1670,27 @@ setup_claude() {
     echo "📚 Learn more: https://docs.anthropic.com/claude-code"
 }
 
+# Setup Qwen Code
+setup_qwen() {
+    echo "🤖 Setting up Qwen Code..."
+    echo ""
+    echo "Qwen Code is already installed!"
+    echo ""
+    echo "To get started:"
+    echo "1. Run: qwen-code"
+    echo "2. Authenticate with Qwen OAuth (2,000 daily free requests)"
+    echo "   Or configure OpenAI-compatible API"
+    echo ""
+    echo "💡 Features:"
+    echo "   - Code understanding and exploration"
+    echo "   - Workflow automation"
+    echo "   - Performance and security analysis"
+    echo "   - Documentation and test generation"
+    echo "   - Intelligent refactoring"
+    echo ""
+    echo "📚 Learn more: https://github.com/QwenLM/qwen-code"
+}
+
 # Setup all AI tools
 setup_ai_tools() {
     echo "🚀 XaresAICoder AI Tools Setup"
@@ -1644,6 +1720,12 @@ setup_ai_tools() {
     echo "4️⃣  Claude Code"
     setup_claude
     echo ""
+    echo "----------------------------------------"
+    echo ""
+    
+    echo "5️⃣  Qwen Code"
+    setup_qwen
+    echo ""
     echo "=============================="
     echo ""
     echo "✅ All AI tools are ready!"
@@ -1653,6 +1735,7 @@ setup_ai_tools() {
     echo "   • Aider: Interactive pair programming"
     echo "   • Gemini CLI: Google's AI with code generation"
     echo "   • Claude Code: Agentic coding with deep codebase understanding"
+    echo "   • Qwen Code: AI workflow automation and code exploration"
     echo ""
     echo "🔌 VS Code Extensions (install from marketplace):"
     echo "   • Continue: AI code completion and chat"
@@ -1696,6 +1779,7 @@ All AI tools are pre-installed and ready to use:
 - `aider` - AI pair programming with file editing
 - `gemini` - Google's AI for code generation
 - `claude` - Anthropic's agentic coding tool
+- `qwen-code` - AI workflow automation and code exploration
 
 ### VS Code Extensions (install from marketplace)
 - **Continue** - AI code completion and chat (`continue.continue`)
@@ -1895,7 +1979,7 @@ EXTENSIONS_EOF
 }
 
 # Export all functions
-export -f setup_flask_project setup_node_react_project setup_java_spring_project setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_ai_tools
+export -f setup_flask_project setup_node_react_project setup_java_spring_project setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_qwen setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."
