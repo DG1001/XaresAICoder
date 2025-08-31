@@ -542,6 +542,44 @@
         </div>
     </div>
 
+    <!-- Project Notes Modal -->
+    <div id="notesModal" class="modal" style="display: none;">
+        <div class="modal-content notes-modal-content">
+            <div class="modal-header">
+                <h3>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 8px; vertical-align: text-bottom;">
+                        <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/>
+                        <path d="M3 3.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1 0-1zm0 2h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1 0-1zm0 2h7a.5.5 0 0 1 0 1H3a.5.5 0 0 1 0-1z"/>
+                    </svg>
+                    <span id="notesModalTitle">Project Notes</span>
+                </h3>
+                <button class="modal-close" id="closeNotesModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="notes-editor">
+                    <textarea id="notesTextarea" placeholder="Add your notes about this project here...&#10;&#10;You can use this to track:&#10;• Current progress and status&#10;• Important decisions and changes&#10;• Development notes and reminders&#10;• Any other project-specific information"></textarea>
+                    <div class="notes-info">
+                        <span class="notes-char-count">
+                            <span id="notesCharCount">0</span> / 10,240 characters
+                        </span>
+                        <span class="notes-help">
+                            Plain text format
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="saveNotesBtn">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px; vertical-align: text-bottom;">
+                        <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
+                    </svg>
+                    Save Notes
+                </button>
+                <button class="btn-secondary" id="cancelNotesBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Version Footer -->
     <div class="version-footer">
         <span id="version-info">Loading...</span>

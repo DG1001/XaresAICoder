@@ -447,6 +447,33 @@ class WorkspaceService {
       }
     }
   }
+
+  // Get project notes
+  async getProjectNotes(projectId) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+    
+    return project.notes || '';
+  }
+
+  // Update project notes
+  async updateProjectNotes(projectId, notes) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+    
+    // Update project with notes
+    project.notes = notes;
+    project.lastAccessed = new Date();
+    
+    // Save to disk
+    await this.saveProjectsToDisk();
+    
+    return true;
+  }
 }
 
 module.exports = new WorkspaceService();

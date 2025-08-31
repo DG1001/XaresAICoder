@@ -146,6 +146,26 @@ class XaresAICoder {
                 this.handlePasswordConfirm();
             }
         });
+
+        // Notes modal handlers
+        const closeNotesModal = document.getElementById('closeNotesModal');
+        const saveNotesBtn = document.getElementById('saveNotesBtn');
+        const cancelNotesBtn = document.getElementById('cancelNotesBtn');
+        const notesTextarea = document.getElementById('notesTextarea');
+        
+        closeNotesModal.addEventListener('click', () => this.hideNotesModal());
+        cancelNotesBtn.addEventListener('click', () => this.hideNotesModal());
+        saveNotesBtn.addEventListener('click', () => this.saveProjectNotes());
+        
+        // Character count update
+        notesTextarea.addEventListener('input', () => this.updateNotesCharCount());
+        
+        // Close notes modal on outside click
+        document.getElementById('notesModal').addEventListener('click', (e) => {
+            if (e.target.id === 'notesModal') {
+                this.hideNotesModal();
+            }
+        });
     }
 
     handleTabSwitch(e) {
@@ -427,6 +447,13 @@ class XaresAICoder {
                         ${this.escapeHtml(project.projectName)}
                         ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
                         ${project.gitRepository && project.gitRepository.webUrl ? `<a href="${project.gitRepository.webUrl}" target="_blank" class="git-repo-link" title="View Git Repository: ${project.gitRepository.name}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>` : ''}
+                        <button class="notes-btn" onclick="app.openNotesModal('${project.projectId}')" title="View/Edit Project Notes" aria-label="Project Notes">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/>
+                                <path d="M3 3.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1 0-1zm0 2h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1 0-1zm0 2h7a.5.5 0 0 1 0 1H3a.5.5 0 0 1 0-1z"/>
+                            </svg>
+                            ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
+                        </button>
                     </h4>
                     <div class="project-meta">
                         <span class="project-status ${this.getStatusClass(project.status, project.workspaceUrl)}">${this.getStatusLabel(project.status, project.workspaceUrl)}</span>
@@ -1225,6 +1252,149 @@ class XaresAICoder {
             }
         } catch (error) {
             console.error('Error removing project from storage:', error);
+        }
+    }
+
+    // Project Notes Methods
+    async openNotesModal(projectId) {
+        try {
+            const project = this.projects.find(p => p.projectId === projectId);
+            if (!project) {
+                this.showError('Project not found');
+                return;
+            }
+
+            // Set current project ID for save operation
+            this.currentNotesProjectId = projectId;
+            
+            // Set modal title
+            document.getElementById('notesModalTitle').textContent = `Notes - ${project.projectName}`;
+            
+            // Load current notes
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/notes`);
+            let notes = '';
+            
+            if (response.ok) {
+                const data = await response.json();
+                notes = data.notes || '';
+            } else {
+                console.error('Failed to load project notes');
+                // Continue with empty notes - don't block the user
+            }
+            
+            // Set textarea content and update character count
+            const textarea = document.getElementById('notesTextarea');
+            textarea.value = notes;
+            this.originalNotes = notes; // Store original for cancel detection
+            this.updateNotesCharCount();
+            
+            // Show modal
+            document.getElementById('notesModal').style.display = 'flex';
+            
+            // Focus textarea after animation
+            setTimeout(() => {
+                textarea.focus();
+                textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+            }, 100);
+            
+        } catch (error) {
+            console.error('Error opening notes modal:', error);
+            this.showError('Failed to open notes editor');
+        }
+    }
+
+    hideNotesModal() {
+        document.getElementById('notesModal').style.display = 'none';
+        this.currentNotesProjectId = null;
+        this.originalNotes = null;
+    }
+
+    async saveProjectNotes() {
+        if (!this.currentNotesProjectId) {
+            return;
+        }
+
+        try {
+            const textarea = document.getElementById('notesTextarea');
+            const notes = textarea.value.trim();
+            
+            // Check character limit
+            if (notes.length > 10240) {
+                this.showError('Notes are too long. Maximum 10,240 characters allowed.');
+                return;
+            }
+            
+            const saveBtn = document.getElementById('saveNotesBtn');
+            const originalText = saveBtn.innerHTML;
+            
+            // Show loading state
+            saveBtn.innerHTML = '<div class="spinner" style="display: inline-block; width: 14px; height: 14px;"></div> Saving...';
+            saveBtn.disabled = true;
+            
+            const response = await fetch(`${this.apiBase}/projects/${this.currentNotesProjectId}/notes`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ notes })
+            });
+            
+            if (response.ok) {
+                // Update local project data
+                const project = this.projects.find(p => p.projectId === this.currentNotesProjectId);
+                if (project) {
+                    project.notes = notes;
+                    // Save to localStorage
+                    this.saveProjectToStorage(project);
+                    // Re-render to show/hide notes indicator
+                    this.renderProjects();
+                }
+                
+                this.hideNotesModal();
+                
+                // Show brief success feedback
+                const successFeedback = document.createElement('div');
+                successFeedback.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--vscode-success); color: white; padding: 8px 16px; border-radius: 4px; z-index: 10001; font-size: 13px;';
+                successFeedback.textContent = 'Notes saved';
+                document.body.appendChild(successFeedback);
+                
+                setTimeout(() => {
+                    document.body.removeChild(successFeedback);
+                }, 2000);
+                
+            } else {
+                const errorData = await response.json();
+                this.showError(errorData.message || 'Failed to save notes');
+            }
+            
+        } catch (error) {
+            console.error('Error saving notes:', error);
+            this.showError('Failed to save notes');
+        } finally {
+            // Restore button state
+            const saveBtn = document.getElementById('saveNotesBtn');
+            saveBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px; vertical-align: text-bottom;"><path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/></svg>Save Notes';
+            saveBtn.disabled = false;
+        }
+    }
+
+    updateNotesCharCount() {
+        const textarea = document.getElementById('notesTextarea');
+        const charCount = document.getElementById('notesCharCount');
+        const currentLength = textarea.value.length;
+        const maxLength = 10240;
+        
+        charCount.textContent = currentLength;
+        
+        // Remove existing classes
+        charCount.classList.remove('warning', 'error');
+        
+        // Add warning/error classes based on character count
+        if (currentLength > maxLength * 0.9) {
+            charCount.classList.add('warning');
+        }
+        if (currentLength > maxLength) {
+            charCount.classList.add('error');
         }
     }
 }

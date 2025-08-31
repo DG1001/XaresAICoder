@@ -172,4 +172,56 @@ router.post('/:projectId/stop', async (req, res) => {
   }
 });
 
+// Get project notes
+router.get('/:projectId/notes', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const notes = await workspaceService.getProjectNotes(projectId);
+    
+    res.json({
+      success: true,
+      notes: notes || ''
+    });
+
+  } catch (error) {
+    console.error('Get project notes error:', error);
+    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    res.status(statusCode).json({
+      error: 'Failed to get project notes',
+      message: error.message
+    });
+  }
+});
+
+// Update project notes
+router.put('/:projectId/notes', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { notes } = req.body;
+    
+    // Validate notes length (limit to 10KB)
+    if (notes && notes.length > 10240) {
+      return res.status(400).json({
+        error: 'Notes too long',
+        message: 'Notes must be less than 10KB'
+      });
+    }
+    
+    await workspaceService.updateProjectNotes(projectId, notes || '');
+    
+    res.json({
+      success: true,
+      message: 'Notes updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update project notes error:', error);
+    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    res.status(statusCode).json({
+      error: 'Failed to update project notes',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
