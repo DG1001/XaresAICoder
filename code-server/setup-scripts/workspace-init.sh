@@ -53,10 +53,11 @@ echo "  • Aider - AI pair programming in terminal (pre-installed)"
 echo "  • Gemini CLI - Google's AI coding assistant (pre-installed)"
 echo "  • Claude Code - Anthropic's AI coding tool (pre-installed)"
 echo "  • Qwen Code - AI workflow automation tool (pre-installed)"
+echo "  • OpenAI Codex - OpenAI's coding assistant (pre-installed)"
 echo ""
 echo "⚡ Quick Setup:"
 echo "  • Command line tools: setup_ai_tools"
-echo "  • Individual setup: setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen"
+echo "  • Individual setup: setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen, setup_codex"
 echo ""
 echo "🚀 Quick Start:"
 echo "1. Install AI extensions from VS Code marketplace (Continue, Cline)"
@@ -1691,6 +1692,41 @@ setup_qwen() {
     echo "📚 Learn more: https://github.com/QwenLM/qwen-code"
 }
 
+# Setup OpenAI Codex CLI
+setup_codex() {
+    echo "🤖 Setting up OpenAI Codex CLI..."
+    echo ""
+    echo "OpenAI Codex CLI is already installed!"
+    echo ""
+    echo "⚠️  Authentication for containers:"
+    echo "Since we're in a containerized environment, the usual web-based auth won't work."
+    echo "Use the 'headless machine' authentication method:"
+    echo ""
+    echo "📋 Steps to authenticate:"
+    echo "1. On your LOCAL machine, run: codex login"
+    echo "2. Complete authentication in your browser"
+    echo "3. Copy the auth.json file to this container:"
+    echo ""
+    echo "   # From your local machine:"
+    echo "   docker cp ~/.codex/auth.json <container_name>:/home/coder/.codex/auth.json"
+    echo ""
+    echo "   # Or if you have the file ready:"
+    echo "   mkdir -p ~/.codex"
+    echo "   # Copy your auth.json file to ~/.codex/auth.json"
+    echo ""
+    echo "4. Run: codex"
+    echo ""
+    echo "💡 Features:"
+    echo "   - Local AI coding assistant"
+    echo "   - Integrates with ChatGPT Plus/Pro/Team/Enterprise"
+    echo "   - Model Context Protocol (MCP) support"
+    echo "   - Terminal-based coding assistance"
+    echo ""
+    echo "📚 Learn more:"
+    echo "   - GitHub: https://github.com/openai/codex"
+    echo "   - Auth docs: https://github.com/openai/codex/blob/main/docs/authentication.md"
+}
+
 # Setup all AI tools
 setup_ai_tools() {
     echo "🚀 XaresAICoder AI Tools Setup"
@@ -1726,6 +1762,12 @@ setup_ai_tools() {
     echo "5️⃣  Qwen Code"
     setup_qwen
     echo ""
+    echo "----------------------------------------"
+    echo ""
+    
+    echo "6️⃣  OpenAI Codex CLI"
+    setup_codex
+    echo ""
     echo "=============================="
     echo ""
     echo "✅ All AI tools are ready!"
@@ -1736,6 +1778,7 @@ setup_ai_tools() {
     echo "   • Gemini CLI: Google's AI with code generation"
     echo "   • Claude Code: Agentic coding with deep codebase understanding"
     echo "   • Qwen Code: AI workflow automation and code exploration"
+    echo "   • OpenAI Codex: OpenAI's terminal-based coding assistant"
     echo ""
     echo "🔌 VS Code Extensions (install from marketplace):"
     echo "   • Continue: AI code completion and chat"
@@ -1979,7 +2022,7 @@ EXTENSIONS_EOF
 }
 
 # Export all functions
-export -f setup_flask_project setup_node_react_project setup_java_spring_project setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_qwen setup_ai_tools
+export -f setup_flask_project setup_node_react_project setup_java_spring_project setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_qwen setup_codex setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."

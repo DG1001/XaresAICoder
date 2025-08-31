@@ -32,8 +32,8 @@ RUN pip3 install --break-system-packages \
 # Install Aider AI pair programming tool
 RUN pip3 install --break-system-packages aider-chat
 
-# Install Node.js AI tools (Gemini CLI, Claude Code, and Qwen Code)
-RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest
+# Install Node.js AI tools (Gemini CLI, Claude Code, Qwen Code, and OpenAI Codex)
+RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest @openai/codex
 
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \

@@ -27,6 +27,8 @@ XaresAICoder provides a curated selection of AI coding assistants that work seam
 - **Aider** - AI pair programming with git integration
 - **Gemini CLI** - Google's AI for code generation
 - **Claude Code** - Anthropic's agentic coding tool
+- **Qwen Code** - AI workflow automation and code exploration
+- **OpenAI Codex CLI** - OpenAI's terminal-based coding assistant
 
 ## VS Code Extensions
 
@@ -281,6 +283,115 @@ claude
 # "Optimize the database schema and queries"
 ```
 
+### Qwen Code - AI Workflow Automation
+
+**Best for**: Code exploration, workflow automation, comprehensive analysis
+
+#### Features
+- ✅ **Code Understanding** - Deep analysis of code structure and patterns
+- ✅ **Workflow Automation** - Automate repetitive development tasks
+- ✅ **Performance Analysis** - Identify bottlenecks and optimization opportunities
+- ✅ **Security Analysis** - Detect potential security vulnerabilities
+- ✅ **Documentation Generation** - Auto-generate comprehensive documentation
+- ✅ **Test Generation** - Create intelligent test suites
+- ✅ **Refactoring Assistance** - Intelligent code restructuring suggestions
+
+#### Setup
+```bash
+# Use the built-in setup command
+setup_qwen
+
+# Authenticate with Qwen OAuth (2,000 daily free requests)
+# Or configure OpenAI-compatible API
+```
+
+#### Usage
+```bash
+# Start workflow automation session
+qwen-code
+
+# Example tasks:
+# "Analyze this codebase for performance issues"
+# "Generate comprehensive tests for all modules"
+# "Create API documentation from the code"
+# "Suggest refactoring improvements"
+# "Check for security vulnerabilities"
+```
+
+### OpenAI Codex CLI - Terminal-Based Coding Assistant
+
+**Best for**: Terminal-based development, ChatGPT integration, local AI assistance
+
+#### Features
+- ✅ **Local AI Assistant** - Runs directly in your terminal
+- ✅ **ChatGPT Integration** - Works with Plus/Pro/Team/Enterprise plans
+- ✅ **Model Context Protocol** - Advanced context management (MCP)
+- ✅ **Interactive Sessions** - Natural conversation about code
+- ✅ **Non-Interactive Mode** - Scriptable AI operations
+- ✅ **Configurable Models** - Choose from multiple OpenAI models
+
+#### Setup (Container Environment)
+```bash
+# Use the built-in setup command
+setup_codex
+
+# For containerized environments, authentication requires special steps:
+# 1. On your LOCAL machine: codex login
+# 2. Copy the auth.json file to container:
+#    docker cp ~/.codex/auth.json <container>:/home/coder/.codex/auth.json
+```
+
+#### Manual Authentication Steps
+```bash
+# Step 1: On your local machine (with browser access)
+codex login
+
+# Step 2: Find the auth.json file location
+ls ~/.codex/auth.json  # macOS/Linux
+# or %USERPROFILE%\.codex\auth.json on Windows
+
+# Step 3: Copy to container
+docker cp ~/.codex/auth.json <container_id>:/home/coder/.codex/auth.json
+
+# Step 4: Test in container
+codex --version
+```
+
+#### Usage
+```bash
+# Start interactive session
+codex
+
+# Direct prompt execution
+codex "How do I implement OAuth in Python?"
+
+# Non-interactive mode
+codex exec "Write a REST API endpoint for user registration"
+
+# With model selection
+codex -m o3 "Optimize this Python function for performance"
+
+# Apply generated diffs
+codex apply
+
+# Check authentication status
+codex login --status
+```
+
+#### Configuration
+```bash
+# Create config file at ~/.codex/config.toml
+[model]
+provider = "openai"
+name = "gpt-4"
+
+[sandbox]
+mode = "workspace-write"
+
+[approval]
+policy = "untrusted"
+```
+
 ## Setup Guide
 
 ### Quick Setup for All Tools
@@ -334,25 +445,29 @@ which opencode
 which aider
 which gemini
 which claude
+which qwen-code
+which codex
 
 # Test API connections
 opencode auth status
 aider --version
 gemini --help
+qwen-code --version
+codex --version
 ```
 
 ## Tool Comparison
 
 ### Use Case Matrix
 
-| Task | Continue | Cline | OpenCode | Aider | Gemini | Claude Code |
-|------|----------|-------|----------|-------|--------|-------------|
-| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐ |
-| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ |
-| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ |
-| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ❌ | ⭐⭐⭐ |
-| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ |
-| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ |
+| Task | Continue | Cline | OpenCode | Aider | Gemini | Claude Code | Qwen Code | Codex CLI |
+|------|----------|-------|----------|-------|--------|-------------|-----------|-----------|
+| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐ | ⭐ | ⭐⭐ |
+| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ❌ | ⭐⭐⭐ | ⭐ | ⭐ |
+| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ |
 
 ### Model Support
 
@@ -364,6 +479,8 @@ gemini --help
 | **Aider** | ✅ | ✅ | ✅ | ✅ (Ollama) |
 | **Gemini CLI** | ❌ | ❌ | ✅ | ❌ |
 | **Claude Code** | ❌ | ✅ | ❌ | ❌ |
+| **Qwen Code** | ✅ | ❌ | ❌ | ✅ (Qwen) |
+| **Codex CLI** | ✅ | ❌ | ❌ | ❌ |
 
 ## Best Practices
 
@@ -382,10 +499,11 @@ graph TD
 ```
 
 **Recommended Combinations**:
-- **Beginner**: Continue + OpenCode SST
-- **Intermediate**: Continue + Aider + Gemini CLI
+- **Beginner**: Continue + OpenCode SST + Codex CLI
+- **Intermediate**: Continue + Aider + Gemini CLI + Qwen Code
 - **Advanced**: All tools based on specific needs
-- **Team Lead**: OpenCode SST + Claude Code + Aider
+- **Team Lead**: OpenCode SST + Claude Code + Aider + Qwen Code
+- **Performance Focus**: Qwen Code + Claude Code + Aider
 
 ### 2. Workflow Integration
 
