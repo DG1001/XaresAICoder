@@ -6,7 +6,7 @@ USER root
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
 
-# Install other system dependencies
+# Install other system dependencies including ripgrep for OpenAI Codex
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     wget \
     unzip \
+    ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages for Flask development using --break-system-packages
@@ -32,8 +33,16 @@ RUN pip3 install --break-system-packages \
 # Install Aider AI pair programming tool
 RUN pip3 install --break-system-packages aider-chat
 
-# Install Node.js AI tools (Gemini CLI, Claude Code, Qwen Code, and OpenAI Codex)
-RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest @openai/codex
+# Install Node.js AI tools (first install most tools, then OpenAI Codex separately)
+RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest
+
+# Install OpenAI Codex with environment variables to use system ripgrep
+ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg
+ENV VSCODE_RIPGREP_FORCE_PATH=/usr/bin/rg
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm install -g @openai/codex || \
+    (sleep 10 && npm install -g @openai/codex) || \
+    (sleep 20 && npm install -g @openai/codex --ignore-scripts)
 
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
