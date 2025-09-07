@@ -8,8 +8,9 @@ RUN apk add --no-cache docker-cli
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Clear npm cache and install dependencies 
+RUN npm cache clean --force
+RUN npm install --no-cache
 
 # Copy source code
 COPY . .
