@@ -141,30 +141,23 @@ class DockerService {
       if (projectType === 'python-flask') {
         console.log('Adding Flask project setup commands');
         commands.push('setup_flask_project');
-        commands.push('git add .');
-        commands.push('git commit -m "Initial Flask project setup"');
+        // Note: Template files are created but not committed - user decides whether to keep or remove them
       } else if (projectType === 'node-react') {
         console.log('Adding Node.js/React project setup commands');
         commands.push('setup_node_react_project');
-        commands.push('git add .');
-        commands.push('git commit -m "Initial Node.js React project setup"');
+        // Note: Template files are created but not committed - user decides whether to keep or remove them
       } else if (projectType === 'java-spring') {
         console.log('Adding Java/Spring project setup commands');
         commands.push('setup_java_spring_project');
-        commands.push('git add .');
-        commands.push('git commit -m "Initial Java Spring Boot project setup"');
+        // Note: Template files are created but not committed - user decides whether to keep or remove them
       } else if (projectType === 'empty') {
         console.log('Adding empty project setup commands');
         commands.push('setup_empty_project');
-        commands.push('git add .');
-        commands.push('git commit -m "Initial empty project setup"');
+        // Note: Template files are created but not committed - user decides whether to keep or remove them
       }
 
-      // Push to remote repository if configured
-      commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then');
-      commands.push('  echo "Pushing to remote repository: $GIT_REPO_NAME"');
-      commands.push('  git push -u origin main');
-      commands.push('fi');
+      // Note: No automatic push - template files are not committed
+      // Users can commit and push their initial files when ready
 
       // Run commands as root but set proper ownership afterward
       for (const cmd of commands) {
