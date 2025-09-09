@@ -52,6 +52,7 @@ class WorkspaceService {
         projectName: projectName.trim(),
         projectType,
         memoryLimit: options.memoryLimit || '2g',
+        cpuCores: options.cpuCores || '2',
         userId,
         passwordProtected: options.passwordProtected || false,
         passwordHash: passwordHash, // Store hashed password
@@ -123,6 +124,7 @@ class WorkspaceService {
       // Create Docker container with auth options and Git config
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
         memoryLimit: options.memoryLimit || '2g',
+        cpuCores: options.cpuCores || '2',
         passwordProtected: options.passwordProtected || false,
         password: options.password || null,
         gitRepository: gitRepository
@@ -317,6 +319,7 @@ class WorkspaceService {
             projectName: p.projectName,
             projectType: p.projectType,
             memoryLimit: p.memoryLimit || '2g',
+            cpuCores: p.cpuCores || '2',
             passwordProtected: p.passwordProtected || false,
             status: p.status,
             workspaceUrl: p.workspaceUrl,
@@ -330,6 +333,8 @@ class WorkspaceService {
             projectId: p.projectId,
             projectName: p.projectName,
             projectType: p.projectType,
+            memoryLimit: p.memoryLimit || '2g',
+            cpuCores: p.cpuCores || '2',
             passwordProtected: p.passwordProtected || false,
             status: 'error',
             workspaceUrl: p.workspaceUrl,
