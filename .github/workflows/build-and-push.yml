@@ -15,6 +15,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME_SERVER: ${{ github.repository_owner }}/xaresaicoder-server
   IMAGE_NAME_CODESERVER: ${{ github.repository_owner }}/xaresaicoder-codeserver
+  IMAGE_NAME_CODESERVER_CUDA: ${{ github.repository_owner }}/xaresaicoder-codeserver
 
 jobs:
   build-server:
@@ -103,8 +104,52 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-codeserver-cuda:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for CUDA image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_CODESERVER_CUDA }}
+          tags: |
+            type=ref,event=tag,suffix=-cuda
+            type=semver,pattern={{version}},suffix=-cuda
+            type=semver,pattern={{major}}.{{minor}},suffix=-cuda
+            type=semver,pattern={{major}},suffix=-cuda
+            type=raw,value=cuda
+
+      - name: Build and push CUDA Code-server image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./code-server
+          file: ./code-server/Dockerfile.cuda
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   notify-completion:
-    needs: [build-server, build-codeserver]
+    needs: [build-server, build-codeserver, build-codeserver-cuda]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -119,12 +164,23 @@ jobs:
 
       - name: Notification
         run: |
-          if [ "${{ needs.build-server.result }}" == "success" ] && [ "${{ needs.build-codeserver.result }}" == "success" ]; then
+          if [ "${{ needs.build-server.result }}" == "success" ] && [ "${{ needs.build-codeserver.result }}" == "success" ] && [ "${{ needs.build-codeserver-cuda.result }}" == "success" ]; then
             echo "✅ Docker images built and pushed successfully for tag: ${{ steps.tag.outputs.tag }}"
             echo "🚀 Images available at:"
             echo "   - ghcr.io/${{ github.repository }}-server:${{ steps.tag.outputs.tag }}"
             echo "   - ghcr.io/${{ github.repository }}-codeserver:${{ steps.tag.outputs.tag }}"
+            echo "   - ghcr.io/${{ github.repository }}-codeserver:cuda (GPU-enabled)"
+            echo "   - ghcr.io/${{ github.repository }}-codeserver:${{ steps.tag.outputs.tag }}-cuda"
           else
             echo "❌ Some builds failed or were cancelled for tag: ${{ steps.tag.outputs.tag }}"
+            if [ "${{ needs.build-server.result }}" != "success" ]; then
+              echo "   - Server build: ${{ needs.build-server.result }}"
+            fi
+            if [ "${{ needs.build-codeserver.result }}" != "success" ]; then
+              echo "   - Code-server build: ${{ needs.build-codeserver.result }}"
+            fi
+            if [ "${{ needs.build-codeserver-cuda.result }}" != "success" ]; then
+              echo "   - CUDA Code-server build: ${{ needs.build-codeserver-cuda.result }}"
+            fi
             exit 1
           fi
