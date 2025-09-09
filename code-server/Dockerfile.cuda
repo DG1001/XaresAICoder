@@ -78,7 +78,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # Set up VS Code settings and extensions
-COPY --chown=coder:coder .vscode/ /home/coder/.local/share/code-server/User/
+# Note: VS Code settings will be configured through setup scripts
 
 # Create welcome message for GPU-enabled workspace
 RUN echo '#!/bin/bash' > /home/coder/.bashrc_custom \
