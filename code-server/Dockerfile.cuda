@@ -1,6 +1,6 @@
 # CUDA-enabled code-server image for GPU workloads
-# Based on NVIDIA CUDA development image with Ubuntu 20.04
-FROM nvidia/cuda:11.8-devel-ubuntu20.04
+# Based on NVIDIA CUDA development image with Ubuntu 22.04
+FROM nvidia/cuda:12.9.1-devel-ubuntu22.04
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
