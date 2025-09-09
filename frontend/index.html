@@ -134,6 +134,24 @@
                         </div>
 
                         <div class="form-section">
+                            <div class="form-group checkbox-group" id="gpuEnabledGroup" style="display: none;">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="gpuEnabled" name="gpuEnabled">
+                                    <span class="checkmark"></span>
+                                    <span class="checkbox-text">
+                                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                            <path d="M6 2a.75.75 0 0 1 .696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5H12.596l-1.846 4.615a.75.75 0 0 1-1.393 0L6 4.869 4.357 8.115a.75.75 0 0 1-1.393 0L1.118 4.615A.75.75 0 0 1 1.75 4H5.25a.75.75 0 0 1 0 1.5H2.404l1.339 3.346L5.304 2.47A.75.75 0 0 1 6 2z"/>
+                                        </svg>
+                                        Enable GPU Acceleration
+                                    </span>
+                                </label>
+                                <div class="checkbox-description">
+                                    Use CUDA-enabled workspace with ML/AI libraries (PyTorch, TensorFlow). Requires more resources and NVIDIA GPU support on host.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
                             <div class="form-group checkbox-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="passwordProtected" name="passwordProtected">

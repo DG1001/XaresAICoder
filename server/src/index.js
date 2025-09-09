@@ -23,7 +23,8 @@ app.get('/api/config', (req, res) => {
     gitServerEnabled: process.env.ENABLE_GIT_SERVER === 'true',
     baseDomain: process.env.BASE_DOMAIN || 'localhost',
     basePort: process.env.BASE_PORT || '80',
-    protocol: process.env.PROTOCOL || 'http'
+    protocol: process.env.PROTOCOL || 'http',
+    gpuAvailable: process.env.ENABLE_GPU === 'true'
   };
   
   if (config.gitServerEnabled) {

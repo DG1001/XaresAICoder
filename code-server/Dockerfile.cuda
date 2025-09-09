@@ -1,0 +1,110 @@
+# CUDA-enabled code-server image for GPU workloads
+# Based on NVIDIA CUDA development image with Ubuntu 20.04
+FROM nvidia/cuda:11.8-devel-ubuntu20.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install basic dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 20.x from NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+# Install other system dependencies including ripgrep for OpenAI Codex
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    wget \
+    unzip \
+    ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install code-server
+ARG CODE_SERVER_VERSION=4.19.1
+RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version=${CODE_SERVER_VERSION}
+
+# Create coder user for running code-server
+RUN useradd -m -s /bin/bash coder \
+    && usermod -aG sudo coder \
+    && echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Install Python packages commonly used for ML/AI
+RUN pip3 install --no-cache-dir \
+    numpy \
+    pandas \
+    matplotlib \
+    seaborn \
+    scikit-learn \
+    jupyter \
+    ipykernel \
+    torch \
+    torchvision \
+    torchaudio \
+    tensorflow \
+    transformers \
+    datasets \
+    accelerate
+
+# Install OpenCode SST CLI
+RUN npm install -g opencode
+
+# Install Aider (AI coding assistant)
+RUN pip3 install aider-chat
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown coder:coder /workspace
+
+# Setup scripts directory
+COPY setup-scripts /usr/local/setup-scripts
+RUN chmod +x /usr/local/setup-scripts/*.sh
+
+# Add setup scripts to PATH
+ENV PATH="/usr/local/setup-scripts:$PATH"
+
+# Configure environment for GPU usage
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Set up VS Code settings and extensions
+COPY --chown=coder:coder .vscode/ /home/coder/.local/share/code-server/User/
+
+# Create welcome message for GPU-enabled workspace
+RUN echo '#!/bin/bash' > /home/coder/.bashrc_custom \
+    && echo 'echo "🚀 XaresAICoder GPU-Enabled Workspace"' >> /home/coder/.bashrc_custom \
+    && echo 'echo "📊 GPU Info: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo \"No GPU detected\")"' >> /home/coder/.bashrc_custom \
+    && echo 'echo "🤖 OpenCode SST: Use '\''opencode [prompt]'\'' to interact with AI"' >> /home/coder/.bashrc_custom \
+    && echo 'echo "🔧 Aider: Use '\''aider'\'' for AI-powered code editing"' >> /home/coder/.bashrc_custom \
+    && echo 'echo "🐍 Python ML libraries: numpy, pandas, torch, tensorflow, transformers installed"' >> /home/coder/.bashrc_custom \
+    && echo 'echo ""' >> /home/coder/.bashrc_custom \
+    && echo 'source /home/coder/.bashrc_custom' >> /home/coder/.bashrc
+
+# Set proper ownership
+RUN chown -R coder:coder /home/coder
+
+# Switch to coder user
+USER coder
+
+# Set working directory
+WORKDIR /workspace
+
+# Set environment variables for ripgrep (required for OpenAI Codex)
+ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg
+ENV VSCODE_RIPGREP_FORCE_PATH=true
+
+# Expose code-server port
+EXPOSE 8082
+
+# Default command
+CMD ["code-server", "--bind-addr", "0.0.0.0:8082", "--auth", "none", "/workspace"]

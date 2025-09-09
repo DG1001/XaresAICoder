@@ -1,3 +1,5 @@
+# Standard code-server image without GPU support
+# For GPU support, use Dockerfile.cuda instead
 FROM codercom/code-server:latest
 
 USER root

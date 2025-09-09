@@ -90,6 +90,15 @@ class XaresAICoder {
             if (gitServerNav) gitServerNav.style.display = 'none';
             if (gitRepoGroup) gitRepoGroup.style.display = 'none';
         }
+
+        // Show/hide GPU checkbox based on configuration
+        const gpuEnabledGroup = document.getElementById('gpuEnabledGroup');
+        
+        if (this.config.gpuAvailable) {
+            if (gpuEnabledGroup) gpuEnabledGroup.style.display = 'block';
+        } else {
+            if (gpuEnabledGroup) gpuEnabledGroup.style.display = 'none';
+        }
     }
 
     bindEvents() {
@@ -263,6 +272,7 @@ class XaresAICoder {
         const passwordProtected = formData.get('passwordProtected') === 'on';
         const workspacePassword = formData.get('workspacePassword');
         const createGitRepo = formData.get('createGitRepo') === 'on';
+        const gpuEnabled = formData.get('gpuEnabled') === 'on';
 
         if (!projectName || !projectType) {
             this.showError('Please fill in all required fields');
@@ -288,6 +298,10 @@ class XaresAICoder {
 
         if (createGitRepo && this.config.gitServerEnabled) {
             requestBody.createGitRepo = true;
+        }
+
+        if (gpuEnabled && this.config.gpuAvailable) {
+            requestBody.gpuEnabled = true;
         }
 
         try {
@@ -446,6 +460,7 @@ class XaresAICoder {
                     <h4>
                         ${this.escapeHtml(project.projectName)}
                         ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
+                        ${project.gpuEnabled ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-link); vertical-align: text-bottom;" title="GPU-Enabled Workspace"><path d="M6 2a.75.75 0 0 1 .696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5H12.596l-1.846 4.615a.75.75 0 0 1-1.393 0L6 4.869 4.357 8.115a.75.75 0 0 1-1.393 0L1.118 4.615A.75.75 0 0 1 1.75 4H5.25a.75.75 0 0 1 0 1.5H2.404l1.339 3.346L5.304 2.47A.75.75 0 0 1 6 2z"/></svg>' : ''}
                         ${project.gitRepository && project.gitRepository.webUrl ? `<a href="${project.gitRepository.webUrl}" target="_blank" class="git-repo-link" title="View Git Repository: ${project.gitRepository.name}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>` : ''}
                         <button class="notes-btn" onclick="app.openNotesModal('${project.projectId}')" title="View/Edit Project Notes" aria-label="Project Notes">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">

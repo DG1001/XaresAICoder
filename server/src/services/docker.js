@@ -13,6 +13,11 @@ class DockerService {
     this.protocol = process.env.PROTOCOL || 'http';
     // Docker image configuration
     this.codeServerImage = process.env.CODESERVER_IMAGE || 'xares-aicoder-codeserver:latest';
+    this.codeServerCudaImage = process.env.CODESERVER_CUDA_IMAGE || 'xares-aicoder-codeserver:cuda';
+    // GPU configuration
+    this.enableGpu = process.env.ENABLE_GPU === 'true';
+    this.gpuRuntime = process.env.GPU_RUNTIME || 'nvidia';
+    this.gpuMemoryLimit = process.env.GPU_MEMORY_LIMIT || null;
   }
 
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
@@ -20,11 +25,15 @@ class DockerService {
       const containerName = `workspace-${projectId}`;
       const port = await this.findAvailablePort(8080);
 
-      // Build the code-server image if it doesn't exist
-      await this.ensureCodeServerImage();
-
       // Setup authentication and Git configuration
-      const { memoryLimit = '2g', passwordProtected = false, password = null, gitRepository = null } = authOptions;
+      const { memoryLimit = '2g', passwordProtected = false, password = null, gpuEnabled = false, gitRepository = null } = authOptions;
+
+      // Determine which image to use based on GPU configuration (per-project setting overrides global)
+      const useGpu = gpuEnabled || this.enableGpu;
+      const imageToUse = useGpu ? this.codeServerCudaImage : this.codeServerImage;
+      
+      // Build the code-server image if it doesn't exist
+      await this.ensureCodeServerImage(imageToUse);
       let authFlag = 'none'; // Default to no auth
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
@@ -48,8 +57,41 @@ class DockerService {
       // Convert memory limit to bytes
       const memoryBytes = this.parseMemoryLimit(memoryLimit);
 
+      // Prepare GPU configuration if enabled
+      const hostConfig = {
+        Memory: memoryBytes,
+        CpuShares: 1024, // 1 CPU cores equivalent
+        NetworkMode: this.network,
+        RestartPolicy: {
+          Name: 'unless-stopped'
+        }
+      };
+
+      // Add GPU support if enabled (per-project or global setting)
+      if (useGpu) {
+        console.log(`GPU support enabled with runtime: ${this.gpuRuntime}`);
+        hostConfig.Runtime = this.gpuRuntime;
+        hostConfig.DeviceRequests = [{
+          Driver: '',
+          Count: -1, // Request all available GPUs
+          Capabilities: [['gpu']]
+        }];
+        
+        // Add GPU memory limit if specified
+        if (this.gpuMemoryLimit) {
+          console.log(`GPU memory limit set to: ${this.gpuMemoryLimit}`);
+          hostConfig.DeviceRequests[0].Options = {
+            'memory': this.gpuMemoryLimit
+          };
+        }
+        
+        // Add GPU environment variables
+        envVars.push('NVIDIA_VISIBLE_DEVICES=all');
+        envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
+      }
+
       const container = await this.docker.createContainer({
-        Image: this.codeServerImage,
+        Image: imageToUse,
         name: containerName,
         Env: envVars,
         ExposedPorts: {
@@ -62,14 +104,7 @@ class DockerService {
           '3001/tcp': {}, // React dev server alt
           '9000/tcp': {}  // Various apps
         },
-        HostConfig: {
-          Memory: memoryBytes,
-          CpuShares: 1024, // 1 CPU cores equivalent
-          NetworkMode: this.network,
-          RestartPolicy: {
-            Name: 'unless-stopped'
-          }
-        },
+        HostConfig: hostConfig,
         NetworkingConfig: {
           EndpointsConfig: {
             [this.network]: {
@@ -243,15 +278,20 @@ class DockerService {
     });
   }
 
-  async ensureCodeServerImage() {
+  async ensureCodeServerImage(imageName = null) {
+    const imageToCheck = imageName || this.codeServerImage;
     try {
-      await this.docker.getImage(this.codeServerImage).inspect();
+      await this.docker.getImage(imageToCheck).inspect();
+      console.log(`Using image: ${imageToCheck}`);
     } catch (error) {
       // Image doesn't exist, need to build it
-      console.log(`Building code-server image: ${this.codeServerImage}...`);
-      // In a real implementation, you would build from the Dockerfile
-      // For now, we'll use the official code-server image as fallback
-      throw new Error(`Code-server image not found: ${this.codeServerImage}. Please build the image first with: docker build -t ${this.codeServerImage} ./code-server`);
+      console.log(`Building code-server image: ${imageToCheck}...`);
+      
+      if (imageToCheck.includes('cuda')) {
+        throw new Error(`CUDA code-server image not found: ${imageToCheck}. Please build the CUDA image first with: docker build -f Dockerfile.cuda -t ${imageToCheck} ./code-server`);
+      } else {
+        throw new Error(`Code-server image not found: ${imageToCheck}. Please build the image first with: docker build -t ${imageToCheck} ./code-server`);
+      }
     }
   }
 

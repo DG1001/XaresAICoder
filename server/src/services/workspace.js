@@ -56,6 +56,7 @@ class WorkspaceService {
         passwordProtected: options.passwordProtected || false,
         passwordHash: passwordHash, // Store hashed password
         createGitRepo: options.createGitRepo || false,
+        gpuEnabled: options.gpuEnabled || false,
         gitRepository: null, // Will be set if Git repo is created
         createdAt: new Date(),
         lastAccessed: new Date(),
@@ -79,6 +80,7 @@ class WorkspaceService {
         memoryLimit: project.memoryLimit,
         passwordProtected: project.passwordProtected,
         createGitRepo: project.createGitRepo,
+        gpuEnabled: project.gpuEnabled,
         workspaceUrl: null,
         status: 'creating',
         createdAt: project.createdAt,
@@ -125,6 +127,7 @@ class WorkspaceService {
         memoryLimit: options.memoryLimit || '2g',
         passwordProtected: options.passwordProtected || false,
         password: options.password || null,
+        gpuEnabled: options.gpuEnabled || false,
         gitRepository: gitRepository
       });
 
@@ -318,6 +321,7 @@ class WorkspaceService {
             projectType: p.projectType,
             memoryLimit: p.memoryLimit || '2g',
             passwordProtected: p.passwordProtected || false,
+            gpuEnabled: p.gpuEnabled || false,
             status: p.status,
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
@@ -331,6 +335,7 @@ class WorkspaceService {
             projectName: p.projectName,
             projectType: p.projectType,
             passwordProtected: p.passwordProtected || false,
+            gpuEnabled: p.gpuEnabled || false,
             status: 'error',
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
