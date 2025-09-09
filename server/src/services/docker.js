@@ -26,7 +26,7 @@ class DockerService {
       const port = await this.findAvailablePort(8080);
 
       // Setup authentication and Git configuration
-      const { memoryLimit = '2g', passwordProtected = false, password = null, gpuEnabled = false, gitRepository = null } = authOptions;
+      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gpuEnabled = false, gitRepository = null } = authOptions;
 
       // Determine which image to use based on GPU configuration (per-project setting overrides global)
       const useGpu = gpuEnabled || this.enableGpu;
@@ -54,13 +54,14 @@ class DockerService {
         envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
       }
 
-      // Convert memory limit to bytes
+      // Convert memory limit to bytes and CPU cores to shares
       const memoryBytes = this.parseMemoryLimit(memoryLimit);
+      const cpuShares = this.parseCpuCores(cpuCores);
 
       // Prepare GPU configuration if enabled
       const hostConfig = {
         Memory: memoryBytes,
-        CpuShares: 1024, // 1 CPU cores equivalent
+        CpuShares: cpuShares,
         NetworkMode: this.network,
         RestartPolicy: {
           Name: 'unless-stopped'
@@ -586,11 +587,13 @@ class DockerService {
   }
 
   parseMemoryLimit(memoryLimit) {
-    // Convert memory limit string (e.g., '1g', '2g', '4g') to bytes
+    // Convert memory limit string (e.g., '1g', '2g', '4g', '8g', '16g') to bytes
     const memoryMap = {
-      '1g': 1 * 1024 * 1024 * 1024, // 1GB
-      '2g': 2 * 1024 * 1024 * 1024, // 2GB
-      '4g': 4 * 1024 * 1024 * 1024  // 4GB
+      '1g': 1 * 1024 * 1024 * 1024,   // 1GB
+      '2g': 2 * 1024 * 1024 * 1024,   // 2GB
+      '4g': 4 * 1024 * 1024 * 1024,   // 4GB
+      '8g': 8 * 1024 * 1024 * 1024,   // 8GB
+      '16g': 16 * 1024 * 1024 * 1024  // 16GB
     };
     
     const memory = memoryMap[memoryLimit];
@@ -600,6 +603,25 @@ class DockerService {
     }
     
     return memory;
+  }
+
+  parseCpuCores(cpuCores) {
+    // Convert CPU cores string to CPU shares
+    // Docker CPU shares: 1024 shares = 1 CPU core
+    const coreMap = {
+      '1': 1024,  // 1 core
+      '2': 2048,  // 2 cores
+      '4': 4096,  // 4 cores
+      '8': 8192   // 8 cores
+    };
+    
+    const shares = coreMap[cpuCores];
+    if (!shares) {
+      console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
+      return coreMap['2'];
+    }
+    
+    return shares;
   }
 }
 
