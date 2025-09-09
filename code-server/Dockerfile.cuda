@@ -5,14 +5,31 @@ FROM nvidia/cuda:12.9.1-devel-ubuntu22.04
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install basic dependencies
+# Configure environment for GPU usage
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Install basic system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     gnupg \
     lsb-release \
     software-properties-common \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
+
+# Install code-server
+ARG CODE_SERVER_VERSION=4.19.1
+RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version=${CODE_SERVER_VERSION}
+
+# Create coder user for running code-server
+RUN useradd -m -s /bin/bash coder \
+    && usermod -aG sudo coder \
+    && echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Switch to root for installations (same pattern as standard Dockerfile)
+USER root
 
 # Install Node.js 20.x from NodeSource
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -31,17 +48,18 @@ RUN apt-get update && apt-get install -y \
     ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
-# Install code-server
-ARG CODE_SERVER_VERSION=4.19.1
-RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version=${CODE_SERVER_VERSION}
+# Install Python packages for Flask development using --break-system-packages (same as standard)
+RUN pip3 install --break-system-packages \
+    flask==3.1.1 \
+    python-dotenv==1.1.1 \
+    requests==2.32.4 \
+    black \
+    flake8 \
+    pytest \
+    pylint
 
-# Create coder user for running code-server
-RUN useradd -m -s /bin/bash coder \
-    && usermod -aG sudo coder \
-    && echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-# Install Python packages commonly used for ML/AI
-RUN pip3 install --no-cache-dir \
+# Install additional Python packages commonly used for ML/AI (GPU-specific addition)
+RUN pip3 install --break-system-packages \
     numpy \
     pandas \
     matplotlib \
@@ -57,54 +75,86 @@ RUN pip3 install --no-cache-dir \
     datasets \
     accelerate
 
-# Install OpenCode SST CLI
-RUN npm install -g opencode
+# Install AI coding tools
+# Install Aider AI pair programming tool
+RUN pip3 install --break-system-packages aider-chat
 
-# Install Aider (AI coding assistant)
-RUN pip3 install aider-chat
+# Install Node.js AI tools (first install most tools, then OpenAI Codex separately)
+RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest
+
+# Install OpenAI Codex with environment variables to use system ripgrep
+ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg
+ENV VSCODE_RIPGREP_FORCE_PATH=/usr/bin/rg
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm install -g @openai/codex || \
+    (sleep 10 && npm install -g @openai/codex) || \
+    (sleep 20 && npm install -g @openai/codex --ignore-scripts)
+
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install gh -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create workspace directory
-RUN mkdir -p /workspace && chown coder:coder /workspace
-
-# Setup scripts directory
-COPY setup-scripts /usr/local/setup-scripts
-RUN chmod +x /usr/local/setup-scripts/*.sh
-
-# Add setup scripts to PATH
-ENV PATH="/usr/local/setup-scripts:$PATH"
-
-# Configure environment for GPU usage
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
-
-# Set up VS Code settings and extensions
-# Note: VS Code settings will be configured through setup scripts
-
-# Create welcome message for GPU-enabled workspace
-RUN echo '#!/bin/bash' > /home/coder/.bashrc_custom \
-    && echo 'echo "🚀 XaresAICoder GPU-Enabled Workspace"' >> /home/coder/.bashrc_custom \
-    && echo 'echo "📊 GPU Info: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo \"No GPU detected\")"' >> /home/coder/.bashrc_custom \
-    && echo 'echo "🤖 OpenCode SST: Use '\''opencode [prompt]'\'' to interact with AI"' >> /home/coder/.bashrc_custom \
-    && echo 'echo "🔧 Aider: Use '\''aider'\'' for AI-powered code editing"' >> /home/coder/.bashrc_custom \
-    && echo 'echo "🐍 Python ML libraries: numpy, pandas, torch, tensorflow, transformers installed"' >> /home/coder/.bashrc_custom \
-    && echo 'echo ""' >> /home/coder/.bashrc_custom \
-    && echo 'source /home/coder/.bashrc_custom' >> /home/coder/.bashrc
-
-# Set proper ownership
-RUN chown -R coder:coder /home/coder
-
-# Switch to coder user
-USER coder
-
-# Set working directory
+RUN mkdir -p /workspace
 WORKDIR /workspace
 
-# Set environment variables for ripgrep (required for OpenAI Codex)
-ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg
-ENV VSCODE_RIPGREP_FORCE_PATH=true
+# Copy setup scripts
+COPY setup-scripts/ /tmp/setup-scripts/
+RUN chmod +x /tmp/setup-scripts/*.sh
+
+# Install OpenCode SST using setup script (same as standard)
+RUN /tmp/setup-scripts/setup-opencode.sh
+
+# Setup workspace initialization first
+RUN /tmp/setup-scripts/workspace-init.sh
+
+# Configure code-server
+RUN mkdir -p /home/coder/.config/code-server
+COPY config/code-server-config.yaml /home/coder/.config/code-server/config.yaml
+
+# Set proper permissions for coder user
+RUN chown -R coder:coder /workspace /home/coder
+
+# Switch to coder user before installing extensions
+USER coder
+
+# Install VS Code extensions as coder user
+COPY extensions.txt /tmp/extensions.txt
+RUN /tmp/setup-scripts/install-extensions.sh
+
+# Extensions will be installed through extensions.txt
+
+# Copy and setup the extension check and test scripts
+USER root
+COPY check-extensions.sh /usr/local/bin/check-extensions.sh
+COPY test-extension-install.sh /usr/local/bin/test-extension-install.sh
+RUN chmod +x /usr/local/bin/check-extensions.sh /usr/local/bin/test-extension-install.sh
+
+# Create a startup script that ensures extensions are installed
+RUN echo '#!/bin/bash\n\
+echo "🚀 XaresAICoder GPU-Enabled Workspace"\n\
+echo "📊 GPU Info: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo \"No GPU detected\")"\n\
+echo "🤖 OpenCode SST: Use '\''opencode [prompt]'\'' to interact with AI"\n\
+echo "🔧 Aider: Use '\''aider'\'' for AI-powered code editing"\n\
+echo "🐍 Python ML libraries: numpy, pandas, torch, tensorflow, transformers installed"\n\
+echo ""\n\
+\n\
+# Check and install missing extensions\n\
+/usr/local/bin/check-extensions.sh\n\
+\n\
+# Start code-server with the provided arguments\n\
+exec "$@"\n\
+' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
+
+USER coder
 
 # Expose code-server port
 EXPOSE 8082
 
-# Default command
+# Use entrypoint script to ensure extensions are installed (same as standard)
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["code-server", "--bind-addr", "0.0.0.0:8082", "--auth", "none", "/workspace"]
