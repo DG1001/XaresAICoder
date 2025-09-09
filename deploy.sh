@@ -34,6 +34,34 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to detect GPU availability
+detect_gpu_support() {
+    local gpu_available=false
+    
+    # Check for NVIDIA GPU
+    if command_exists nvidia-smi; then
+        if nvidia-smi >/dev/null 2>&1; then
+            print_status "NVIDIA GPU detected with nvidia-smi"
+            gpu_available=true
+        fi
+    fi
+    
+    # Check for Docker with GPU support
+    if [ "$gpu_available" = true ]; then
+        if docker run --rm --gpus all nvidia/cuda:11.0-base-ubuntu20.04 nvidia-smi >/dev/null 2>&1; then
+            print_status "Docker GPU support confirmed"
+            echo "true"
+            return 0
+        else
+            print_warning "GPU detected but Docker GPU support not working"
+            print_warning "Make sure nvidia-docker2 is installed and Docker daemon is restarted"
+        fi
+    fi
+    
+    echo "false"
+    return 1
+}
+
 # Function to detect and set Docker Compose command
 setup_docker_compose_cmd() {
     if command_exists docker && docker compose version >/dev/null 2>&1; then
@@ -77,7 +105,9 @@ check_prerequisites() {
 
 # Function to build code-server image
 build_code_server_image() {
-    print_status "Building custom code-server image..."
+    local enable_gpu=${1:-false}
+    
+    print_status "Building custom code-server images..."
     
     if [ ! -d "code-server" ]; then
         print_error "code-server directory not found. Are you in the project root?"
@@ -86,27 +116,66 @@ build_code_server_image() {
     
     cd code-server
     
-    # Check if image already exists
+    # Check if standard image already exists
+    local rebuild_standard=true
     if docker images | grep -q "xares-aicoder-codeserver.*latest"; then
         print_warning "xares-aicoder-codeserver:latest already exists"
-        read -p "Do you want to rebuild it? (y/N): " -n 1 -r
+        read -p "Do you want to rebuild the standard image? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_status "Skipping image build"
-            cd ..
-            return 0
+            print_status "Skipping standard image build"
+            rebuild_standard=false
         fi
+    fi
+    
+    # Check if CUDA image should be built
+    local rebuild_cuda=false
+    if [ "$enable_gpu" = true ]; then
+        rebuild_cuda=true
+        if docker images | grep -q "xares-aicoder-codeserver.*cuda"; then
+            print_warning "xares-aicoder-codeserver:cuda already exists"
+            read -p "Do you want to rebuild the CUDA GPU image? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                print_status "Skipping CUDA image build"
+                rebuild_cuda=false
+            fi
+        fi
+    else
+        print_status "GPU support disabled - skipping CUDA image build"
+    fi
+    
+    # Skip if no images need to be built
+    if [ "$rebuild_standard" = false ] && [ "$rebuild_cuda" = false ]; then
+        print_status "Skipping all image builds"
+        cd ..
+        return 0
     fi
     
     print_status "This may take several minutes as it installs VS Code extensions and AI tools..."
     
-    # Build with progress output
-    if docker build -t xares-aicoder-codeserver:latest .; then
-        print_success "Code-server image built successfully"
-    else
-        print_error "Failed to build code-server image"
-        cd ..
-        exit 1
+    # Build standard image
+    if [ "$rebuild_standard" = true ]; then
+        print_status "Building standard code-server image..."
+        if docker build -t xares-aicoder-codeserver:latest .; then
+            print_success "Standard code-server image built successfully"
+        else
+            print_error "Failed to build standard code-server image"
+            cd ..
+            exit 1
+        fi
+    fi
+    
+    # Build CUDA image if enabled
+    if [ "$rebuild_cuda" = true ]; then
+        print_status "Building CUDA GPU code-server image..."
+        if docker build -f Dockerfile.cuda -t xares-aicoder-codeserver:cuda .; then
+            print_success "CUDA code-server image built successfully"
+        else
+            print_error "Failed to build CUDA code-server image"
+            cd ..
+            exit 1
+        fi
     fi
     
     cd ..
@@ -115,6 +184,7 @@ build_code_server_image() {
 # Function to setup environment
 setup_environment() {
     local enable_git_server=${1:-false}
+    local enable_gpu=${2:-false}
     
     print_status "Setting up environment configuration..."
     
@@ -176,6 +246,33 @@ setup_environment() {
         fi
     fi
     
+    # Configure GPU support based on flag
+    if [ "$enable_gpu" = true ]; then
+        print_status "Enabling GPU support configuration..."
+        if grep -q "^ENABLE_GPU=" .env; then
+            sed -i 's/^ENABLE_GPU=.*/ENABLE_GPU=true/' .env
+        else
+            echo "ENABLE_GPU=true" >> .env
+        fi
+        
+        # Ensure GPU runtime is set
+        if ! grep -q "^GPU_RUNTIME=" .env; then
+            echo "GPU_RUNTIME=nvidia" >> .env
+        fi
+        
+        # Ensure CUDA image is set for local builds
+        if ! grep -q "^CODESERVER_CUDA_IMAGE=" .env; then
+            echo "CODESERVER_CUDA_IMAGE=xares-aicoder-codeserver:cuda" >> .env
+        fi
+    else
+        print_status "Disabling GPU support configuration..."
+        if grep -q "^ENABLE_GPU=" .env; then
+            sed -i 's/^ENABLE_GPU=.*/ENABLE_GPU=false/' .env
+        else
+            echo "ENABLE_GPU=false" >> .env
+        fi
+    fi
+    
     # Ensure HOST_PORT is set (fallback to BASE_PORT if not defined)
     if ! grep -q "^HOST_PORT=" .env; then
         BASE_PORT=$(grep "^BASE_PORT=" .env | cut -d'=' -f2)
@@ -193,7 +290,7 @@ setup_environment() {
     # Show current configuration
     print_status "Current configuration:"
     echo "----------------------------------------"
-    grep -E "BASE_DOMAIN|BASE_PORT|PROTOCOL|ENABLE_GIT_SERVER" .env | sed 's/^/  /'
+    grep -E "BASE_DOMAIN|BASE_PORT|PROTOCOL|ENABLE_GIT_SERVER|ENABLE_GPU" .env | sed 's/^/  /'
     echo "----------------------------------------"
     
     # Ask if user wants to edit
@@ -592,8 +689,16 @@ setup_registry_images() {
     export SERVER_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-server:${tag}"
     export CODESERVER_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-codeserver:${tag}"
     
+    # Handle CUDA image tagging (latest -> cuda, versions -> version-cuda)
+    if [ "$tag" = "latest" ]; then
+        export CODESERVER_CUDA_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-codeserver:cuda"
+    else
+        export CODESERVER_CUDA_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-codeserver:${tag}-cuda"
+    fi
+    
     print_status "Server image: $SERVER_IMAGE"
     print_status "Code-server image: $CODESERVER_IMAGE"
+    print_status "CUDA Code-server image: $CODESERVER_CUDA_IMAGE"
     
     # Check if we need to authenticate to pull images
     print_status "Checking image availability..."
@@ -631,6 +736,22 @@ setup_registry_images() {
         print_success "Code-server image is accessible"
     fi
     
+    if ! docker pull "$CODESERVER_CUDA_IMAGE" >/dev/null 2>&1; then
+        print_warning "Could not pull CUDA code-server image: $CODESERVER_CUDA_IMAGE"
+        print_warning "Make sure:"
+        print_warning "1. The image exists in the registry"
+        print_warning "2. You have access to the repository"
+        print_warning "3. You are logged in to GitHub Container Registry if the repository is private"
+        echo
+        read -p "Continue anyway? GPU features might not work. (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        print_success "CUDA code-server image is accessible"
+    fi
+    
     # Update .env file with registry configuration
     if [ -f ".env" ]; then
         # Add or update registry image settings
@@ -652,6 +773,12 @@ setup_registry_images() {
             echo "CODESERVER_IMAGE=$CODESERVER_IMAGE" >> .env
         fi
         
+        if grep -q "^CODESERVER_CUDA_IMAGE=" .env; then
+            sed -i "s|^CODESERVER_CUDA_IMAGE=.*|CODESERVER_CUDA_IMAGE=$CODESERVER_CUDA_IMAGE|" .env
+        else
+            echo "CODESERVER_CUDA_IMAGE=$CODESERVER_CUDA_IMAGE" >> .env
+        fi
+        
         print_success "Updated .env with registry image configuration"
     fi
 }
@@ -666,6 +793,8 @@ show_usage() {
     echo "  --skip-network        Skip Docker network setup (use existing network)"
     echo "  --build-only          Only build the code-server image, don't deploy"
     echo "  --git-server          Enable integrated Forgejo Git server"
+    echo "  --gpu                 Enable GPU support (builds CUDA image)"
+    echo "  --auto-gpu            Auto-detect GPU support and enable if available"
     echo "  --use-registry        Use pre-built images from GitHub Container Registry"
     echo "  --registry-owner      GitHub username/organization (default: auto-detect from git)"
     echo "  --registry-tag        Image tag to use from registry (default: latest)"
@@ -674,6 +803,8 @@ show_usage() {
     echo "Examples:"
     echo "  $0                           # Full deployment (recommended)"
     echo "  $0 --git-server             # Deploy with integrated Git server"
+    echo "  $0 --gpu                    # Deploy with GPU support enabled"
+    echo "  $0 --auto-gpu               # Auto-detect and enable GPU if available"
     echo "  $0 --skip-build             # Deploy without rebuilding image"
     echo "  $0 --build-only             # Only build the code-server image"
     echo "  $0 --use-registry           # Use pre-built images from GitHub registry"
@@ -689,6 +820,8 @@ main() {
     local skip_network=false
     local build_only=false
     local enable_git_server=false
+    local enable_gpu=false
+    local auto_gpu=false
     local use_registry=false
     local registry_owner=""
     local registry_tag="latest"
@@ -714,6 +847,14 @@ main() {
                 ;;
             --git-server)
                 enable_git_server=true
+                shift
+                ;;
+            --gpu)
+                enable_gpu=true
+                shift
+                ;;
+            --auto-gpu)
+                auto_gpu=true
                 shift
                 ;;
             --use-registry)
@@ -748,6 +889,26 @@ main() {
     # Check prerequisites
     check_prerequisites
     
+    # Handle GPU detection and configuration
+    if [ "$auto_gpu" = true ]; then
+        print_status "Auto-detecting GPU support..."
+        if [ "$(detect_gpu_support)" = "true" ]; then
+            enable_gpu=true
+            print_success "GPU support detected and enabled automatically"
+        else
+            print_status "No GPU support detected - continuing without GPU"
+            enable_gpu=false
+        fi
+    elif [ "$enable_gpu" = true ]; then
+        print_status "GPU support manually enabled"
+        if [ "$(detect_gpu_support)" = "false" ]; then
+            print_warning "GPU support enabled but no GPU detected"
+            print_warning "CUDA image will be built but GPU features may not work"
+        fi
+    else
+        print_status "GPU support disabled"
+    fi
+    
     # Handle registry images setup
     if [ "$use_registry" = true ]; then
         if [ -z "$registry_owner" ]; then
@@ -758,7 +919,7 @@ main() {
     
     # Build code-server image
     if [ "$skip_build" = false ]; then
-        build_code_server_image
+        build_code_server_image "$enable_gpu"
     else
         print_status "Skipping code-server image build"
     fi
@@ -771,7 +932,7 @@ main() {
     
     # Setup environment
     if [ "$skip_env" = false ]; then
-        setup_environment "$enable_git_server"
+        setup_environment "$enable_git_server" "$enable_gpu"
     else
         print_status "Skipping environment setup"
     fi
