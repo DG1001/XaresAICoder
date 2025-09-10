@@ -49,6 +49,10 @@ class DockerService {
       const memoryBytes = this.parseMemoryLimit(memoryLimit);
       const cpuShares = this.parseCpuCores(cpuCores);
 
+      // Always add GPU environment variables (ignored if no GPU present)
+      envVars.push('NVIDIA_VISIBLE_DEVICES=all');
+      envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
+
       const container = await this.docker.createContainer({
         Image: this.codeServerImage,
         name: containerName,
@@ -69,7 +73,13 @@ class DockerService {
           NetworkMode: this.network,
           RestartPolicy: {
             Name: 'unless-stopped'
-          }
+          },
+          // Always request GPU access (safely ignored if no GPU present)
+          DeviceRequests: [{
+            Driver: '',
+            Count: -1, // Request all available GPUs
+            Capabilities: [['gpu']]
+          }]
         },
         NetworkingConfig: {
           EndpointsConfig: {
