@@ -29,6 +29,7 @@ services:
       - PROTOCOL=${PROTOCOL:-http}
       - ENABLE_GIT_SERVER=${ENABLE_GIT_SERVER:-false}
       - CODESERVER_IMAGE=${CODESERVER_IMAGE:-xares-aicoder-codeserver:latest}
+      - ENABLE_GPU=${ENABLE_GPU:-false}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
