@@ -411,6 +411,140 @@ body {
     cursor: not-allowed;
 }
 
+/* Quick Clone Section */
+.quick-clone-section {
+    background: linear-gradient(135deg, #f8f9ff 0%, #f1f8ff 100%);
+    border: 1px solid var(--vscode-text-accent);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(3, 102, 214, 0.08);
+}
+
+.quick-clone-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--vscode-text);
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.quick-clone-description {
+    font-size: 14px;
+    color: var(--vscode-text-muted);
+    margin-bottom: 20px;
+    line-height: 1.4;
+}
+
+.quick-clone-form {
+    max-width: 100%;
+}
+
+.quick-clone-input-group {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    margin-bottom: 12px;
+}
+
+.quick-clone-input-group input {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 6px;
+    background: var(--vscode-bg);
+    color: var(--vscode-text);
+    font-size: 14px;
+    transition: all 0.15s ease;
+}
+
+.quick-clone-input-group input:focus {
+    outline: none;
+    border-color: var(--vscode-text-accent);
+    box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.15);
+}
+
+.quick-clone-input-group input::placeholder {
+    color: var(--vscode-text-muted);
+}
+
+.btn-quick-clone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--vscode-button-bg);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.btn-quick-clone:hover {
+    background: var(--vscode-button-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(3, 102, 214, 0.25);
+}
+
+.btn-quick-clone:active {
+    transform: translateY(0);
+}
+
+.btn-quick-clone:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.quick-clone-help {
+    font-size: 12px;
+    color: var(--vscode-text-muted);
+    line-height: 1.4;
+}
+
+/* Form Divider */
+.form-divider {
+    display: flex;
+    align-items: center;
+    margin: 32px 0 24px 0;
+    text-align: center;
+}
+
+.form-divider::before,
+.form-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--vscode-border);
+}
+
+.form-divider span {
+    padding: 0 16px;
+    font-size: 13px;
+    color: var(--vscode-text-muted);
+    background: var(--vscode-bg);
+}
+
+/* Responsive design for quick clone */
+@media (max-width: 768px) {
+    .quick-clone-input-group {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .btn-quick-clone {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
 /* Buttons */
 .btn-primary {
     display: flex;

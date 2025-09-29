@@ -103,6 +103,10 @@ class XaresAICoder {
         const createForm = document.getElementById('createProjectForm');
         createForm.addEventListener('submit', (e) => this.handleCreateProject(e));
 
+        // Quick clone form
+        const quickCloneForm = document.getElementById('quickCloneForm');
+        quickCloneForm.addEventListener('submit', (e) => this.handleQuickClone(e));
+
         // Git repository checkbox
         const useGitRepositoryCheckbox = document.getElementById('useGitRepository');
         useGitRepositoryCheckbox.addEventListener('change', (e) => this.handleGitRepositoryToggle(e));
@@ -414,6 +418,146 @@ class XaresAICoder {
         } catch (error) {
             console.error('Error creating project:', error);
             this.showError(error.message || 'Failed to create project. Please try again.');
+        }
+    }
+
+    async handleQuickClone(e) {
+        e.preventDefault();
+
+        const formData = new FormData(e.target);
+        const gitUrl = formData.get('quickGitUrl')?.trim();
+
+        // Validation
+        if (!gitUrl) {
+            this.showError('Please enter a Git repository URL');
+            return;
+        }
+
+        // Validate Git URL format (HTTP/HTTPS only)
+        const urlPattern = /^https?:\/\/.+/i;
+        if (!urlPattern.test(gitUrl)) {
+            this.showError('Only HTTP and HTTPS Git URLs are supported for security');
+            return;
+        }
+
+        // Extract project name from URL
+        const projectName = this.extractProjectNameFromGitUrl(gitUrl);
+        if (!projectName) {
+            this.showError('Could not extract project name from URL. Please use the full form below.');
+            return;
+        }
+
+        // Check if project name already exists
+        const existingProject = this.projects.find(p => p.projectName === projectName);
+        if (existingProject) {
+            this.showError(`A project with the name "${projectName}" already exists. Please use the full form to choose a different name.`);
+            return;
+        }
+
+        // Show loading state
+        const submitBtn = e.target.querySelector('.btn-quick-clone');
+        const btnText = submitBtn.querySelector('.btn-text');
+        const spinner = submitBtn.querySelector('.spinner');
+
+        submitBtn.disabled = true;
+        btnText.textContent = 'Cloning...';
+        spinner.style.display = 'block';
+
+        const requestBody = {
+            projectName,
+            projectType: 'git-clone',
+            memoryLimit: '2g',  // Default 2GB
+            cpuCores: '2',      // Default 2 cores
+            gitUrl
+        };
+
+        try {
+            const response = await fetch(`${this.apiBase}/projects/create`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to create project');
+            }
+
+            // Success! Project is being created in background
+            const project = data.project;
+            this.saveProjectToStorage(project);
+
+            // Add to creating projects set for polling
+            this.creatingProjects.add(project.projectId);
+
+            // Clear form
+            e.target.reset();
+
+            // Show simple success message
+            this.showCreateSuccess(project);
+
+            // Refresh project list to show the creating workspace
+            this.loadProjects();
+
+        } catch (error) {
+            console.error('Error creating project:', error);
+            this.showError(error.message || 'Failed to create project. Please try again.');
+        } finally {
+            // Reset button state
+            submitBtn.disabled = false;
+            btnText.textContent = 'Quick Clone';
+            spinner.style.display = 'none';
+        }
+    }
+
+    extractProjectNameFromGitUrl(gitUrl) {
+        if (!gitUrl) return null;
+
+        try {
+            const url = new URL(gitUrl);
+            const pathParts = url.pathname.split('/').filter(part => part.length > 0);
+
+            if (pathParts.length === 0) {
+                return null;
+            }
+
+            // Get the last part of the path (repository name)
+            let projectName = pathParts[pathParts.length - 1];
+
+            // Remove .git suffix if present
+            projectName = projectName.replace(/\.git$/i, '');
+
+            // Basic validation - ensure the project name is valid
+            if (!projectName || projectName.length === 0) {
+                return null;
+            }
+
+            // Sanitize project name (remove special characters, keep alphanumeric, hyphens, underscores)
+            projectName = projectName.toLowerCase().replace(/[^a-z0-9\-_]/g, '-');
+
+            // Remove leading/trailing hyphens
+            projectName = projectName.replace(/^-+|-+$/g, '');
+
+            // Ensure it's not empty after sanitization
+            if (!projectName || projectName.length === 0) {
+                return null;
+            }
+
+            return projectName;
+        } catch (e) {
+            console.error('Error extracting project name from URL:', e);
+            // If URL parsing fails, try a simple fallback
+            try {
+                let projectName = gitUrl.split('/').pop().replace(/\.git$/i, '');
+                projectName = projectName.toLowerCase().replace(/[^a-z0-9\-_]/g, '-');
+                projectName = projectName.replace(/^-+|-+$/g, '');
+                return projectName || null;
+            } catch (fallbackError) {
+                return null;
+            }
         }
     }
 

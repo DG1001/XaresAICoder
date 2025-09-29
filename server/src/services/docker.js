@@ -184,36 +184,45 @@ class DockerService {
 if [ -n "$GIT_CLONE_URL" ]; then
   echo "Cloning Git repository: $GIT_CLONE_URL"
 
-  # Build clone URL with embedded credentials if provided
-  CLONE_URL="$GIT_CLONE_URL"
+  # Clean workspace completely (git clone needs empty directory)
+  find /workspace -mindepth 1 -delete 2>/dev/null || true
+
+  # For public repositories: simple clone without authentication
+  # For private repositories: embed credentials in URL only if provided
   if [ -n "$GIT_ACCESS_TOKEN" ] && [ -n "$GIT_USERNAME" ]; then
-    # Extract protocol and rest of URL
+    # Private repository with username and token
     PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|://.*||')
     URL_WITHOUT_PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|^[^:]*://||')
     CLONE_URL="\${PROTOCOL}://\${GIT_USERNAME}:\${GIT_ACCESS_TOKEN}@\${URL_WITHOUT_PROTOCOL}"
-    echo "Using authenticated clone URL for $GIT_USERNAME"
+    echo "Cloning private repository with authentication for $GIT_USERNAME"
   elif [ -n "$GIT_ACCESS_TOKEN" ]; then
-    # Extract protocol and rest of URL
+    # Private repository with token only
     PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|://.*||')
     URL_WITHOUT_PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|^[^:]*://||')
     CLONE_URL="\${PROTOCOL}://\${GIT_ACCESS_TOKEN}@\${URL_WITHOUT_PROTOCOL}"
-    echo "Using token-authenticated clone URL"
+    echo "Cloning private repository with token authentication"
+  else
+    # Public repository - use URL as-is
+    CLONE_URL="$GIT_CLONE_URL"
+    echo "Cloning public repository (no authentication required)"
   fi
-
-  # Clean workspace completely (git clone needs empty directory)
-  find /workspace -mindepth 1 -delete 2>/dev/null || true
 
   # Clone directly into workspace directory
   if git clone "\$CLONE_URL" /workspace; then
     cd /workspace
     echo "✅ Repository cloned successfully to /workspace"
 
-    # Update remote URL to keep credentials for future operations
+    # Only set up persistent credentials for private repositories
     if [ -n "$GIT_ACCESS_TOKEN" ]; then
       git remote set-url origin "\$CLONE_URL"
-      echo "✅ Remote URL updated with credentials for future git operations"
+      echo "✅ Remote URL configured with credentials for future git operations"
     fi
 
+    # Configure Git user for this repository
+    git config user.name "XaresAICoder User"
+    git config user.email "user@xaresaicoder.local"
+
+    echo "Repository contents:"
     git status --short || true
   else
     echo "❌ Failed to clone repository: $GIT_CLONE_URL"
