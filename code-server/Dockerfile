@@ -25,9 +25,7 @@ RUN pip3 install --break-system-packages \
     python-dotenv==1.1.1 \
     requests==2.32.4 \
     black \
-    flake8 \
-    pytest \
-    pylint
+    pytest
 
 # Install AI coding tools
 # Install Aider AI pair programming tool

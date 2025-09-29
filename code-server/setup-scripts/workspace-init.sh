@@ -30,9 +30,7 @@ cat > /home/coder/.local/share/code-server/User/settings.json << 'SETTINGS_EOF'
     "python.defaultInterpreterPath": "./venv/bin/python",
     "python.terminal.activateEnvironment": true,
     "python.venvPath": ".",
-    "python.autoComplete.extraPaths": ["./venv/lib/python3.11/site-packages"],
-    "python.linting.flake8Enabled": false,
-    "python.linting.pylintEnabled": false
+    "python.autoComplete.extraPaths": ["./venv/lib/python3.11/site-packages"]
 }
 SETTINGS_EOF
 
