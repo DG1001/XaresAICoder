@@ -121,39 +121,79 @@ if [ -d ".git" ]; then
     echo "    Use 'git status' for full status"
 fi
 echo ""
+echo "🔄 Update Commands:"
+echo "  • update_aider, update_gemini, update_claude, update_qwen, update_codex, update_opencode"
+echo ""
 echo "💡 Pro Tips:"
 echo "  • Type 'info' anytime to see this information"
-echo "  • Type 'update_ai_agents' to update AI tools"
+echo "  • Update individual AI tools with their specific update commands"
 echo "  • Ask AI assistants about your codebase and request features"
 echo ""
 INFO_EOF
 chmod +x /usr/local/bin/info
 
-# Create update_ai_agents command
-cat > /usr/local/bin/update_ai_agents << 'UPDATE_EOF'
+# Create individual update scripts for each AI tool
+
+# Update Aider
+cat > /usr/local/bin/update_aider << 'UPDATE_AIDER_EOF'
 #!/bin/bash
-
-echo "🔄 Updating AI Coding Tools..."
-echo ""
-
-# Update pip-based tools
-echo "📦 Updating Python AI tools..."
+echo "🔄 Updating Aider AI pair programming tool..."
 pip3 install --upgrade --break-system-packages aider-chat
+echo "✅ Aider updated successfully!"
+UPDATE_AIDER_EOF
+chmod +x /usr/local/bin/update_aider
 
-# Update npm-based tools
-echo "📦 Updating Node.js AI tools..."
-npm update -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code
+# Update Gemini CLI
+cat > /usr/local/bin/update_gemini << 'UPDATE_GEMINI_EOF'
+#!/bin/bash
+echo "🔄 Updating Gemini CLI..."
+npm update -g @google/gemini-cli
+echo "✅ Gemini CLI updated successfully!"
+UPDATE_GEMINI_EOF
+chmod +x /usr/local/bin/update_gemini
 
-# Note about OpenAI Codex (more complex to update)
-echo "📦 OpenAI Codex CLI:"
-echo "   To update OpenAI Codex, reinstall with:"
-echo "   npm install -g @openai/codex"
-echo ""
+# Update Claude Code
+cat > /usr/local/bin/update_claude << 'UPDATE_CLAUDE_EOF'
+#!/bin/bash
+echo "🔄 Updating Claude Code..."
+npm update -g @anthropic-ai/claude-code
+echo "✅ Claude Code updated successfully!"
+UPDATE_CLAUDE_EOF
+chmod +x /usr/local/bin/update_claude
 
-echo "✅ AI tools update completed!"
-echo "💡 Run 'info' to see available tools and setup commands"
-UPDATE_EOF
-chmod +x /usr/local/bin/update_ai_agents
+# Update Qwen Code
+cat > /usr/local/bin/update_qwen << 'UPDATE_QWEN_EOF'
+#!/bin/bash
+echo "🔄 Updating Qwen Code..."
+npm update -g @qwen-code/qwen-code
+echo "✅ Qwen Code updated successfully!"
+UPDATE_QWEN_EOF
+chmod +x /usr/local/bin/update_qwen
+
+# Update OpenAI Codex (requires sudo for npm global installs)
+cat > /usr/local/bin/update_codex << 'UPDATE_CODEX_EOF'
+#!/bin/bash
+echo "🔄 Updating OpenAI Codex CLI..."
+echo "⚠️  This may require sudo access for global npm installation"
+if command -v sudo >/dev/null 2>&1; then
+    sudo npm install -g @openai/codex --force
+else
+    npm install -g @openai/codex --force
+fi
+echo "✅ OpenAI Codex CLI updated successfully!"
+UPDATE_CODEX_EOF
+chmod +x /usr/local/bin/update_codex
+
+# Update OpenCode SST (manual update instructions)
+cat > /usr/local/bin/update_opencode << 'UPDATE_OPENCODE_EOF'
+#!/bin/bash
+echo "🔄 Updating OpenCode SST..."
+echo "OpenCode SST updates automatically through its built-in update mechanism."
+echo "💡 To check for updates, run: opencode --version"
+echo "If an update is available, OpenCode SST will prompt you to update."
+echo "✅ OpenCode SST update check completed!"
+UPDATE_OPENCODE_EOF
+chmod +x /usr/local/bin/update_opencode
 
 # Create a welcome script that runs when terminal opens
 cat > /home/coder/.bashrc << 'EOF'
