@@ -521,8 +521,8 @@ class XaresAICoder {
                     </h4>
                     <div class="project-meta">
                         <span class="project-status ${this.getStatusClass(project.status, project.workspaceUrl)}">${this.getStatusLabel(project.status, project.workspaceUrl)}</span>
-                        <span>${this.getProjectTypeLabel(project.projectType)}</span>
-                        ${project.gitUrl ? `<span class="git-url-info" title="Cloned from: ${this.escapeHtml(project.gitUrl)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>Git Repository</span>` : ''}
+                        ${this.getProjectTypeLabel(project.projectType) ? `<span>${this.getProjectTypeLabel(project.projectType)}</span>` : ''}
+                        ${project.gitUrl ? `<span class="git-url-info" title="Cloned from: ${this.escapeHtml(project.gitUrl)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>${this.getShortGitUrl(project.gitUrl)}</span>` : ''}
                         <span>${this.getMemoryLimitLabel(project.memoryLimit)}</span>
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
                         <span>Created ${this.formatDate(project.createdAt)}</span>
@@ -959,9 +959,31 @@ class XaresAICoder {
             'python-flask': 'Python Flask',
             'node-react': 'Node.js React',
             'java-spring': 'Java Spring Boot',
-            'git-clone': 'Git Repository'
+            'git-clone': '' // Don't show project type for Git repositories since we show the repo name
         };
-        return labels[type] || type;
+        return labels.hasOwnProperty(type) ? labels[type] : type;
+    }
+
+    getShortGitUrl(gitUrl) {
+        if (!gitUrl) return '';
+
+        try {
+            const url = new URL(gitUrl);
+            const pathParts = url.pathname.split('/').filter(part => part.length > 0);
+
+            // For URLs like https://github.com/user/repo.git, show "user/repo"
+            if (pathParts.length >= 2) {
+                const repo = pathParts[pathParts.length - 1].replace(/\.git$/, '');
+                const user = pathParts[pathParts.length - 2];
+                return `${user}/${repo}`;
+            }
+
+            // Fallback: show hostname/path
+            return `${url.hostname}${url.pathname}`.replace(/\.git$/, '');
+        } catch (e) {
+            // If URL parsing fails, just return the last part of the URL
+            return gitUrl.split('/').pop().replace(/\.git$/, '');
+        }
     }
 
     getMemoryLimitLabel(memoryLimit) {
