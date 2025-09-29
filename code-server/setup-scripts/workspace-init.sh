@@ -34,18 +34,68 @@ cat > /home/coder/.local/share/code-server/User/settings.json << 'SETTINGS_EOF'
 }
 SETTINGS_EOF
 
-# Create a welcome script that runs when terminal opens
-cat > /home/coder/.bashrc << 'EOF'
-# Default bashrc content
-if [ -f /etc/bash.bashrc ]; then
-    . /etc/bash.bashrc
+# Clone Git repository if specified
+if [ -n "$GIT_CLONE_URL" ]; then
+    echo "Cloning Git repository: $GIT_CLONE_URL"
+    cd /workspace
+
+    # Configure Git credentials if token is provided
+    if [ -n "$GIT_ACCESS_TOKEN" ]; then
+        # Extract hostname from Git URL for credential configuration
+        HOSTNAME=$(echo "$GIT_CLONE_URL" | sed -e 's|^[^/]*//||' -e 's|/.*||')
+
+        # Configure Git credential helper with the provided token
+        git config --global credential.helper 'store --file=/tmp/git-credentials'
+        echo "https://${GIT_ACCESS_TOKEN}@${HOSTNAME}" > /tmp/git-credentials
+        chmod 600 /tmp/git-credentials
+
+        echo "Git credentials configured for ${HOSTNAME}"
+    fi
+
+    # Clone the repository directly into the workspace directory
+    if git clone "$GIT_CLONE_URL" /tmp/repo-clone; then
+        # Move contents from cloned repo to workspace root
+        if [ -d "/tmp/repo-clone" ]; then
+            mv /tmp/repo-clone/.git /workspace/.git 2>/dev/null || true
+            mv /tmp/repo-clone/* /workspace/ 2>/dev/null || true
+            mv /tmp/repo-clone/.* /workspace/ 2>/dev/null || true
+            rm -rf /tmp/repo-clone
+
+            echo "✅ Repository cloned successfully to /workspace"
+
+            # Configure Git user if not already set
+            git config --global user.name "XaresAICoder User" 2>/dev/null || true
+            git config --global user.email "user@xaresaicoder.local" 2>/dev/null || true
+            git config --global init.defaultBranch main 2>/dev/null || true
+
+            # Show repository status
+            cd /workspace
+            echo "Repository status:"
+            git status --short || true
+        fi
+    else
+        echo "❌ Failed to clone repository: $GIT_CLONE_URL"
+        echo "The workspace will start with an empty project instead."
+
+        # Clean up any failed clone attempts
+        rm -rf /tmp/repo-clone 2>/dev/null || true
+    fi
+
+    # Clean up credentials file for security
+    if [ -f "/tmp/git-credentials" ]; then
+        rm -f /tmp/git-credentials
+    fi
 fi
 
-# Custom welcome message for XaresAICoder
+# Create info command
+cat > /usr/local/bin/info << 'INFO_EOF'
+#!/bin/bash
+
 echo ""
-echo "🚀 Welcome to XaresAICoder!"
+echo "🚀 XaresAICoder - AI-Powered Development Environment"
+echo "=========================================="
 echo ""
-echo "🤖 Recommended AI Coding Tools:"
+echo "🤖 AI Coding Tools:"
 echo "  • Continue - VS Code AI completion & chat (install from marketplace)"
 echo "  • Cline (Claude Dev) - AI file editor (install from marketplace)"
 echo "  • OpenCode SST - Multi-model AI assistant (pre-installed)"
@@ -55,25 +105,66 @@ echo "  • Claude Code - Anthropic's AI coding tool (pre-installed)"
 echo "  • Qwen Code - AI workflow automation tool (pre-installed)"
 echo "  • OpenAI Codex - OpenAI's coding assistant (pre-installed)"
 echo ""
-echo "⚡ Quick Setup:"
-echo "  • Command line tools: setup_ai_tools"
-echo "  • Individual setup: setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen, setup_codex"
+echo "⚡ Setup Commands:"
+echo "  • setup_ai_tools - See all AI tool setup instructions"
+echo "  • setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen, setup_codex"
 echo ""
-echo "🚀 Quick Start:"
-echo "1. Install AI extensions from VS Code marketplace (Continue, Cline)"
-echo "2. Run setup_ai_tools to configure command line AI tools"
-echo "3. Start coding with AI assistance!"
+echo "🚀 Quick Start Templates:"
+echo "  • setup_flask_project - Create Python Flask application"
+echo "  • setup_node_react_project - Create React application"
+echo "  • setup_java_spring_project - Create Spring Boot application"
 echo ""
-echo "📁 Project Templates:"
-echo "- Flask app: setup_flask_project"
-echo "- React app: setup_node_react_project"
-echo "- Spring Boot app: setup_java_spring_project"
-echo "- Or create your own project structure"
+echo "📁 Current Directory: $(pwd)"
+if [ -d ".git" ]; then
+    echo "🌿 Git Status:"
+    git status --short --branch 2>/dev/null | head -5
+    echo "    Use 'git status' for full status"
+fi
 echo ""
 echo "💡 Pro Tips:"
-echo "- Ask questions about your codebase"
-echo "- Request new features in Plan/Build mode"
-echo "- Share sessions with /share command"
+echo "  • Type 'info' anytime to see this information"
+echo "  • Type 'update_ai_agents' to update AI tools"
+echo "  • Ask AI assistants about your codebase and request features"
+echo ""
+INFO_EOF
+chmod +x /usr/local/bin/info
+
+# Create update_ai_agents command
+cat > /usr/local/bin/update_ai_agents << 'UPDATE_EOF'
+#!/bin/bash
+
+echo "🔄 Updating AI Coding Tools..."
+echo ""
+
+# Update pip-based tools
+echo "📦 Updating Python AI tools..."
+pip3 install --upgrade --break-system-packages aider-chat
+
+# Update npm-based tools
+echo "📦 Updating Node.js AI tools..."
+npm update -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code
+
+# Note about OpenAI Codex (more complex to update)
+echo "📦 OpenAI Codex CLI:"
+echo "   To update OpenAI Codex, reinstall with:"
+echo "   npm install -g @openai/codex"
+echo ""
+
+echo "✅ AI tools update completed!"
+echo "💡 Run 'info' to see available tools and setup commands"
+UPDATE_EOF
+chmod +x /usr/local/bin/update_ai_agents
+
+# Create a welcome script that runs when terminal opens
+cat > /home/coder/.bashrc << 'EOF'
+# Default bashrc content
+if [ -f /etc/bash.bashrc ]; then
+    . /etc/bash.bashrc
+fi
+
+# Short welcome message for XaresAICoder
+echo ""
+echo "🚀 Welcome to XaresAICoder! Type 'info' for help and AI tool information."
 echo ""
 
 # Add aliases for common commands

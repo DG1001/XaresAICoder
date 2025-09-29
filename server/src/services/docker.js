@@ -24,7 +24,7 @@ class DockerService {
       await this.ensureCodeServerImage();
 
       // Setup authentication and Git configuration
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null } = authOptions;
+      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitToken = null } = authOptions;
       let authFlag = 'none'; // Default to no auth
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
@@ -43,6 +43,14 @@ class DockerService {
         envVars.push(`GIT_REPO_NAME=${gitRepository.name}`);
         envVars.push(`GIT_REMOTE_URL=${gitRepository.internalCloneUrl}`);
         envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
+      }
+
+      // Add Git clone configuration if available
+      if (gitUrl) {
+        envVars.push(`GIT_CLONE_URL=${gitUrl}`);
+        if (gitToken) {
+          envVars.push(`GIT_ACCESS_TOKEN=${gitToken}`);
+        }
       }
 
       // Convert memory limit to bytes and CPU cores to shares
@@ -148,11 +156,7 @@ class DockerService {
 
       // Add Git remote configuration if repository was created
       // We'll check for environment variables in the container
-      commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then');
-      commands.push('  echo "Configuring Git remote for repository: $GIT_REPO_NAME"');
-      commands.push('  git remote add origin "$GIT_REMOTE_URL"');
-      commands.push('  git branch -M main');
-      commands.push('fi');
+      commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then echo "Configuring Git remote for repository: $GIT_REPO_NAME"; git remote add origin "$GIT_REMOTE_URL"; git branch -M main; fi');
 
       if (projectType === 'python-flask') {
         console.log('Adding Flask project setup commands');
@@ -170,6 +174,33 @@ class DockerService {
         console.log('Adding empty project setup commands');
         commands.push('setup_empty_project');
         // Note: Template files are created but not committed - user decides whether to keep or remove them
+      } else if (projectType === 'git-clone') {
+        console.log('Adding Git repository cloning commands');
+        // Create a single comprehensive command for Git cloning to avoid bash syntax issues
+        const gitCloneScript = `
+if [ -n "$GIT_CLONE_URL" ]; then
+  echo "Cloning Git repository: $GIT_CLONE_URL"
+  if [ -n "$GIT_ACCESS_TOKEN" ]; then
+    HOSTNAME=$(echo "$GIT_CLONE_URL" | sed -e 's|^[^/]*//||' -e 's|/.*||')
+    git config --global credential.helper 'store --file=/tmp/git-credentials'
+    echo "https://$GIT_ACCESS_TOKEN@$HOSTNAME" > /tmp/git-credentials
+    chmod 600 /tmp/git-credentials
+    echo "Git credentials configured for $HOSTNAME"
+  fi
+  # Clean workspace completely (git clone needs empty directory)
+  find /workspace -mindepth 1 -delete 2>/dev/null || true
+  # Clone directly into workspace directory
+  if git clone "$GIT_CLONE_URL" /workspace; then
+    cd /workspace
+    echo "✅ Repository cloned successfully to /workspace"
+    git status --short || true
+  else
+    echo "❌ Failed to clone repository: $GIT_CLONE_URL"
+    echo "The workspace will start with an empty project instead."
+  fi
+  rm -f /tmp/git-credentials 2>/dev/null || true
+fi`.trim();
+        commands.push(gitCloneScript);
       }
 
       // Note: No automatic push - template files are not committed

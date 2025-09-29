@@ -6,12 +6,36 @@ const router = express.Router();
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo } = req.body;
+    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitToken } = req.body;
     
-    if (!projectName || !projectType) {
+    if (!projectName) {
       return res.status(400).json({
         error: 'Missing required fields',
-        message: 'projectName and projectType are required'
+        message: 'projectName is required'
+      });
+    }
+
+    // Validate Git URL if using git-clone type
+    if (projectType === 'git-clone') {
+      if (!gitUrl) {
+        return res.status(400).json({
+          error: 'Missing required fields',
+          message: 'gitUrl is required when using git-clone project type'
+        });
+      }
+
+      // Validate Git URL format (only HTTP/HTTPS)
+      const urlPattern = /^https?:\/\/.+/i;
+      if (!urlPattern.test(gitUrl)) {
+        return res.status(400).json({
+          error: 'Invalid Git URL',
+          message: 'Only HTTP and HTTPS Git URLs are supported for security'
+        });
+      }
+    } else if (!projectType) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'projectType is required when not using git-clone'
       });
     }
 
@@ -55,7 +79,9 @@ router.post('/create', async (req, res) => {
       cpuCores: cpuCores || '2', // Default to 2 cores if not specified
       passwordProtected: !!passwordProtected,
       password: passwordProtected ? password : null,
-      createGitRepo: !!createGitRepo
+      createGitRepo: !!createGitRepo,
+      gitUrl: gitUrl || null,
+      gitToken: gitToken || null
     });
     
     res.status(201).json({

@@ -369,6 +369,37 @@ body {
     margin-top: 4px;
 }
 
+/* Git repository input group */
+.git-group {
+    margin-top: 16px;
+}
+
+.form-help {
+    font-size: 12px;
+    color: var(--vscode-text-muted);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.form-help::before {
+    content: "ℹ️";
+    font-size: 12px;
+}
+
+/* Git URL info in project list */
+.git-url-info {
+    color: var(--vscode-text-accent) !important;
+    display: inline-flex;
+    align-items: center;
+    cursor: help;
+}
+
+.git-url-info svg {
+    opacity: 0.8;
+}
+
 /* Buttons */
 .btn-primary {
     display: flex;

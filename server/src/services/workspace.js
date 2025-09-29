@@ -25,8 +25,8 @@ class WorkspaceService {
         throw new Error('Project name and type are required');
       }
 
-      if (!['python-flask', 'node-react', 'java-spring', 'empty'].includes(projectType)) {
-        throw new Error('Invalid project type. Supported: python-flask, node-react, java-spring, empty');
+      if (!['python-flask', 'node-react', 'java-spring', 'empty', 'git-clone'].includes(projectType)) {
+        throw new Error('Invalid project type. Supported: python-flask, node-react, java-spring, empty, git-clone');
       }
 
       // Check workspace limit
@@ -58,6 +58,7 @@ class WorkspaceService {
         passwordHash: passwordHash, // Store hashed password
         createGitRepo: options.createGitRepo || false,
         gitRepository: null, // Will be set if Git repo is created
+        gitUrl: options.gitUrl || null, // Store Git URL for cloned repositories
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'creating',
@@ -127,7 +128,9 @@ class WorkspaceService {
         cpuCores: options.cpuCores || '2',
         passwordProtected: options.passwordProtected || false,
         password: options.password || null,
-        gitRepository: gitRepository
+        gitRepository: gitRepository,
+        gitUrl: options.gitUrl || null,
+        gitToken: options.gitToken || null
       });
 
       // Update project with workspace URL, Git info, and running status
@@ -324,6 +327,7 @@ class WorkspaceService {
             status: p.status,
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
+            gitUrl: p.gitUrl || null,
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };
@@ -339,6 +343,7 @@ class WorkspaceService {
             status: 'error',
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
+            gitUrl: p.gitUrl || null,
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };
