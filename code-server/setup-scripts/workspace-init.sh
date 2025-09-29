@@ -7,6 +7,7 @@ echo "Setting up workspace initialization..."
 mkdir -p /home/coder/.local/share/code-server/User
 cat > /home/coder/.local/share/code-server/User/settings.json << 'SETTINGS_EOF'
 {
+    "workbench.colorTheme": "Default Dark Modern",
     "remote.autoForwardPorts": true,
     "remote.portsAttributes": {
         "5000": {
@@ -14,7 +15,7 @@ cat > /home/coder/.local/share/code-server/User/settings.json << 'SETTINGS_EOF'
             "onAutoForward": "openBrowserOnce"
         },
         "3000": {
-            "label": "React Development Server", 
+            "label": "React Development Server",
             "onAutoForward": "openBrowserOnce"
         },
         "8000": {
