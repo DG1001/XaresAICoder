@@ -13,6 +13,8 @@ class DockerService {
     this.protocol = process.env.PROTOCOL || 'http';
     // Docker image configuration
     this.codeServerImage = process.env.CODESERVER_IMAGE || 'xares-aicoder-codeserver:latest';
+    // Disk usage display configuration
+    this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
   }
 
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
@@ -455,8 +457,8 @@ fi`.trim();
 
       const workspace = this.activeContainers.get(projectId);
 
-      // Get disk usage for the container
-      const diskUsage = await this.getContainerDiskUsage(projectId);
+      // Get disk usage for the container only if enabled
+      const diskUsage = this.showDiskUsage ? await this.getContainerDiskUsage(projectId) : null;
 
       return {
         projectId,

@@ -10,10 +10,11 @@ class WorkspaceService {
     this.projects = new Map();
     this.maxWorkspacesPerUser = parseInt(process.env.MAX_WORKSPACES_PER_USER) || 5;
     this.persistenceFile = path.join('/app', 'workspaces', 'projects.json');
-    
+    this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
+
     // Load existing projects on startup
     this.loadProjectsFromDisk();
-    
+
     // Automatic cleanup removed - users manage workspace lifecycle manually
   }
 
@@ -202,7 +203,7 @@ class WorkspaceService {
 
     return {
       ...project,
-      diskUsage: dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' },
+      diskUsage: this.showDiskUsage ? (dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' }) : null,
       containerInfo: dockerStatus.containerInfo
     };
   }
@@ -314,8 +315,8 @@ class WorkspaceService {
       .filter(p => p.userId === userId)
       .sort((a, b) => b.lastAccessed - a.lastAccessed);
 
-    // Get all container sizes in a single batch operation for better performance
-    const containerSizes = await dockerService.getAllWorkspaceContainerSizes();
+    // Get all container sizes in a single batch operation for better performance (only if enabled)
+    const containerSizes = this.showDiskUsage ? await dockerService.getAllWorkspaceContainerSizes() : new Map();
 
     // Update status for all projects in parallel
     const projectsWithStatus = await Promise.all(
@@ -334,9 +335,12 @@ class WorkspaceService {
           }
 
           // Get disk usage from batch results, fallback to individual call if not found
-          let diskUsage = containerSizes.get(p.projectId);
-          if (!diskUsage) {
-            diskUsage = dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' };
+          let diskUsage = null;
+          if (this.showDiskUsage) {
+            diskUsage = containerSizes.get(p.projectId);
+            if (!diskUsage) {
+              diskUsage = dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' };
+            }
           }
 
           return {
@@ -369,7 +373,7 @@ class WorkspaceService {
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
             gitUrl: p.gitUrl || null,
-            diskUsage: { bytes: 0, readable: 'Unknown' },
+            diskUsage: this.showDiskUsage ? { bytes: 0, readable: 'Unknown' } : null,
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };
