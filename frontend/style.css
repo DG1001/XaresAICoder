@@ -671,12 +671,12 @@ body {
     border-color: var(--vscode-text-accent);
 }
 
-/* Project Action Buttons */
+/* Project Action Buttons - Unified Professional Theme */
 .btn-open {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 16px;
     background: var(--vscode-button-bg);
     color: white;
@@ -698,11 +698,11 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 16px;
-    background: var(--vscode-success);
-    color: white;
-    border: none;
+    background: rgba(79, 195, 247, 0.15);
+    color: var(--vscode-text-accent);
+    border: 1px solid rgba(79, 195, 247, 0.3);
     border-radius: 6px;
     font-size: 13px;
     font-weight: 500;
@@ -711,28 +711,32 @@ body {
 }
 
 .btn-success:hover {
-    background: #75c172;
+    background: rgba(79, 195, 247, 0.25);
+    border-color: var(--vscode-text-accent);
     transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 2px 8px rgba(79, 195, 247, 0.2);
 }
 
 :root[data-theme="light"] .btn-success {
-    background: #28a745;
+    background: rgba(3, 102, 214, 0.08);
+    color: #0366d6;
+    border-color: rgba(3, 102, 214, 0.3);
 }
 
 :root[data-theme="light"] .btn-success:hover {
-    background: #218838;
+    background: rgba(3, 102, 214, 0.15);
+    border-color: #0366d6;
 }
 
 .btn-warning {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 16px;
-    background: var(--vscode-warning);
-    color: #1e1e1e;
-    border: none;
+    background: rgba(133, 133, 133, 0.15);
+    color: #a0a0a0;
+    border: 1px solid rgba(133, 133, 133, 0.3);
     border-radius: 6px;
     font-size: 13px;
     font-weight: 500;
@@ -741,28 +745,34 @@ body {
 }
 
 .btn-warning:hover {
-    background: #b8960a;
+    background: rgba(133, 133, 133, 0.25);
+    border-color: #a0a0a0;
+    color: #b8b8b8;
     transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 2px 8px rgba(133, 133, 133, 0.2);
 }
 
 :root[data-theme="light"] .btn-warning {
-    background: #ffc107;
+    background: rgba(88, 96, 105, 0.08);
+    color: #586069;
+    border-color: rgba(88, 96, 105, 0.3);
 }
 
 :root[data-theme="light"] .btn-warning:hover {
-    background: #e0a800;
+    background: rgba(88, 96, 105, 0.15);
+    border-color: #586069;
+    color: #24292e;
 }
 
 .btn-danger {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 16px;
-    background: var(--vscode-error);
-    color: white;
-    border: none;
+    background: rgba(244, 135, 113, 0.12);
+    color: #f48771;
+    border: 1px solid rgba(244, 135, 113, 0.3);
     border-radius: 6px;
     font-size: 13px;
     font-weight: 500;
@@ -771,24 +781,30 @@ body {
 }
 
 .btn-danger:hover {
-    background: #e65c4a;
+    background: rgba(244, 135, 113, 0.2);
+    border-color: #f48771;
+    color: #ff9580;
     transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 2px 8px rgba(244, 135, 113, 0.25);
 }
 
 :root[data-theme="light"] .btn-danger {
-    background: #dc3545;
+    background: rgba(215, 58, 73, 0.08);
+    color: #d73a49;
+    border-color: rgba(215, 58, 73, 0.3);
 }
 
 :root[data-theme="light"] .btn-danger:hover {
-    background: #c82333;
+    background: rgba(215, 58, 73, 0.15);
+    border-color: #d73a49;
+    color: #cb2431;
 }
 
 .btn-open:disabled,
 .btn-success:disabled,
 .btn-warning:disabled,
 .btn-danger:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
