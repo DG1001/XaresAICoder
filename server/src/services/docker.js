@@ -331,16 +331,119 @@ fi`.trim();
     }
   }
 
+  async getContainerDiskUsage(projectId) {
+    const containerName = `workspace-${projectId}`;
+
+    try {
+      const container = this.docker.getContainer(containerName);
+
+      // Use Docker's native container inspect with size information
+      // This is much more reliable than executing du commands inside containers
+      const containerInfo = await container.inspect({ size: true });
+
+      if (containerInfo.SizeRw !== undefined) {
+        // SizeRw = size of the writable layer (user data)
+        // SizeRootFs = total size including read-only layers (base image + user data)
+        // For workspace usage, SizeRw is most relevant as it represents user-created data
+        const userDataSize = containerInfo.SizeRw || 0;
+        const totalSize = containerInfo.SizeRootFs || 0;
+
+        return {
+          bytes: userDataSize,
+          totalBytes: totalSize,
+          readable: this.formatBytes(userDataSize),
+          totalReadable: this.formatBytes(totalSize)
+        };
+      }
+
+      // Fallback if size information is not available
+      return {
+        bytes: 0,
+        totalBytes: 0,
+        readable: 'Unknown',
+        totalReadable: 'Unknown'
+      };
+
+    } catch (error) {
+      console.error(`Error getting disk usage for container ${containerName}:`, error.message);
+      return {
+        bytes: 0,
+        totalBytes: 0,
+        readable: 'Unknown',
+        totalReadable: 'Unknown'
+      };
+    }
+  }
+
+  async getAllWorkspaceContainerSizes() {
+    try {
+      // Get all containers with size information in a single API call
+      // Much more efficient than calling inspect on each container individually
+      const containers = await this.docker.listContainers({
+        all: true,
+        size: true,
+        filters: {
+          name: ['workspace-']  // Only get workspace containers
+        }
+      });
+
+      const sizeMap = new Map();
+
+      containers.forEach(container => {
+        // Extract project ID from container name (format: workspace-{projectId})
+        const containerName = container.Names[0]?.replace(/^\//, ''); // Remove leading slash
+        const projectIdMatch = containerName?.match(/^workspace-(.+)$/);
+
+        if (projectIdMatch) {
+          const projectId = projectIdMatch[1];
+          const userDataSize = container.SizeRw || 0;
+          const totalSize = container.SizeRootFs || 0;
+
+          sizeMap.set(projectId, {
+            bytes: userDataSize,
+            totalBytes: totalSize,
+            readable: this.formatBytes(userDataSize),
+            totalReadable: this.formatBytes(totalSize)
+          });
+        }
+      });
+
+      return sizeMap;
+    } catch (error) {
+      console.error('Error getting batch container sizes:', error.message);
+      return new Map();
+    }
+  }
+
+  formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const size = bytes / Math.pow(1024, i);
+
+    // For sizes >= 1GB, show 1 decimal place
+    // For sizes < 1GB, show appropriate precision
+    if (i >= 3) {
+      return size.toFixed(1) + ' ' + sizes[i];
+    } else if (i >= 2) {
+      return size.toFixed(size < 10 ? 1 : 0) + ' ' + sizes[i];
+    } else {
+      return Math.round(size) + ' ' + sizes[i];
+    }
+  }
+
   async getProjectStatus(projectId) {
     const containerName = `workspace-${projectId}`;
-    
+
     try {
       // Try to get container by name from Docker API
       const container = this.docker.getContainer(containerName);
       const containerInfo = await container.inspect();
       const isRunning = containerInfo.State.Running;
       const status = isRunning ? 'running' : 'stopped';
-      
+
       // Update our in-memory cache if container exists
       if (!this.activeContainers.has(projectId)) {
         this.activeContainers.set(projectId, {
@@ -349,15 +452,19 @@ fi`.trim();
           projectType: this.extractProjectTypeFromEnv(containerInfo.Config.Env)
         });
       }
-      
+
       const workspace = this.activeContainers.get(projectId);
-      
+
+      // Get disk usage for the container
+      const diskUsage = await this.getContainerDiskUsage(projectId);
+
       return {
         projectId,
         status,
         workspaceUrl: `${this.protocol}://${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
         createdAt: workspace.createdAt,
         projectType: workspace.projectType,
+        diskUsage: diskUsage,
         containerInfo: {
           running: isRunning,
           startedAt: containerInfo.State.StartedAt,

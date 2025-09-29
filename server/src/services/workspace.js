@@ -191,6 +191,7 @@ class WorkspaceService {
 
     return {
       ...project,
+      diskUsage: dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' },
       containerInfo: dockerStatus.containerInfo
     };
   }
@@ -302,12 +303,15 @@ class WorkspaceService {
       .filter(p => p.userId === userId)
       .sort((a, b) => b.lastAccessed - a.lastAccessed);
 
+    // Get all container sizes in a single batch operation for better performance
+    const containerSizes = await dockerService.getAllWorkspaceContainerSizes();
+
     // Update status for all projects in parallel
     const projectsWithStatus = await Promise.all(
       userProjects.map(async (p) => {
         try {
           const dockerStatus = await dockerService.getProjectStatus(p.projectId);
-          
+
           // Special handling for creating projects:
           // Only update to running if we have a workspaceUrl (meaning async creation completed)
           if (p.status === 'creating' && !p.workspaceUrl) {
@@ -317,7 +321,13 @@ class WorkspaceService {
             // For non-creating projects, update status from Docker
             p.status = dockerStatus.status;
           }
-          
+
+          // Get disk usage from batch results, fallback to individual call if not found
+          let diskUsage = containerSizes.get(p.projectId);
+          if (!diskUsage) {
+            diskUsage = dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' };
+          }
+
           return {
             projectId: p.projectId,
             projectName: p.projectName,
@@ -329,6 +339,7 @@ class WorkspaceService {
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
             gitUrl: p.gitUrl || null,
+            diskUsage: diskUsage,
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };
@@ -345,6 +356,7 @@ class WorkspaceService {
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
             gitUrl: p.gitUrl || null,
+            diskUsage: { bytes: 0, readable: 'Unknown' },
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };

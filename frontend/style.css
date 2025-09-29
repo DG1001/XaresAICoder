@@ -646,6 +646,17 @@ body {
     gap: 16px;
 }
 
+.disk-usage {
+    color: var(--vscode-text-muted);
+    font-weight: 500;
+}
+
+.disk-usage:before {
+    content: "💾";
+    margin-right: 4px;
+    opacity: 0.7;
+}
+
 .project-actions {
     display: flex;
     gap: 8px;
