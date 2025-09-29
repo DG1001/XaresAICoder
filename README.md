@@ -42,9 +42,25 @@ Pre-configured workspace with multiple AI coding assistants:
 - **Automatic Git Repository Creation** - One-click Git repo setup with workspace configuration
 - **GitHub Integration** - Pre-installed GitHub CLI for seamless workflow
 
+### 📁 **Project Organization**
+- **Smart Project Grouping** - Organize projects into custom groups (Work, Personal, Learning, etc.)
+- **Drag & Drop Interface** - Intuitive file manager-style organization with visual feedback
+- **Sidebar Group Management** - Create, rename, and delete groups directly from the navigation sidebar
+- **Instant Filtering** - Click any group to filter projects, click again to show all
+- **Group Badges** - Visual project group indicators with one-click filtering
+- **Automatic Organization** - Projects default to "Uncategorized" and can be moved anytime
+
 ## 🆕 Recent Updates
 
-### Git Repository Cloning (Latest)
+### Project Organization & Grouping (Latest)
+- ✅ **Smart Project Groups** - Organize projects into custom groups with sidebar navigation
+- ✅ **Drag & Drop Management** - Intuitive file manager-style project organization
+- ✅ **Visual Group Management** - Create, rename, and delete groups with one-click actions
+- ✅ **Instant Project Filtering** - Click groups to filter projects, group badges for quick access
+- ✅ **Seamless UX** - No form dropdowns - pure drag & drop workflow
+- ✅ **Consistent Naming** - Projects default to "Uncategorized" with automatic migration
+
+### Git Repository Cloning
 - ✅ **Clone Any Repository** - Support for HTTP/HTTPS Git URLs from GitHub, GitLab, and other providers
 - ✅ **Private Repository Authentication** - Secure username + access token authentication
 - ✅ **Persistent Credentials** - Embedded credentials in remote URL for seamless push/pull operations
@@ -114,6 +130,25 @@ After deployment completes, open your browser to:
 7. Click "Create Workspace"
 
 **✅ Result**: VS Code opens with your repository files ready to edit, and all Git operations (push, pull, etc.) work seamlessly!
+
+### Organize Your Projects
+
+After creating projects, you can organize them using the intuitive grouping system:
+
+#### Using Project Groups
+1. **View Groups**: Groups appear in the left sidebar under "AI Tools"
+2. **Create Groups**: Click "Add Group" and enter a name (e.g., "Work", "Personal", "Learning")
+3. **Move Projects**: Simply **drag any project** from the main area and **drop it on a group** in the sidebar
+4. **Filter Projects**: Click any group name to show only projects in that group
+5. **View All**: Click the same group again to deselect and show all projects
+6. **Manage Groups**: Hover over groups to see rename/delete options (except "Uncategorized")
+
+#### Group Management Features
+- **Visual Feedback**: Groups highlight when dragging projects over them
+- **Success Notifications**: Confirmation messages when projects are moved
+- **Smart Defaults**: New projects start in "Uncategorized" and can be organized anytime
+- **Group Badges**: Projects show their group in the main list when not filtering
+- **Safe Deletion**: Deleting a group moves all its projects back to "Uncategorized"
 
 **💡 GPU Support**: If your host system has NVIDIA GPUs, they are automatically available in all workspaces for ML/AI development. Test with:
 ```bash
