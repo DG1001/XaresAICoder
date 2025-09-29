@@ -6,7 +6,7 @@ const router = express.Router();
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitToken } = req.body;
+    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken } = req.body;
     
     if (!projectName) {
       return res.status(400).json({
@@ -81,6 +81,7 @@ router.post('/create', async (req, res) => {
       password: passwordProtected ? password : null,
       createGitRepo: !!createGitRepo,
       gitUrl: gitUrl || null,
+      gitUsername: gitUsername || null,
       gitToken: gitToken || null
     });
     

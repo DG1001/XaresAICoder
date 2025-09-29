@@ -177,8 +177,22 @@
                                 </div>
                             </div>
 
+                            <div class="form-group git-group" id="gitUsernameGroup" style="display: none;">
+                                <label for="gitUsername">Git Username (for private repos)</label>
+                                <input
+                                    type="text"
+                                    id="gitUsername"
+                                    name="gitUsername"
+                                    placeholder="your-github-username"
+                                    maxlength="100"
+                                >
+                                <div class="form-help">
+                                    Your Git username (e.g., GitHub username) for private repositories.
+                                </div>
+                            </div>
+
                             <div class="form-group git-group" id="gitTokenGroup" style="display: none;">
-                                <label for="gitToken">Access Token (optional)</label>
+                                <label for="gitToken">Access Token (for private repos)</label>
                                 <input
                                     type="password"
                                     id="gitToken"
@@ -187,7 +201,7 @@
                                     maxlength="255"
                                 >
                                 <div class="form-help">
-                                    Required for private repositories. Leave empty for public repos.
+                                    Personal access token for private repositories.
                                 </div>
                             </div>
 

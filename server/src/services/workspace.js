@@ -130,6 +130,7 @@ class WorkspaceService {
         password: options.password || null,
         gitRepository: gitRepository,
         gitUrl: options.gitUrl || null,
+        gitUsername: options.gitUsername || null,
         gitToken: options.gitToken || null
       });
 

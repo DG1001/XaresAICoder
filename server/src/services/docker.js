@@ -24,7 +24,7 @@ class DockerService {
       await this.ensureCodeServerImage();
 
       // Setup authentication and Git configuration
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitToken = null } = authOptions;
+      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitUsername = null, gitToken = null } = authOptions;
       let authFlag = 'none'; // Default to no auth
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
@@ -48,6 +48,9 @@ class DockerService {
       // Add Git clone configuration if available
       if (gitUrl) {
         envVars.push(`GIT_CLONE_URL=${gitUrl}`);
+        if (gitUsername) {
+          envVars.push(`GIT_USERNAME=${gitUsername}`);
+        }
         if (gitToken) {
           envVars.push(`GIT_ACCESS_TOKEN=${gitToken}`);
         }
@@ -180,25 +183,42 @@ class DockerService {
         const gitCloneScript = `
 if [ -n "$GIT_CLONE_URL" ]; then
   echo "Cloning Git repository: $GIT_CLONE_URL"
-  if [ -n "$GIT_ACCESS_TOKEN" ]; then
-    HOSTNAME=$(echo "$GIT_CLONE_URL" | sed -e 's|^[^/]*//||' -e 's|/.*||')
-    git config --global credential.helper 'store --file=/tmp/git-credentials'
-    echo "https://$GIT_ACCESS_TOKEN@$HOSTNAME" > /tmp/git-credentials
-    chmod 600 /tmp/git-credentials
-    echo "Git credentials configured for $HOSTNAME"
+
+  # Build clone URL with embedded credentials if provided
+  CLONE_URL="$GIT_CLONE_URL"
+  if [ -n "$GIT_ACCESS_TOKEN" ] && [ -n "$GIT_USERNAME" ]; then
+    # Extract protocol and rest of URL
+    PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|://.*||')
+    URL_WITHOUT_PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|^[^:]*://||')
+    CLONE_URL="\${PROTOCOL}://\${GIT_USERNAME}:\${GIT_ACCESS_TOKEN}@\${URL_WITHOUT_PROTOCOL}"
+    echo "Using authenticated clone URL for $GIT_USERNAME"
+  elif [ -n "$GIT_ACCESS_TOKEN" ]; then
+    # Extract protocol and rest of URL
+    PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|://.*||')
+    URL_WITHOUT_PROTOCOL=$(echo "$GIT_CLONE_URL" | sed 's|^[^:]*://||')
+    CLONE_URL="\${PROTOCOL}://\${GIT_ACCESS_TOKEN}@\${URL_WITHOUT_PROTOCOL}"
+    echo "Using token-authenticated clone URL"
   fi
+
   # Clean workspace completely (git clone needs empty directory)
   find /workspace -mindepth 1 -delete 2>/dev/null || true
+
   # Clone directly into workspace directory
-  if git clone "$GIT_CLONE_URL" /workspace; then
+  if git clone "\$CLONE_URL" /workspace; then
     cd /workspace
     echo "✅ Repository cloned successfully to /workspace"
+
+    # Update remote URL to keep credentials for future operations
+    if [ -n "$GIT_ACCESS_TOKEN" ]; then
+      git remote set-url origin "\$CLONE_URL"
+      echo "✅ Remote URL updated with credentials for future git operations"
+    fi
+
     git status --short || true
   else
     echo "❌ Failed to clone repository: $GIT_CLONE_URL"
     echo "The workspace will start with an empty project instead."
   fi
-  rm -f /tmp/git-credentials 2>/dev/null || true
 fi`.trim();
         commands.push(gitCloneScript);
       }

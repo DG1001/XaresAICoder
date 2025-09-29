@@ -214,11 +214,13 @@ class XaresAICoder {
 
     handleGitRepositoryToggle(e) {
         const gitGroup = document.getElementById('gitGroup');
+        const gitUsernameGroup = document.getElementById('gitUsernameGroup');
         const gitTokenGroup = document.getElementById('gitTokenGroup');
         const projectTypeSelect = document.getElementById('projectType');
 
         if (e.target.checked) {
             gitGroup.style.display = 'block';
+            gitUsernameGroup.style.display = 'block';
             gitTokenGroup.style.display = 'block';
 
             // Disable project type selection when using Git repository
@@ -230,6 +232,7 @@ class XaresAICoder {
             setTimeout(() => gitUrlInput.focus(), 100);
         } else {
             gitGroup.style.display = 'none';
+            gitUsernameGroup.style.display = 'none';
             gitTokenGroup.style.display = 'none';
 
             // Re-enable project type selection
@@ -238,6 +241,7 @@ class XaresAICoder {
 
             // Clear Git inputs
             document.getElementById('gitUrl').value = '';
+            document.getElementById('gitUsername').value = '';
             document.getElementById('gitToken').value = '';
         }
     }
@@ -300,6 +304,7 @@ class XaresAICoder {
         const createGitRepo = formData.get('createGitRepo') === 'on';
         const useGitRepository = formData.get('useGitRepository') === 'on';
         const gitUrl = formData.get('gitUrl')?.trim();
+        const gitUsername = formData.get('gitUsername')?.trim();
         const gitToken = formData.get('gitToken')?.trim();
 
         // Validation
@@ -345,6 +350,9 @@ class XaresAICoder {
 
         if (useGitRepository) {
             requestBody.gitUrl = gitUrl;
+            if (gitUsername) {
+                requestBody.gitUsername = gitUsername;
+            }
             if (gitToken) {
                 requestBody.gitToken = gitToken;
             }
