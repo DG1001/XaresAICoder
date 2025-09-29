@@ -35,9 +35,27 @@ Pre-configured workspace with multiple AI coding assistants:
 
 ### 🔧 **Development Ready**
 - **Multiple Project Templates**: Python Flask, Node.js React, Java Spring Boot, Empty Project
+- **Git Repository Cloning** - Clone any HTTP/HTTPS Git repository directly into workspaces
+- **Private Repository Support** - Secure authentication with username and access tokens
+- **Persistent Git Credentials** - Seamless push/pull operations after cloning
 - **Integrated Git Server** (optional) - Self-hosted Forgejo with GitHub Actions compatibility
 - **Automatic Git Repository Creation** - One-click Git repo setup with workspace configuration
 - **GitHub Integration** - Pre-installed GitHub CLI for seamless workflow
+
+## 🆕 Recent Updates
+
+### Git Repository Cloning (Latest)
+- ✅ **Clone Any Repository** - Support for HTTP/HTTPS Git URLs from GitHub, GitLab, and other providers
+- ✅ **Private Repository Authentication** - Secure username + access token authentication
+- ✅ **Persistent Credentials** - Embedded credentials in remote URL for seamless push/pull operations
+- ✅ **Smart Form Logic** - Automatic disabling of conflicting options during workspace creation
+- ✅ **Clean Project Display** - Git repositories show with repository name and icon in project list
+
+### User Experience Improvements
+- ✅ **Streamlined Welcome Message** - Simplified .bashrc with `info` command for detailed help
+- ✅ **AI Tool Management** - New `update_ai_agents` command to update all AI tools
+- ✅ **Cleaner Python Environment** - Removed aggressive linting (flake8/pylint) by default
+- ✅ **Enhanced Git Status** - `info` command shows current Git repository status and branch
 
 ## 🚀 Quick Start
 
@@ -72,6 +90,7 @@ After deployment completes, open your browser to:
 
 ### Create Your First Project
 
+#### From Template
 1. Enter a project name
 2. Select your preferred project type:
    - **Empty Project**: Clean slate with just README and git initialization
@@ -82,7 +101,19 @@ After deployment completes, open your browser to:
 4. **Optional**: Check "Password Protect Workspace" for secure access
 5. **Optional**: Check "Create Git Repository" to automatically set up Git
 6. Click "Create Workspace"
-7. VS Code opens in a new tab - start coding with AI assistance!
+
+#### From Git Repository
+1. Enter a project name
+2. Check "**Clone from Git Repository**"
+3. Enter the **Git Repository URL** (e.g., `https://github.com/user/repo.git`)
+4. For **private repositories**:
+   - Enter your **Git Username** (GitHub/GitLab username)
+   - Enter your **Access Token** (GitHub Personal Access Token, GitLab token, etc.)
+5. Choose memory allocation and CPU cores as needed
+6. **Optional**: Check "Password Protect Workspace" for secure access
+7. Click "Create Workspace"
+
+**✅ Result**: VS Code opens with your repository files ready to edit, and all Git operations (push, pull, etc.) work seamlessly!
 
 **💡 GPU Support**: If your host system has NVIDIA GPUs, they are automatically available in all workspaces for ML/AI development. Test with:
 ```bash
@@ -93,9 +124,11 @@ nvidia-smi  # if NVIDIA drivers are installed
 
 ### AI Tools Setup
 
-Once in your workspace, run this command to see setup instructions for all AI tools:
+Once in your workspace, run these commands to get started:
 ```bash
-setup_ai_tools
+info                  # Show workspace info, AI tools, and current Git status
+setup_ai_tools        # Detailed setup instructions for all AI tools
+update_ai_agents      # Update AI tools to latest versions
 ```
 
 ## 📚 Documentation
