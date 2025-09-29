@@ -122,7 +122,9 @@ if [ -d ".git" ]; then
 fi
 echo ""
 echo "🔄 Update Commands:"
-echo "  • update_aider, update_gemini, update_claude, update_qwen, update_codex, update_opencode"
+echo "  • update_aider (pip3)"
+echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex (npm)"
+echo "  • update_opencode (auto-updates)"
 echo ""
 echo "💡 Pro Tips:"
 echo "  • Type 'info' anytime to see this information"
@@ -143,43 +145,42 @@ echo "✅ Aider updated successfully!"
 UPDATE_AIDER_EOF
 chmod +x /usr/local/bin/update_aider
 
-# Update Gemini CLI
+# Update Gemini CLI (requires sudo)
 cat > /usr/local/bin/update_gemini << 'UPDATE_GEMINI_EOF'
 #!/bin/bash
 echo "🔄 Updating Gemini CLI..."
+echo "💡 Note: Run with sudo if you get permission errors"
 npm update -g @google/gemini-cli
 echo "✅ Gemini CLI updated successfully!"
 UPDATE_GEMINI_EOF
 chmod +x /usr/local/bin/update_gemini
 
-# Update Claude Code
+# Update Claude Code (requires sudo)
 cat > /usr/local/bin/update_claude << 'UPDATE_CLAUDE_EOF'
 #!/bin/bash
 echo "🔄 Updating Claude Code..."
+echo "💡 Note: Run with sudo if you get permission errors"
 npm update -g @anthropic-ai/claude-code
 echo "✅ Claude Code updated successfully!"
 UPDATE_CLAUDE_EOF
 chmod +x /usr/local/bin/update_claude
 
-# Update Qwen Code
+# Update Qwen Code (requires sudo)
 cat > /usr/local/bin/update_qwen << 'UPDATE_QWEN_EOF'
 #!/bin/bash
 echo "🔄 Updating Qwen Code..."
+echo "💡 Note: Run with sudo if you get permission errors"
 npm update -g @qwen-code/qwen-code
 echo "✅ Qwen Code updated successfully!"
 UPDATE_QWEN_EOF
 chmod +x /usr/local/bin/update_qwen
 
-# Update OpenAI Codex (requires sudo for npm global installs)
+# Update OpenAI Codex (requires sudo)
 cat > /usr/local/bin/update_codex << 'UPDATE_CODEX_EOF'
 #!/bin/bash
 echo "🔄 Updating OpenAI Codex CLI..."
-echo "⚠️  This may require sudo access for global npm installation"
-if command -v sudo >/dev/null 2>&1; then
-    sudo npm install -g @openai/codex --force
-else
-    npm install -g @openai/codex --force
-fi
+echo "💡 Note: Run with sudo if you get permission errors"
+npm install -g @openai/codex --force
 echo "✅ OpenAI Codex CLI updated successfully!"
 UPDATE_CODEX_EOF
 chmod +x /usr/local/bin/update_codex
