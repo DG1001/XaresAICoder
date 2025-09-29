@@ -6,7 +6,7 @@ const router = express.Router();
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken } = req.body;
+    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group } = req.body;
     
     if (!projectName) {
       return res.status(400).json({
@@ -82,7 +82,8 @@ router.post('/create', async (req, res) => {
       createGitRepo: !!createGitRepo,
       gitUrl: gitUrl || null,
       gitUsername: gitUsername || null,
-      gitToken: gitToken || null
+      gitToken: gitToken || null,
+      group: group || null // Will default to 'Uncategorized' in service
     });
     
     res.status(201).json({
@@ -94,6 +95,25 @@ router.post('/create', async (req, res) => {
     console.error('Create project error:', error);
     res.status(400).json({
       error: 'Failed to create project',
+      message: error.message
+    });
+  }
+});
+
+// Get all groups (must be before /:projectId route)
+router.get('/groups', async (req, res) => {
+  try {
+    const groups = await workspaceService.getGroups();
+
+    res.json({
+      success: true,
+      groups
+    });
+
+  } catch (error) {
+    console.error('Get groups error:', error);
+    res.status(500).json({
+      error: 'Failed to get groups',
       message: error.message
     });
   }
@@ -235,7 +255,7 @@ router.put('/:projectId/notes', async (req, res) => {
   try {
     const { projectId } = req.params;
     const { notes } = req.body;
-    
+
     // Validate notes length (limit to 10KB)
     if (notes && notes.length > 10240) {
       return res.status(400).json({
@@ -243,9 +263,9 @@ router.put('/:projectId/notes', async (req, res) => {
         message: 'Notes must be less than 10KB'
       });
     }
-    
+
     await workspaceService.updateProjectNotes(projectId, notes || '');
-    
+
     res.json({
       success: true,
       message: 'Notes updated successfully'
@@ -256,6 +276,36 @@ router.put('/:projectId/notes', async (req, res) => {
     const statusCode = error.message === 'Project not found' ? 404 : 500;
     res.status(statusCode).json({
       error: 'Failed to update project notes',
+      message: error.message
+    });
+  }
+});
+
+// Update project group
+router.put('/:projectId/group', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { group } = req.body;
+
+    if (!group || typeof group !== 'string') {
+      return res.status(400).json({
+        error: 'Invalid group',
+        message: 'Group name is required and must be a string'
+      });
+    }
+
+    const result = await workspaceService.updateProjectGroup(projectId, group);
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Update project group error:', error);
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.message.includes('Group name')) statusCode = 400;
+
+    res.status(statusCode).json({
+      error: 'Failed to update project group',
       message: error.message
     });
   }

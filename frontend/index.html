@@ -69,6 +69,35 @@
                     <span>AI Tools</span>
                 </div>
             </nav>
+
+            <!-- Groups Section -->
+            <div class="groups-section">
+                <div class="groups-divider"></div>
+                <div class="groups-header">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25V2.75A1.75 1.75 0 0 0 14.25 1H1.75zM1.5 2.75a.25.25 0 0 1 .25-.25h12.5a.25.25 0 0 1 .25.25V5.5H1.5V2.75zm0 4.25h13v6.25a.25.25 0 0 1-.25.25H1.75a.25.25 0 0 1-.25-.25V7z"/>
+                    </svg>
+                    <span>Groups</span>
+                </div>
+                <div class="groups-list" id="groupsList">
+                    <!-- Groups will be loaded here -->
+                </div>
+                <div class="add-group-container">
+                    <button class="add-group-btn" id="addGroupBtn">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2Z"/>
+                        </svg>
+                        <span>Add Group</span>
+                    </button>
+                    <div class="add-group-input" id="addGroupInput" style="display: none;">
+                        <input type="text" placeholder="Enter group name..." maxlength="50" id="newGroupName">
+                        <div class="add-group-actions">
+                            <button class="btn-confirm" id="confirmAddGroup">✓</button>
+                            <button class="btn-cancel" id="cancelAddGroup">✕</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -184,6 +213,7 @@
                                     <option value="8">8 Cores</option>
                                 </select>
                             </div>
+
                         </div>
 
                         <div class="form-section">

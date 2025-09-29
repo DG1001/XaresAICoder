@@ -46,6 +46,16 @@ class WorkspaceService {
         passwordHash = await bcrypt.hash(options.password, 10);
       }
 
+      // Validate and set group
+      let projectGroup = (options.group || '').trim();
+      if (!projectGroup) {
+        projectGroup = 'Uncategorized';
+      } else if (projectGroup.length > 50) {
+        throw new Error('Group name must be 50 characters or less');
+      } else if (!/^[a-zA-Z0-9\s\-_]+$/.test(projectGroup)) {
+        throw new Error('Group name can only contain letters, numbers, spaces, hyphens, and underscores');
+      }
+
       // Store project metadata immediately with "creating" status
       const project = {
         projectId,
@@ -54,6 +64,7 @@ class WorkspaceService {
         memoryLimit: options.memoryLimit || '2g',
         cpuCores: options.cpuCores || '2',
         userId,
+        group: projectGroup,
         passwordProtected: options.passwordProtected || false,
         passwordHash: passwordHash, // Store hashed password
         createGitRepo: options.createGitRepo || false,
@@ -335,6 +346,7 @@ class WorkspaceService {
             memoryLimit: p.memoryLimit || '2g',
             cpuCores: p.cpuCores || '2',
             passwordProtected: p.passwordProtected || false,
+            group: p.group || 'Uncategorized',
             status: p.status,
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
@@ -352,6 +364,7 @@ class WorkspaceService {
             memoryLimit: p.memoryLimit || '2g',
             cpuCores: p.cpuCores || '2',
             passwordProtected: p.passwordProtected || false,
+            group: p.group || 'Uncategorized',
             status: 'error',
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
@@ -487,15 +500,65 @@ class WorkspaceService {
     if (!project) {
       throw new Error('Project not found');
     }
-    
+
     // Update project with notes
     project.notes = notes;
     project.lastAccessed = new Date();
-    
+
     // Save to disk
     await this.saveProjectsToDisk();
-    
+
     return true;
+  }
+
+  // Get all groups with project counts
+  async getGroups(userId = 'default') {
+    const userProjects = Array.from(this.projects.values())
+      .filter(p => p.userId === userId);
+
+    const groups = new Map();
+    userProjects.forEach(project => {
+      const groupName = project.group || 'Uncategorized';
+      if (!groups.has(groupName)) {
+        groups.set(groupName, { name: groupName, count: 0, projects: [] });
+      }
+      const group = groups.get(groupName);
+      group.count++;
+      group.projects.push(project.projectId);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => {
+      // Sort: Uncategorized last, then alphabetically
+      if (a.name === 'Uncategorized') return 1;
+      if (b.name === 'Uncategorized') return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  // Update project group
+  async updateProjectGroup(projectId, newGroup) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    // Validate group name
+    let groupName = (newGroup || '').trim();
+    if (!groupName) {
+      groupName = 'Uncategorized';
+    } else if (groupName.length > 50) {
+      throw new Error('Group name must be 50 characters or less');
+    } else if (!/^[a-zA-Z0-9\s\-_]+$/.test(groupName)) {
+      throw new Error('Group name can only contain letters, numbers, spaces, hyphens, and underscores');
+    }
+
+    project.group = groupName;
+    project.lastAccessed = new Date();
+
+    // Save to disk
+    await this.saveProjectsToDisk();
+
+    return { success: true, group: groupName };
   }
 }
 

@@ -3,6 +3,8 @@ class XaresAICoder {
     constructor() {
         this.apiBase = this.detectApiBase();
         this.projects = [];
+        this.groups = [];
+        this.selectedGroup = null;
         this.pollingInterval = null;
         this.creatingProjects = new Set(); // Track projects being created
         this.config = null; // Store app configuration
@@ -27,14 +29,15 @@ class XaresAICoder {
         this.setupUI();
         
         this.bindEvents();
+        this.loadGroups();
         this.loadProjects();
-        
+
         // Load projects from localStorage for offline display
         this.loadProjectsFromStorage();
-        
+
         // Start polling for project status updates
         this.startPolling();
-        
+
         // Display version information
         this.displayVersionInfo();
     }
@@ -118,6 +121,12 @@ class XaresAICoder {
         // Generate password button
         const generatePasswordBtn = document.getElementById('generatePasswordBtn');
         generatePasswordBtn.addEventListener('click', () => this.generateSecurePassword());
+
+        // Groups management
+        const addGroupBtn = document.getElementById('addGroupBtn');
+        if (addGroupBtn) {
+            addGroupBtn.addEventListener('click', () => this.handleAddGroup());
+        }
 
         // Refresh button
         const refreshBtn = document.getElementById('refreshBtn');
@@ -296,6 +305,7 @@ class XaresAICoder {
         return chars[array[0] % chars.length];
     }
 
+
     shuffleString(str) {
         const array = str.split('');
         for (let i = array.length - 1; i > 0; i--) {
@@ -318,6 +328,7 @@ class XaresAICoder {
         const passwordProtected = formData.get('passwordProtected') === 'on';
         const workspacePassword = formData.get('workspacePassword');
         const createGitRepo = formData.get('createGitRepo') === 'on';
+
         const useGitRepository = formData.get('useGitRepository') === 'on';
         const gitUrl = formData.get('gitUrl')?.trim();
         const gitUsername = formData.get('gitUsername')?.trim();
@@ -356,7 +367,8 @@ class XaresAICoder {
             projectName,
             projectType: useGitRepository ? 'git-clone' : projectType,
             memoryLimit,
-            cpuCores
+            cpuCores,
+            group: this.selectedGroup || 'Uncategorized'
         };
 
         if (passwordProtected) {
@@ -468,7 +480,8 @@ class XaresAICoder {
             projectType: 'git-clone',
             memoryLimit: '2g',  // Default 2GB
             cpuCores: '2',      // Default 2 cores
-            gitUrl
+            gitUrl,
+            group: this.selectedGroup || 'Uncategorized'
         };
 
         try {
@@ -659,17 +672,37 @@ class XaresAICoder {
         const projectsList = document.getElementById('projectsList');
         const noProjects = document.getElementById('noProjects');
 
-        if (this.projects.length === 0) {
+        // Filter projects based on selected group
+        let filteredProjects = this.projects;
+        if (this.selectedGroup) {
+            filteredProjects = this.projects.filter(project =>
+                (project.group || 'Uncategorized') === this.selectedGroup
+            );
+        }
+
+        if (filteredProjects.length === 0) {
             projectsList.innerHTML = '';
-            noProjects.style.display = 'block';
+            if (this.selectedGroup) {
+                projectsList.innerHTML = `
+                    <div class="no-projects-in-group">
+                        <p>No projects in "${this.selectedGroup}" group.</p>
+                        <p><button onclick="app.selectGroup(null)" class="btn-link">Show all projects</button></p>
+                    </div>
+                `;
+            } else {
+                noProjects.style.display = 'block';
+            }
             return;
         }
 
         noProjects.style.display = 'none';
-        
-        
-        projectsList.innerHTML = this.projects.map(project => `
-            <div class="project-item" data-project-id="${project.projectId}">
+
+        // Render flat project list
+        projectsList.innerHTML = filteredProjects.map(project => `
+            <div class="project-item"
+                 data-project-id="${project.projectId}"
+                 draggable="true"
+                 ondragstart="app.handleProjectDragStart(event, '${project.projectId}')">
                 <div class="project-info">
                     <h4>
                         ${this.escapeHtml(project.projectName)}
@@ -691,6 +724,7 @@ class XaresAICoder {
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
                         <span class="disk-usage">${this.getDiskUsageLabel(project.diskUsage)}</span>
                         <span>Created ${this.formatDate(project.createdAt)}</span>
+                        ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
                     </div>
                 </div>
                 <div class="project-actions">
@@ -698,7 +732,11 @@ class XaresAICoder {
                 </div>
             </div>
         `).join('');
+
+        // Add event listeners to action buttons
+        this.attachProjectActionListeners();
     }
+
 
     async openWorkspace(projectId, workspaceUrl) {
         try {
@@ -1656,12 +1694,12 @@ class XaresAICoder {
         const charCount = document.getElementById('notesCharCount');
         const currentLength = textarea.value.length;
         const maxLength = 10240;
-        
+
         charCount.textContent = currentLength;
-        
+
         // Remove existing classes
         charCount.classList.remove('warning', 'error');
-        
+
         // Add warning/error classes based on character count
         if (currentLength > maxLength * 0.9) {
             charCount.classList.add('warning');
@@ -1669,6 +1707,312 @@ class XaresAICoder {
         if (currentLength > maxLength) {
             charCount.classList.add('error');
         }
+    }
+
+    // Group Management Methods
+    async loadGroups() {
+        try {
+            const response = await fetch(`${this.apiBase}/projects/groups`);
+            const data = await response.json();
+
+            if (response.ok) {
+                // The API returns groups as objects with name/count, extract just the names
+                this.groups = data.groups ? data.groups.map(g => g.name || g) : ['Uncategorized'];
+            } else {
+                console.error('Failed to load groups:', data.message);
+                this.groups = ['Uncategorized'];
+            }
+        } catch (error) {
+            console.error('Error loading groups:', error);
+            this.groups = ['Uncategorized'];
+        }
+
+        this.renderGroups();
+    }
+
+    renderGroups() {
+        const groupsList = document.getElementById('groupsList');
+        if (!groupsList) return;
+
+        if (!this.groups || this.groups.length === 0) {
+            this.groups = ['Uncategorized'];
+        }
+
+        groupsList.innerHTML = this.groups.map(group => `
+            <div class="group-item ${this.selectedGroup === group ? 'active' : ''}"
+                 data-group="${group}"
+                 ondrop="app.handleGroupDrop(event, '${group}')"
+                 ondragover="app.handleGroupDragOver(event)"
+                 ondragenter="app.handleGroupDragEnter(event)"
+                 ondragleave="app.handleGroupDragLeave(event)">
+                <span class="group-name" onclick="app.selectGroup('${group}')">${this.escapeHtml(group)}</span>
+                <div class="group-actions">
+                    ${group !== 'Uncategorized' ? `
+                        <button class="group-action-btn" onclick="app.handleRenameGroup('${group}')" title="Rename Group">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064L11.189 6.25Z"/>
+                            </svg>
+                        </button>
+                        <button class="group-action-btn" onclick="app.handleDeleteGroup('${group}')" title="Delete Group">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z"/>
+                                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z"/>
+                            </svg>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    selectGroup(groupName) {
+        if (this.selectedGroup === groupName) {
+            // Deselect if clicking the same group
+            this.selectedGroup = null;
+        } else {
+            this.selectedGroup = groupName;
+        }
+
+        this.renderGroups();
+        this.renderProjects(); // Re-render projects with filter
+    }
+
+    handleAddGroup() {
+        const groupName = prompt('Enter new group name:');
+        if (!groupName || !groupName.trim()) {
+            return;
+        }
+
+        const trimmedName = groupName.trim();
+
+        // Validate group name
+        if (trimmedName.length > 50) {
+            this.showError('Group name must be less than 50 characters');
+            return;
+        }
+
+        if (this.groups.includes(trimmedName)) {
+            this.showError('A group with this name already exists');
+            return;
+        }
+
+        // Add to local groups array (will be persisted when a project is moved to it)
+        this.groups.push(trimmedName);
+        this.renderGroups();
+
+        // Show a message about how to use the new group
+        setTimeout(() => {
+            alert(`Group "${trimmedName}" created! Drag a project to this group to assign it.`);
+        }, 100);
+    }
+
+    handleRenameGroup(oldName) {
+        const newName = prompt(`Rename group "${oldName}" to:`, oldName);
+        if (!newName || !newName.trim() || newName.trim() === oldName) {
+            return;
+        }
+
+        const trimmedName = newName.trim();
+
+        // Validate group name
+        if (trimmedName.length > 50) {
+            this.showError('Group name must be less than 50 characters');
+            return;
+        }
+
+        if (this.groups.includes(trimmedName)) {
+            this.showError('A group with this name already exists');
+            return;
+        }
+
+        // Update local groups array
+        const index = this.groups.indexOf(oldName);
+        if (index !== -1) {
+            this.groups[index] = trimmedName;
+        }
+
+        // Update selected group if it was the renamed one
+        if (this.selectedGroup === oldName) {
+            this.selectedGroup = trimmedName;
+        }
+
+        // Update any projects in this group
+        this.projects.forEach(project => {
+            if (project.group === oldName) {
+                project.group = trimmedName;
+                // Update via API
+                this.updateProjectGroup(project.projectId, trimmedName);
+            }
+        });
+
+        this.renderGroups();
+        this.renderProjects();
+    }
+
+    async handleDeleteGroup(groupName) {
+        const projectsInGroup = this.projects.filter(p => p.group === groupName);
+
+        let confirmMessage = `Are you sure you want to delete the group "${groupName}"?`;
+        if (projectsInGroup.length > 0) {
+            confirmMessage += `\n\nThis group contains ${projectsInGroup.length} project(s). They will be moved to "Uncategorized".`;
+        }
+
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        // Move projects to Uncategorized group
+        if (projectsInGroup.length > 0) {
+            for (const project of projectsInGroup) {
+                project.group = 'Uncategorized';
+                await this.updateProjectGroup(project.projectId, 'Uncategorized');
+            }
+        }
+
+        // Remove from local groups array
+        this.groups = this.groups.filter(g => g !== groupName);
+
+        // Clear selection if the deleted group was selected
+        if (this.selectedGroup === groupName) {
+            this.selectedGroup = null;
+        }
+
+        this.renderGroups();
+        this.renderProjects();
+    }
+
+    async updateProjectGroup(projectId, groupName) {
+        try {
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/group`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ group: groupName })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                console.error('Failed to update project group:', data.message);
+            }
+        } catch (error) {
+            console.error('Error updating project group:', error);
+        }
+    }
+
+    // Drag and Drop Methods
+    handleProjectDragStart(event, projectId) {
+        event.dataTransfer.setData('text/plain', projectId);
+        event.dataTransfer.effectAllowed = 'move';
+
+        // Add visual feedback to the dragged item
+        event.target.classList.add('dragging');
+
+        // Store the dragged project info
+        this.draggedProjectId = projectId;
+        this.draggedProject = this.projects.find(p => p.projectId === projectId);
+    }
+
+    handleGroupDragOver(event) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    }
+
+    handleGroupDragEnter(event) {
+        event.preventDefault();
+        const groupItem = event.currentTarget;
+        if (this.draggedProjectId) {
+            groupItem.classList.add('drag-over');
+        }
+    }
+
+    handleGroupDragLeave(event) {
+        event.preventDefault();
+        const groupItem = event.currentTarget;
+        // Only remove drag-over if leaving the group item (not entering a child)
+        if (!groupItem.contains(event.relatedTarget)) {
+            groupItem.classList.remove('drag-over');
+        }
+    }
+
+    async handleGroupDrop(event, targetGroupName) {
+        event.preventDefault();
+        const groupItem = event.currentTarget;
+        groupItem.classList.remove('drag-over');
+
+        const projectId = event.dataTransfer.getData('text/plain');
+
+        if (!projectId || !this.draggedProject) {
+            this.cleanupDragState();
+            return;
+        }
+
+        const currentGroup = this.draggedProject.group || 'Uncategorized';
+
+        // Don't do anything if dropping on the same group
+        if (currentGroup === targetGroupName) {
+            this.cleanupDragState();
+            return;
+        }
+
+        try {
+            // Update the project's group locally first for immediate UI feedback
+            this.draggedProject.group = targetGroupName;
+
+            // Update the groups list if the target group doesn't exist
+            if (!this.groups.includes(targetGroupName)) {
+                this.groups.push(targetGroupName);
+                this.renderGroups();
+            }
+
+            // Re-render projects to show the change
+            this.renderProjects();
+
+            // Update on the server
+            await this.updateProjectGroup(projectId, targetGroupName);
+
+            // Show success feedback
+            const feedback = document.createElement('div');
+            feedback.className = 'drop-success-feedback';
+            feedback.textContent = `Moved "${this.draggedProject.projectName}" to "${targetGroupName}"`;
+            document.body.appendChild(feedback);
+
+            setTimeout(() => {
+                if (feedback.parentElement) {
+                    feedback.remove();
+                }
+            }, 2000);
+
+        } catch (error) {
+            console.error('Failed to move project:', error);
+            // Revert the local change on error
+            this.draggedProject.group = currentGroup;
+            this.renderProjects();
+            this.showError('Failed to move project to group');
+        } finally {
+            this.cleanupDragState();
+        }
+    }
+
+    cleanupDragState() {
+        // Remove dragging class from all project items
+        document.querySelectorAll('.project-item.dragging').forEach(item => {
+            item.classList.remove('dragging');
+        });
+
+        // Remove drag-over class from all group items
+        document.querySelectorAll('.group-item.drag-over').forEach(item => {
+            item.classList.remove('drag-over');
+        });
+
+        this.draggedProjectId = null;
+        this.draggedProject = null;
+    }
+
+    attachProjectActionListeners() {
+        // This method was removed but is still needed for project action buttons
+        // The project action buttons are handled by inline onclick handlers
+        // so no additional event listeners are needed here
     }
 }
 

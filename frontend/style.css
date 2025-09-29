@@ -657,6 +657,98 @@ body {
     opacity: 0.7;
 }
 
+/* Project Grouping Styles */
+.project-group {
+    margin-bottom: 24px;
+}
+
+.group-header {
+    margin-bottom: 8px;
+}
+
+.group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--vscode-sidebar-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 8px;
+    color: var(--vscode-text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: left;
+}
+
+.group-toggle:hover {
+    background: var(--vscode-hover-bg);
+    border-color: var(--vscode-text-accent);
+}
+
+.group-toggle .chevron {
+    transition: transform 0.15s ease;
+    color: var(--vscode-text-muted);
+}
+
+.group-icon {
+    font-size: 16px;
+}
+
+.group-name {
+    flex: 1;
+    font-weight: 600;
+}
+
+.group-count {
+    color: var(--vscode-text-muted);
+    font-weight: 400;
+    font-size: 12px;
+}
+
+.group-projects {
+    margin-left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.group-projects .project-item {
+    border-left: 2px solid var(--vscode-text-accent);
+    border-left-color: rgba(3, 102, 214, 0.3);
+    padding-left: 16px;
+}
+
+/* Form Group Input Container */
+.group-input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.group-input-container select {
+    margin-bottom: 0;
+}
+
+.group-input-container input[type="text"] {
+    padding: 12px 16px;
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 6px;
+    background: var(--vscode-bg);
+    color: var(--vscode-text);
+    font-size: 14px;
+    transition: border-color 0.15s ease;
+}
+
+.group-input-container input[type="text"]:focus {
+    outline: none;
+    border-color: var(--vscode-text-accent);
+    box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.15);
+}
+
 .project-actions {
     display: flex;
     gap: 8px;
@@ -1516,9 +1608,241 @@ code {
         width: 98%;
         max-height: 95vh;
     }
-    
+
     .notes-editor textarea {
         min-height: 250px;
         font-size: 16px; /* Prevents zoom on iOS */
+    }
+}
+
+/* Groups Section Styles */
+.groups-section {
+    margin-top: 20px;
+}
+
+.groups-divider {
+    height: 1px;
+    background: var(--vscode-border);
+    margin: 16px 0;
+}
+
+.groups-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--vscode-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.groups-list {
+    margin-bottom: 8px;
+}
+
+.group-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-bottom: 2px;
+    min-height: 32px;
+    position: relative;
+}
+
+.group-item:hover {
+    background: var(--vscode-hover-bg);
+}
+
+.group-item.active {
+    background: var(--vscode-active-bg);
+    color: var(--vscode-text-accent);
+    font-weight: 500;
+}
+
+.group-item.drag-over {
+    background: rgba(3, 102, 214, 0.1);
+    border: 2px dashed var(--vscode-text-accent);
+    animation: pulse-highlight 1s ease-in-out infinite;
+}
+
+.group-name {
+    flex: 1;
+    font-size: 13px;
+    color: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+}
+
+.group-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.group-item:hover .group-actions {
+    opacity: 1;
+}
+
+.group-action-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--vscode-text-muted);
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.group-action-btn:hover {
+    background: var(--vscode-hover-bg);
+    color: var(--vscode-text);
+}
+
+.add-group-container {
+    padding: 0 12px;
+}
+
+.add-group-btn {
+    width: 100%;
+    padding: 6px 8px;
+    background: none;
+    border: 1px dashed var(--vscode-border);
+    border-radius: 6px;
+    color: var(--vscode-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.add-group-btn:hover {
+    background: var(--vscode-hover-bg);
+    color: var(--vscode-text);
+    border-color: var(--vscode-text-muted);
+}
+
+/* Drag and Drop Styles */
+.project-item[draggable="true"] {
+    cursor: grab;
+}
+
+.project-item.dragging {
+    opacity: 0.5;
+    transform: rotate(2deg);
+    z-index: 1000;
+    cursor: grabbing;
+}
+
+.project-group-badge {
+    background: var(--vscode-sidebar-bg);
+    color: var(--vscode-text-accent);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--vscode-border);
+    transition: all 0.15s ease;
+}
+
+.project-group-badge:hover {
+    background: var(--vscode-hover-bg);
+    border-color: var(--vscode-text-accent);
+}
+
+.no-projects-in-group {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--vscode-text-muted);
+}
+
+.no-projects-in-group p {
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--vscode-text-accent);
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: inherit;
+}
+
+.btn-link:hover {
+    color: var(--vscode-button-hover);
+}
+
+/* Drop Success Feedback */
+.drop-success-feedback {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--vscode-success);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: var(--shadow-md);
+    z-index: 10001;
+    animation: slideInRight 0.3s ease-out, fadeOut 0.5s ease-in 1.5s forwards;
+}
+
+/* Drag and Drop Animations */
+@keyframes pulse-highlight {
+    0%, 100% {
+        background: rgba(3, 102, 214, 0.1);
+    }
+    50% {
+        background: rgba(3, 102, 214, 0.2);
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+/* Responsive Groups Section */
+@media (max-width: 768px) {
+    .groups-section {
+        margin-top: 16px;
+    }
+
+    .group-item {
+        padding: 8px 16px;
+        min-height: 36px;
+    }
+
+    .group-actions {
+        opacity: 1; /* Always show on mobile */
+    }
+
+    .drop-success-feedback {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        text-align: center;
     }
 }
