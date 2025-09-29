@@ -19,15 +19,18 @@ class XaresAICoder {
     }
 
     async init() {
+        // Initialize theme
+        this.initTheme();
+
         // Initialize PWA features
         this.initPWA();
-        
+
         // Load configuration first
         await this.loadConfiguration();
-        
+
         // Setup UI based on configuration
         this.setupUI();
-        
+
         this.bindEvents();
         this.loadGroups();
         this.loadProjects();
@@ -42,11 +45,41 @@ class XaresAICoder {
         this.displayVersionInfo();
     }
 
+    initTheme() {
+        // Load theme from localStorage, default to dark
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        this.setTheme(savedTheme);
+    }
+
+    setTheme(theme) {
+        const root = document.documentElement;
+        const sunIcon = document.querySelector('.sun-icon');
+        const moonIcon = document.querySelector('.moon-icon');
+
+        if (theme === 'light') {
+            root.setAttribute('data-theme', 'light');
+            if (sunIcon) sunIcon.style.display = 'none';
+            if (moonIcon) moonIcon.style.display = 'block';
+        } else {
+            root.removeAttribute('data-theme');
+            if (sunIcon) sunIcon.style.display = 'block';
+            if (moonIcon) moonIcon.style.display = 'none';
+        }
+
+        localStorage.setItem('theme', theme);
+    }
+
+    toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        this.setTheme(newTheme);
+    }
+
     async loadConfiguration() {
         try {
             const response = await fetch(`${this.apiBase}/config`);
             const data = await response.json();
-            
+
             if (response.ok) {
                 this.config = data;
                 console.log('Configuration loaded:', this.config);
@@ -96,6 +129,10 @@ class XaresAICoder {
     }
 
     bindEvents() {
+        // Theme toggle
+        const themeToggle = document.getElementById('themeToggle');
+        themeToggle.addEventListener('click', () => this.toggleTheme());
+
         // Tab navigation
         const navItems = document.querySelectorAll('.nav-item');
         navItems.forEach(item => {

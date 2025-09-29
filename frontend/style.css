@@ -1,7 +1,38 @@
-/* VS Code Inspired Professional Light Theme */
+/* VS Code Inspired Professional Theme with Dark Mode */
 
-/* CSS Variables for VS Code Light Theme */
+/* CSS Variables for VS Code Dark Theme (Default) */
 :root {
+    /* VS Code Dark Theme Colors */
+    --vscode-bg: #1e1e1e;
+    --vscode-sidebar-bg: #252526;
+    --vscode-border: #3e3e42;
+    --vscode-text: #cccccc;
+    --vscode-text-muted: #858585;
+    --vscode-text-accent: #4fc3f7;
+    --vscode-button-bg: #0e639c;
+    --vscode-button-hover: #1177bb;
+    --vscode-input-bg: #3c3c3c;
+    --vscode-input-border: #3e3e42;
+    --vscode-hover-bg: #2a2d2e;
+    --vscode-active-bg: #094771;
+    --vscode-warning: #cca700;
+    --vscode-error: #f48771;
+    --vscode-success: #89d185;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+
+    /* PWA Colors */
+    --pwa-install-bg: #89d185;
+    --pwa-install-hover: #75c172;
+    --pwa-update-bg: #cca700;
+    --pwa-offline-bg: #6f42c1;
+}
+
+/* Light Theme Variables */
+:root[data-theme="light"] {
     /* VS Code Light Theme Colors */
     --vscode-bg: #ffffff;
     --vscode-sidebar-bg: #f3f3f3;
@@ -18,12 +49,12 @@
     --vscode-warning: #f66a0a;
     --vscode-error: #d73a49;
     --vscode-success: #28a745;
-    
+
     /* Shadows */
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
     --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
-    
+
     /* PWA Colors */
     --pwa-install-bg: #28a745;
     --pwa-install-hover: #218838;
@@ -137,6 +168,17 @@ body {
     padding: 24px 32px;
 }
 
+.title-bar-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+}
+
+.title-bar-left {
+    flex: 1;
+}
+
 .title-bar-content h1 {
     font-size: 24px;
     font-weight: 600;
@@ -147,6 +189,37 @@ body {
 .subtitle {
     font-size: 14px;
     color: var(--vscode-text-muted);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--vscode-sidebar-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--vscode-text);
+    flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+    background: var(--vscode-hover-bg);
+    border-color: var(--vscode-text-accent);
+    color: var(--vscode-text-accent);
+    transform: rotate(15deg);
+}
+
+.theme-toggle:active {
+    transform: rotate(15deg) scale(0.95);
+}
+
+.theme-toggle svg {
+    transition: opacity 0.2s ease;
 }
 
 /* Tab Content */
@@ -413,11 +486,16 @@ body {
 
 /* Quick Clone Section */
 .quick-clone-section {
-    background: linear-gradient(135deg, #f8f9ff 0%, #f1f8ff 100%);
+    background: linear-gradient(135deg, rgba(79, 195, 247, 0.08) 0%, rgba(79, 195, 247, 0.12) 100%);
     border: 1px solid var(--vscode-text-accent);
     border-radius: 12px;
     padding: 24px;
     margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(79, 195, 247, 0.15);
+}
+
+:root[data-theme="light"] .quick-clone-section {
+    background: linear-gradient(135deg, #f8f9ff 0%, #f1f8ff 100%);
     box-shadow: 0 2px 8px rgba(3, 102, 214, 0.08);
 }
 
@@ -591,6 +669,129 @@ body {
 .btn-secondary:hover {
     background: var(--vscode-hover-bg);
     border-color: var(--vscode-text-accent);
+}
+
+/* Project Action Buttons */
+.btn-open {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--vscode-button-bg);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-open:hover {
+    background: var(--vscode-button-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-success {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--vscode-success);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-success:hover {
+    background: #75c172;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="light"] .btn-success {
+    background: #28a745;
+}
+
+:root[data-theme="light"] .btn-success:hover {
+    background: #218838;
+}
+
+.btn-warning {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--vscode-warning);
+    color: #1e1e1e;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-warning:hover {
+    background: #b8960a;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="light"] .btn-warning {
+    background: #ffc107;
+}
+
+:root[data-theme="light"] .btn-warning:hover {
+    background: #e0a800;
+}
+
+.btn-danger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--vscode-error);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-danger:hover {
+    background: #e65c4a;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="light"] .btn-danger {
+    background: #dc3545;
+}
+
+:root[data-theme="light"] .btn-danger:hover {
+    background: #c82333;
+}
+
+.btn-open:disabled,
+.btn-success:disabled,
+.btn-warning:disabled,
+.btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 /* Projects List */
@@ -1113,11 +1314,15 @@ code {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(30, 30, 30, 0.9);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 9999;
+}
+
+:root[data-theme="light"] .loading-overlay {
+    background: rgba(255, 255, 255, 0.9);
 }
 
 .loading-content {
@@ -1234,43 +1439,53 @@ code {
         height: auto;
         min-height: 100vh;
     }
-    
+
     .activity-bar {
         width: 100%;
         border-right: none;
         border-bottom: 1px solid var(--vscode-border);
     }
-    
+
     .activity-bar-content {
         flex-direction: row;
         align-items: center;
         padding: 16px;
     }
-    
+
     .logo-section {
         margin-bottom: 0;
         padding-bottom: 0;
         border-bottom: none;
         margin-right: auto;
     }
-    
+
     .activity-nav {
         flex: none;
         display: flex;
         gap: 8px;
     }
-    
+
     .nav-item span {
         display: none;
     }
-    
+
     .main-container {
         overflow-y: auto;
     }
-    
+
     .title-bar,
     .tab-panel {
         padding: 20px;
+    }
+
+    .title-bar-content {
+        flex-direction: row;
+        gap: 16px;
+    }
+
+    .theme-toggle {
+        width: 36px;
+        height: 36px;
     }
 }
 
