@@ -217,6 +217,7 @@ class XaresAICoder {
         const gitUsernameGroup = document.getElementById('gitUsernameGroup');
         const gitTokenGroup = document.getElementById('gitTokenGroup');
         const projectTypeSelect = document.getElementById('projectType');
+        const createGitRepoCheckbox = document.getElementById('createGitRepo');
 
         if (e.target.checked) {
             gitGroup.style.display = 'block';
@@ -226,6 +227,12 @@ class XaresAICoder {
             // Disable project type selection when using Git repository
             projectTypeSelect.disabled = true;
             projectTypeSelect.value = 'git-clone';
+
+            // Disable "Create Git Repository" since we're cloning an existing one
+            if (createGitRepoCheckbox) {
+                createGitRepoCheckbox.disabled = true;
+                createGitRepoCheckbox.checked = false;
+            }
 
             // Focus on Git URL input
             const gitUrlInput = document.getElementById('gitUrl');
@@ -238,6 +245,11 @@ class XaresAICoder {
             // Re-enable project type selection
             projectTypeSelect.disabled = false;
             projectTypeSelect.value = '';
+
+            // Re-enable "Create Git Repository" checkbox
+            if (createGitRepoCheckbox) {
+                createGitRepoCheckbox.disabled = false;
+            }
 
             // Clear Git inputs
             document.getElementById('gitUrl').value = '';

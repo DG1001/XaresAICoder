@@ -400,6 +400,17 @@ body {
     opacity: 0.8;
 }
 
+/* Disabled checkboxes */
+.checkbox-label input:disabled + .checkmark {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.checkbox-label input:disabled ~ .checkbox-text {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Buttons */
 .btn-primary {
     display: flex;
