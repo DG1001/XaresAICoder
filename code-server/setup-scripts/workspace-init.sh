@@ -2133,7 +2133,8 @@ SETTINGS_EOF
         "ms-vscode.vscode-typescript-next",
         "bradlc.vscode-tailwindcss",
         "esbenp.prettier-vscode",
-        "ms-vscode.vscode-eslint"
+        "ms-vscode.vscode-eslint",
+        "anthropic.claude-code"
     ]
 }
 EXTENSIONS_EOF
