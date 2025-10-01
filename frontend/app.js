@@ -266,17 +266,12 @@ class XaresAICoder {
         const gitGroup = document.getElementById('gitGroup');
         const gitUsernameGroup = document.getElementById('gitUsernameGroup');
         const gitTokenGroup = document.getElementById('gitTokenGroup');
-        const projectTypeSelect = document.getElementById('projectType');
         const createGitRepoCheckbox = document.getElementById('createGitRepo');
 
         if (e.target.checked) {
             gitGroup.style.display = 'block';
             gitUsernameGroup.style.display = 'block';
             gitTokenGroup.style.display = 'block';
-
-            // Disable project type selection when using Git repository
-            projectTypeSelect.disabled = true;
-            projectTypeSelect.value = 'git-clone';
 
             // Disable "Create Git Repository" since we're cloning an existing one
             if (createGitRepoCheckbox) {
@@ -291,10 +286,6 @@ class XaresAICoder {
             gitGroup.style.display = 'none';
             gitUsernameGroup.style.display = 'none';
             gitTokenGroup.style.display = 'none';
-
-            // Re-enable project type selection
-            projectTypeSelect.disabled = false;
-            projectTypeSelect.value = '';
 
             // Re-enable "Create Git Repository" checkbox
             if (createGitRepoCheckbox) {
@@ -359,7 +350,6 @@ class XaresAICoder {
         
         const formData = new FormData(e.target);
         const projectName = formData.get('projectName').trim();
-        const projectType = formData.get('projectType');
         const memoryLimit = formData.get('memoryLimit');
         const cpuCores = formData.get('cpuCores');
         const passwordProtected = formData.get('passwordProtected') === 'on';
@@ -389,9 +379,6 @@ class XaresAICoder {
                 this.showError('Only HTTP and HTTPS Git URLs are supported for security');
                 return;
             }
-        } else if (!projectType) {
-            this.showError('Please select a project template');
-            return;
         }
 
         if (passwordProtected && (!workspacePassword || workspacePassword.length < 8)) {
@@ -402,7 +389,7 @@ class XaresAICoder {
 
         const requestBody = {
             projectName,
-            projectType: useGitRepository ? 'git-clone' : projectType,
+            projectType: useGitRepository ? 'git-clone' : 'empty',
             memoryLimit,
             cpuCores,
             group: this.selectedGroup || 'Uncategorized'
@@ -1213,10 +1200,10 @@ class XaresAICoder {
 
     getProjectTypeLabel(type) {
         const labels = {
-            'empty': 'Empty Project',
-            'python-flask': 'Python Flask',
-            'node-react': 'Node.js React',
-            'java-spring': 'Java Spring Boot',
+            'empty': 'New Workspace',
+            'python-flask': 'New Workspace', // Legacy type
+            'node-react': 'New Workspace', // Legacy type
+            'java-spring': 'New Workspace', // Legacy type
             'git-clone': '' // Don't show project type for Git repositories since we show the repo name
         };
         return labels.hasOwnProperty(type) ? labels[type] : type;

@@ -32,11 +32,6 @@ router.post('/create', async (req, res) => {
           message: 'Only HTTP and HTTPS Git URLs are supported for security'
         });
       }
-    } else if (!projectType) {
-      return res.status(400).json({
-        error: 'Missing required fields',
-        message: 'projectType is required when not using git-clone'
-      });
     }
 
     // Validate memory limit
@@ -74,7 +69,7 @@ router.post('/create', async (req, res) => {
       }
     }
 
-    const project = await workspaceService.createProject(projectName, projectType, {
+    const project = await workspaceService.createProject(projectName, projectType || 'empty', {
       memoryLimit: memoryLimit || '2g', // Default to 2g if not specified
       cpuCores: cpuCores || '2', // Default to 2 cores if not specified
       passwordProtected: !!passwordProtected,

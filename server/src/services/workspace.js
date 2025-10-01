@@ -26,8 +26,8 @@ class WorkspaceService {
         throw new Error('Project name and type are required');
       }
 
-      if (!['python-flask', 'node-react', 'java-spring', 'empty', 'git-clone'].includes(projectType)) {
-        throw new Error('Invalid project type. Supported: python-flask, node-react, java-spring, empty, git-clone');
+      if (!['empty', 'git-clone'].includes(projectType)) {
+        throw new Error('Invalid project type. Supported: empty, git-clone');
       }
 
       // Check workspace limit

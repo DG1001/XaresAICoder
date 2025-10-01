@@ -163,22 +163,10 @@ class DockerService {
       // We'll check for environment variables in the container
       commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then echo "Configuring Git remote for repository: $GIT_REPO_NAME"; git remote add origin "$GIT_REMOTE_URL"; git branch -M main; fi');
 
-      if (projectType === 'python-flask') {
-        console.log('Adding Flask project setup commands');
-        commands.push('setup_flask_project');
-        // Note: Template files are created but not committed - user decides whether to keep or remove them
-      } else if (projectType === 'node-react') {
-        console.log('Adding Node.js/React project setup commands');
-        commands.push('setup_node_react_project');
-        // Note: Template files are created but not committed - user decides whether to keep or remove them
-      } else if (projectType === 'java-spring') {
-        console.log('Adding Java/Spring project setup commands');
-        commands.push('setup_java_spring_project');
-        // Note: Template files are created but not committed - user decides whether to keep or remove them
-      } else if (projectType === 'empty') {
-        console.log('Adding empty project setup commands');
+      if (projectType === 'empty' || projectType === 'python-flask' || projectType === 'node-react' || projectType === 'java-spring') {
+        console.log(`Adding empty project setup commands (legacy type: ${projectType})`);
         commands.push('setup_empty_project');
-        // Note: Template files are created but not committed - user decides whether to keep or remove them
+        // Note: Legacy template types (python-flask, node-react, java-spring) now default to empty project
       } else if (projectType === 'git-clone') {
         console.log('Adding Git repository cloning commands');
         // Create a single comprehensive command for Git cloning to avoid bash syntax issues
