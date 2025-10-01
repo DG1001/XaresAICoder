@@ -4,6 +4,9 @@
 
 A professional browser-based AI-powered development environment that integrates VS Code (code-server) with multiple AI coding assistants for enhanced productivity.
 
+
+![Workspace Manager](docs/screen-server.png)
+
 ## Overview
 
 https://github.com/user-attachments/assets/127a1253-5df2-4a5e-937d-a25840439ccd
