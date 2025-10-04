@@ -620,7 +620,8 @@ SETTINGS_EOF
         "bradlc.vscode-tailwindcss",
         "esbenp.prettier-vscode",
         "ms-vscode.vscode-eslint",
-        "anthropic.claude-code"
+        "anthropic.claude-code",
+        "openai.chatgpt"
     ]
 }
 EXTENSIONS_EOF
