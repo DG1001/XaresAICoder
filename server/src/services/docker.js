@@ -424,6 +424,53 @@ fi`.trim();
     }
   }
 
+  async getAllProjectStatuses() {
+    try {
+      // Get all containers and filter manually (Docker filter syntax can be tricky)
+      const containers = await this.docker.listContainers({
+        all: true
+      });
+
+      const statusMap = new Map();
+
+      containers.forEach(container => {
+        const containerName = container.Names[0]?.replace(/^\//, '');
+
+        // Only process workspace containers
+        if (!containerName?.startsWith('workspace-')) {
+          return;
+        }
+
+        const projectIdMatch = containerName.match(/^workspace-(.+)$/);
+
+        if (projectIdMatch) {
+          const projectId = projectIdMatch[1];
+          const isRunning = container.State === 'running';
+          const status = isRunning ? 'running' : 'stopped';
+
+          statusMap.set(projectId, {
+            projectId,
+            status,
+            workspaceUrl: `${this.protocol}://${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
+            createdAt: new Date(container.Created * 1000),
+            projectType: 'unknown', // Will be preserved from stored data
+            containerInfo: {
+              running: isRunning,
+              state: container.State,
+              status: container.Status
+            }
+          });
+        }
+      });
+
+      console.log(`Found ${statusMap.size} workspace containers`);
+      return statusMap;
+    } catch (error) {
+      console.error('Error getting batch container statuses:', error);
+      return new Map();
+    }
+  }
+
   async getProjectStatus(projectId) {
     const containerName = `workspace-${projectId}`;
 

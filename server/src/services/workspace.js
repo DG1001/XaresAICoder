@@ -315,59 +315,65 @@ class WorkspaceService {
       .filter(p => p.userId === userId)
       .sort((a, b) => b.lastAccessed - a.lastAccessed);
 
-    // Update status for all projects in parallel (without disk usage for faster response)
-    const projectsWithStatus = await Promise.all(
-      userProjects.map(async (p) => {
-        try {
-          const dockerStatus = await dockerService.getProjectStatus(p.projectId);
+    // Get all container statuses in a single batch operation (much faster!)
+    const containerStatuses = await dockerService.getAllProjectStatuses();
 
-          // Special handling for creating projects:
-          // Only update to running if we have a workspaceUrl (meaning async creation completed)
-          if (p.status === 'creating' && !p.workspaceUrl) {
-            // Keep as creating until async process completes
-            // Docker might show "running" but workspace isn't ready yet
-          } else {
-            // For non-creating projects, update status from Docker
-            p.status = dockerStatus.status;
-          }
+    // Update status for all projects using batch results
+    const projectsWithStatus = userProjects.map((p) => {
+      try {
+        const dockerStatus = containerStatuses.get(p.projectId);
 
-          return {
-            projectId: p.projectId,
-            projectName: p.projectName,
-            projectType: p.projectType,
-            memoryLimit: p.memoryLimit || '2g',
-            cpuCores: p.cpuCores || '2',
-            passwordProtected: p.passwordProtected || false,
-            group: p.group || 'Uncategorized',
-            status: p.status,
-            workspaceUrl: p.workspaceUrl,
-            gitRepository: p.gitRepository || null,
-            gitUrl: p.gitUrl || null,
-            diskUsage: null, // Will be loaded asynchronously
-            createdAt: p.createdAt,
-            lastAccessed: p.lastAccessed
-          };
-        } catch (error) {
-          console.error(`Error getting status for project ${p.projectId}:`, error);
-          return {
-            projectId: p.projectId,
-            projectName: p.projectName,
-            projectType: p.projectType,
-            memoryLimit: p.memoryLimit || '2g',
-            cpuCores: p.cpuCores || '2',
-            passwordProtected: p.passwordProtected || false,
-            group: p.group || 'Uncategorized',
-            status: 'error',
-            workspaceUrl: p.workspaceUrl,
-            gitRepository: p.gitRepository || null,
-            gitUrl: p.gitUrl || null,
-            diskUsage: null,
-            createdAt: p.createdAt,
-            lastAccessed: p.lastAccessed
-          };
+        // Special handling for creating projects:
+        // Only update to running if we have a workspaceUrl (meaning async creation completed)
+        if (p.status === 'creating' && !p.workspaceUrl) {
+          // Keep as creating until async process completes
+          // Docker might show "running" but workspace isn't ready yet
+        } else if (dockerStatus) {
+          // For non-creating projects, update status from Docker
+          p.status = dockerStatus.status;
+        } else {
+          // Container not found in Docker
+          p.status = 'not_found';
         }
-      })
-    );
+
+        return {
+          projectId: p.projectId,
+          projectName: p.projectName,
+          projectType: p.projectType,
+          memoryLimit: p.memoryLimit || '2g',
+          cpuCores: p.cpuCores || '2',
+          passwordProtected: p.passwordProtected || false,
+          group: p.group || 'Uncategorized',
+          status: p.status,
+          workspaceUrl: p.workspaceUrl,
+          gitRepository: p.gitRepository || null,
+          gitUrl: p.gitUrl || null,
+          diskUsage: null, // Will be loaded asynchronously
+          createdAt: p.createdAt,
+          lastAccessed: p.lastAccessed,
+          notes: p.notes || ''
+        };
+      } catch (error) {
+        console.error(`Error getting status for project ${p.projectId}:`, error);
+        return {
+          projectId: p.projectId,
+          projectName: p.projectName,
+          projectType: p.projectType,
+          memoryLimit: p.memoryLimit || '2g',
+          cpuCores: p.cpuCores || '2',
+          passwordProtected: p.passwordProtected || false,
+          group: p.group || 'Uncategorized',
+          status: 'error',
+          workspaceUrl: p.workspaceUrl,
+          gitRepository: p.gitRepository || null,
+          gitUrl: p.gitUrl || null,
+          diskUsage: null,
+          createdAt: p.createdAt,
+          lastAccessed: p.lastAccessed,
+          notes: p.notes || ''
+        };
+      }
+    });
 
     return projectsWithStatus;
   }
