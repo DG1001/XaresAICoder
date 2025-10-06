@@ -606,6 +606,11 @@ class XaresAICoder {
             if (response.ok) {
                 this.projects = data.projects || [];
                 this.saveProjectsToStorage(this.projects);
+
+                // Load disk usage asynchronously for all projects if enabled
+                if (this.config && this.config.showDiskUsage) {
+                    this.loadDiskUsageAsync();
+                }
             } else {
                 console.error('Failed to load projects:', data.message);
                 // Fall back to localStorage
@@ -619,6 +624,34 @@ class XaresAICoder {
         }
 
         this.renderProjects();
+    }
+
+    async loadDiskUsageAsync() {
+        // Load disk usage for all projects in parallel
+        const promises = this.projects.map(async (project) => {
+            try {
+                const response = await fetch(`${this.apiBase}/projects/${project.projectId}/disk-usage`);
+                if (response.ok) {
+                    const data = await response.json();
+                    project.diskUsage = data.diskUsage;
+                    // Re-render this specific project's disk usage
+                    this.updateProjectDiskUsage(project.projectId, data.diskUsage);
+                }
+            } catch (error) {
+                console.error(`Error loading disk usage for ${project.projectId}:`, error);
+            }
+        });
+
+        await Promise.all(promises);
+        // Save updated projects with disk usage
+        this.saveProjectsToStorage(this.projects);
+    }
+
+    updateProjectDiskUsage(projectId, diskUsage) {
+        const projectElement = document.querySelector(`[data-project-id="${projectId}"] .disk-usage`);
+        if (projectElement && diskUsage) {
+            projectElement.textContent = this.getDiskUsageLabel(diskUsage);
+        }
     }
 
     startPolling() {
@@ -1258,7 +1291,10 @@ class XaresAICoder {
             return null;
         }
 
-        if (!diskUsage || diskUsage.readable === 'Unknown') {
+        if (!diskUsage) {
+            return 'Disk: ...';
+        }
+        if (diskUsage.readable === 'Unknown') {
             return 'Disk: Unknown';
         }
         return `Disk: ${diskUsage.readable}`;

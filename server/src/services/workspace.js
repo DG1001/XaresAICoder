@@ -315,10 +315,7 @@ class WorkspaceService {
       .filter(p => p.userId === userId)
       .sort((a, b) => b.lastAccessed - a.lastAccessed);
 
-    // Get all container sizes in a single batch operation for better performance (only if enabled)
-    const containerSizes = this.showDiskUsage ? await dockerService.getAllWorkspaceContainerSizes() : new Map();
-
-    // Update status for all projects in parallel
+    // Update status for all projects in parallel (without disk usage for faster response)
     const projectsWithStatus = await Promise.all(
       userProjects.map(async (p) => {
         try {
@@ -334,15 +331,6 @@ class WorkspaceService {
             p.status = dockerStatus.status;
           }
 
-          // Get disk usage from batch results, fallback to individual call if not found
-          let diskUsage = null;
-          if (this.showDiskUsage) {
-            diskUsage = containerSizes.get(p.projectId);
-            if (!diskUsage) {
-              diskUsage = dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' };
-            }
-          }
-
           return {
             projectId: p.projectId,
             projectName: p.projectName,
@@ -355,7 +343,7 @@ class WorkspaceService {
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
             gitUrl: p.gitUrl || null,
-            diskUsage: diskUsage,
+            diskUsage: null, // Will be loaded asynchronously
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };
@@ -373,7 +361,7 @@ class WorkspaceService {
             workspaceUrl: p.workspaceUrl,
             gitRepository: p.gitRepository || null,
             gitUrl: p.gitUrl || null,
-            diskUsage: this.showDiskUsage ? { bytes: 0, readable: 'Unknown' } : null,
+            diskUsage: null,
             createdAt: p.createdAt,
             lastAccessed: p.lastAccessed
           };
@@ -382,6 +370,26 @@ class WorkspaceService {
     );
 
     return projectsWithStatus;
+  }
+
+  // Get disk usage for a specific project
+  async getProjectDiskUsage(projectId) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    if (!this.showDiskUsage) {
+      return null;
+    }
+
+    try {
+      const dockerStatus = await dockerService.getProjectStatus(projectId);
+      return dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' };
+    } catch (error) {
+      console.error(`Error getting disk usage for project ${projectId}:`, error);
+      return { bytes: 0, readable: 'Unknown' };
+    }
   }
 
   async cleanupWorkspaces() {

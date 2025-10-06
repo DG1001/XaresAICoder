@@ -306,4 +306,25 @@ router.put('/:projectId/group', async (req, res) => {
   }
 });
 
+// Get disk usage for a project
+router.get('/:projectId/disk-usage', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const diskUsage = await workspaceService.getProjectDiskUsage(projectId);
+
+    res.json({
+      success: true,
+      diskUsage
+    });
+
+  } catch (error) {
+    console.error('Get disk usage error:', error);
+    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    res.status(statusCode).json({
+      error: 'Failed to get disk usage',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
