@@ -759,7 +759,8 @@ class XaresAICoder {
             <div class="project-item"
                  data-project-id="${project.projectId}"
                  draggable="true"
-                 ondragstart="app.handleProjectDragStart(event, '${project.projectId}')">
+                 ondragstart="app.handleProjectDragStart(event, '${project.projectId}')"
+                 title="Created ${this.formatDate(project.createdAt)}">
                 <div class="project-info">
                     <h4>
                         ${this.escapeHtml(project.projectName)}
@@ -780,7 +781,6 @@ class XaresAICoder {
                         <span>${this.getMemoryLimitLabel(project.memoryLimit)}</span>
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
                         ${this.getDiskUsageLabel(project.diskUsage) ? `<span class="disk-usage">${this.getDiskUsageLabel(project.diskUsage)}</span>` : ''}
-                        <span>Created ${this.formatDate(project.createdAt)}</span>
                         ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
                     </div>
                 </div>
