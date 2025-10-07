@@ -773,6 +773,7 @@ class XaresAICoder {
                             </svg>
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
+                        ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}" style="margin-left: 12px;">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
                     </h4>
                     <div class="project-meta">
                         <span class="project-status ${this.getStatusClass(project.status, project.workspaceUrl)}">${this.getStatusLabel(project.status, project.workspaceUrl)}</span>
@@ -781,7 +782,6 @@ class XaresAICoder {
                         <span>${this.getMemoryLimitLabel(project.memoryLimit)}</span>
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
                         ${this.getDiskUsageLabel(project.diskUsage) ? `<span class="disk-usage">${this.getDiskUsageLabel(project.diskUsage)}</span>` : ''}
-                        ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
                     </div>
                 </div>
                 <div class="project-actions">
