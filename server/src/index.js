@@ -26,7 +26,7 @@ app.get('/api/config', (req, res) => {
     basePort: process.env.BASE_PORT || '80',
     protocol: process.env.PROTOCOL || 'http'
   };
-  
+
   if (config.gitServerEnabled) {
     // Construct Git server URL
     if (config.basePort === '80' && config.protocol === 'http') {
@@ -37,8 +37,14 @@ app.get('/api/config', (req, res) => {
       config.gitServerUrl = `${config.protocol}://${config.baseDomain}:${config.basePort}/git/`;
     }
   }
-  
+
   res.json(config);
+});
+
+// Resource limits endpoint
+app.get('/api/limits', (req, res) => {
+  const workspaceService = require('./services/workspace');
+  res.json(workspaceService.limits);
 });
 
 // Routes

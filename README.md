@@ -20,6 +20,7 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 - **Isolated Docker Workspaces** with automatic resource management
 - **Configurable Memory Allocation** - Choose 1GB, 2GB, 4GB, 8GB, or 16GB RAM per workspace
 - **CPU Cores Selection** - Allocate 1-8 CPU cores per workspace
+- **Resource Limits** - Configurable concurrent workspace limits and per-workspace resource caps
 - **GPU Acceleration Support** - Automatic GPU passthrough for ML/AI workloads
 - **Subdomain Port Forwarding** (e.g., `projectid-5000.localhost`)
 - **Real-time Container Management** with start/stop controls
@@ -230,6 +231,81 @@ VS Code automatically detects ports and provides one-click browser access.
 - **Container Isolation**: Each workspace runs in isolated Docker containers
 - **Resource Limits**: CPU and memory limits prevent resource exhaustion
 - **Network Isolation**: Workspaces can't access each other
+
+## ⚙️ Resource Limits
+
+XaresAICoder includes configurable resource limits to prevent system overload and ensure fair resource allocation:
+
+### Default Limits
+- **Maximum Concurrent Workspaces**: 3 running workspaces at a time
+- **CPU per Workspace**: 1.0 cores
+- **Memory per Workspace**: 4096 MB (4GB)
+
+### Configuration
+
+Customize limits via environment variables in `.env`:
+
+```bash
+# Maximum number of simultaneously running workspaces
+MAX_CONCURRENT_WORKSPACES=3
+
+# CPU cores allocated per workspace
+CPU_PER_WORKSPACE=1.0
+
+# RAM limit in MB per workspace
+MEMORY_PER_WORKSPACE_MB=4096
+
+# Enable/disable resource limit enforcement
+ENABLE_RESOURCE_LIMITS=true
+```
+
+### How It Works
+
+**Concurrent Workspace Enforcement:**
+- When creating a new workspace, the system checks if you've reached the concurrent limit
+- When starting a stopped workspace, the limit is checked again
+- If the limit is reached, you'll see: *"Cannot start workspace: Maximum concurrent workspaces (3) reached. Please stop another workspace first."*
+- Simply stop any running workspace to free up a slot
+
+**Resource Allocation:**
+- Each workspace container is created with the configured CPU and memory limits
+- Docker enforces these limits automatically
+- Prevents any single workspace from consuming excessive resources
+
+**Checking Your Limits:**
+```bash
+# View current limit configuration
+curl http://localhost/api/limits
+```
+
+**Disabling Limits:**
+```bash
+# Set to false in .env to disable enforcement
+ENABLE_RESOURCE_LIMITS=false
+```
+
+### Use Cases
+
+**Personal Development** (default):
+```bash
+MAX_CONCURRENT_WORKSPACES=3
+CPU_PER_WORKSPACE=1.0
+MEMORY_PER_WORKSPACE_MB=4096
+```
+
+**Powerful Workstation** (generous limits):
+```bash
+MAX_CONCURRENT_WORKSPACES=10
+CPU_PER_WORKSPACE=2.0
+MEMORY_PER_WORKSPACE_MB=8192
+```
+
+**Shared Server** (conservative limits):
+```bash
+MAX_CONCURRENT_WORKSPACES=5
+CPU_PER_WORKSPACE=0.5
+MEMORY_PER_WORKSPACE_MB=2048
+```
 
 ## 🗂️ Integrated Git Server (Optional)
 

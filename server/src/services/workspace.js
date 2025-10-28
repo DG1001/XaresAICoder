@@ -12,6 +12,14 @@ class WorkspaceService {
     this.persistenceFile = path.join('/app', 'workspaces', 'projects.json');
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
 
+    // Resource limits configuration
+    this.limits = {
+      maxConcurrentWorkspaces: parseInt(process.env.MAX_CONCURRENT_WORKSPACES) || 3,
+      cpuPerWorkspace: parseFloat(process.env.CPU_PER_WORKSPACE) || 1.0,
+      memoryPerWorkspaceMB: parseInt(process.env.MEMORY_PER_WORKSPACE_MB) || 4096,
+      enableResourceLimits: process.env.ENABLE_RESOURCE_LIMITS !== 'false' // default true
+    };
+
     // Load existing projects on startup
     this.loadProjectsFromDisk();
 
@@ -33,9 +41,20 @@ class WorkspaceService {
       // Check workspace limit
       const userProjects = Array.from(this.projects.values())
         .filter(p => p.userId === userId);
-      
+
       if (userProjects.length >= this.maxWorkspacesPerUser) {
         throw new Error(`Maximum ${this.maxWorkspacesPerUser} workspaces per user`);
+      }
+
+      // Check concurrent workspace limit (new workspaces start running immediately)
+      if (this.limits.enableResourceLimits) {
+        const runningCount = await this.getRunningWorkspaceCount();
+        if (runningCount >= this.limits.maxConcurrentWorkspaces) {
+          throw new Error(
+            `Cannot create workspace: Maximum concurrent workspaces (${this.limits.maxConcurrentWorkspaces}) reached. ` +
+            `Please stop a running workspace first.`
+          );
+        }
       }
 
       // Generate unique project ID
@@ -225,11 +244,22 @@ class WorkspaceService {
       }
     }
 
+    // Check concurrent workspace limit before starting
+    if (this.limits.enableResourceLimits) {
+      const runningCount = await this.getRunningWorkspaceCount();
+      if (runningCount >= this.limits.maxConcurrentWorkspaces) {
+        throw new Error(
+          `Cannot start workspace: Maximum concurrent workspaces (${this.limits.maxConcurrentWorkspaces}) reached. ` +
+          `Please stop another workspace first.`
+        );
+      }
+    }
+
     try {
       const result = await dockerService.startWorkspace(projectId);
       project.status = result.status || 'running';
       project.lastAccessed = new Date();
-      
+
       return {
         success: true,
         message: result.message,
@@ -429,6 +459,12 @@ class WorkspaceService {
         .filter(p => p.status === 'running').length,
       maxWorkspacesPerUser: this.maxWorkspacesPerUser
     };
+  }
+
+  // Get count of currently running workspaces
+  async getRunningWorkspaceCount() {
+    const projects = Array.from(this.projects.values());
+    return projects.filter(p => p.status === 'running').length;
   }
 
   // Persistence methods
