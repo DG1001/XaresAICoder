@@ -157,6 +157,10 @@ curl http://localhost/api/health
 | `WORKSPACE_TIMEOUT_MINUTES` | 120 | Workspace auto-stop timeout |
 | `MAX_WORKSPACES_PER_USER` | 5 | Maximum workspaces per user |
 | `ENABLE_GIT_SERVER` | false | Enable integrated Forgejo Git server |
+| `MAX_CONCURRENT_WORKSPACES` | 3 | Maximum concurrent running workspaces |
+| `CPU_PER_WORKSPACE` | 1.0 | CPU cores allocated per workspace |
+| `MEMORY_PER_WORKSPACE_MB` | 4096 | RAM in MB per workspace |
+| `ENABLE_RESOURCE_LIMITS` | true | Enable resource limit enforcement |
 
 ### Git Server Configuration
 
@@ -428,19 +432,51 @@ docker compose up -d
 
 ### Resource Limits
 
-Edit `docker-compose.yml` to adjust resource limits:
+XaresAICoder supports configurable resource limits to prevent system overload. Configure via `.env` file:
 
-```yaml
-services:
-  # Per-workspace limits
-  deploy:
-    resources:
-      limits:
-        cpus: '2.0'
-        memory: 4G
-      reservations:
-        memory: 1G
+```bash
+# Maximum concurrent workspaces
+MAX_CONCURRENT_WORKSPACES=3
+
+# CPU cores per workspace
+CPU_PER_WORKSPACE=1.0
+
+# Memory in MB per workspace
+MEMORY_PER_WORKSPACE_MB=4096
+
+# Enable resource limit enforcement
+ENABLE_RESOURCE_LIMITS=true
 ```
+
+**Configuration Examples**:
+
+**Personal Development** (default):
+```bash
+MAX_CONCURRENT_WORKSPACES=3
+CPU_PER_WORKSPACE=1.0
+MEMORY_PER_WORKSPACE_MB=4096
+```
+
+**Powerful Workstation**:
+```bash
+MAX_CONCURRENT_WORKSPACES=10
+CPU_PER_WORKSPACE=2.0
+MEMORY_PER_WORKSPACE_MB=8192
+```
+
+**Shared Server** (conservative):
+```bash
+MAX_CONCURRENT_WORKSPACES=5
+CPU_PER_WORKSPACE=0.5
+MEMORY_PER_WORKSPACE_MB=2048
+```
+
+**Check Current Limits**:
+```bash
+curl http://localhost/api/limits
+```
+
+See [README - Resource Limits](../README.md#resource-limits) for detailed information.
 
 ### Storage Configuration
 

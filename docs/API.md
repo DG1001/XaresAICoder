@@ -328,6 +328,36 @@ Retrieves platform configuration information.
 }
 ```
 
+### Resource Limits Configuration
+
+Retrieves current resource limit configuration for workspace management.
+
+**Endpoint**: `GET /api/limits`
+
+**Response**:
+```json
+{
+  "maxConcurrentWorkspaces": 5,
+  "cpuPerWorkspace": 4.0,
+  "memoryPerWorkspaceMB": 8192,
+  "enableResourceLimits": true
+}
+```
+
+**Parameters**:
+- `maxConcurrentWorkspaces` (integer): Maximum number of simultaneously running workspaces
+- `cpuPerWorkspace` (number): Maximum CPU cores allocated per workspace
+- `memoryPerWorkspaceMB` (integer): Maximum RAM in megabytes per workspace
+- `enableResourceLimits` (boolean): Whether resource limit enforcement is enabled
+
+**Usage**:
+```bash
+# Check current resource limits
+curl http://localhost/api/limits
+```
+
+This endpoint is used by the frontend to dynamically populate resource selection options, ensuring users can only choose values within configured limits.
+
 ## Git Integration
 
 ### List Git Repositories
@@ -410,6 +440,7 @@ All error responses follow this format:
 | 401 | `INVALID_WORKSPACE_PASSWORD` | Incorrect workspace password |
 | 404 | `PROJECT_NOT_FOUND` | Project ID does not exist |
 | 409 | `WORKSPACE_LIMIT_EXCEEDED` | Maximum workspaces per user reached |
+| 409 | `CONCURRENT_LIMIT_REACHED` | Maximum concurrent workspaces reached |
 | 500 | `CONTAINER_CREATE_FAILED` | Failed to create Docker container |
 | 500 | `GIT_REPO_CREATE_FAILED` | Failed to create Git repository |
 | 503 | `SERVICE_UNAVAILABLE` | Docker daemon or system unavailable |

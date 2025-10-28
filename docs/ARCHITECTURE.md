@@ -216,9 +216,30 @@ deploy:
       memory: 1G
 ```
 
+**Resource Limits Configuration**:
+XaresAICoder implements configurable resource limits to prevent system overload:
+
+- **Concurrent Workspace Limits**: Maximum number of simultaneously running workspaces (default: 3)
+- **Per-Workspace CPU**: Maximum CPU cores per workspace (default: 1.0)
+- **Per-Workspace Memory**: Maximum RAM per workspace in MB (default: 4096)
+
+Configuration via environment variables:
+```bash
+MAX_CONCURRENT_WORKSPACES=3
+CPU_PER_WORKSPACE=1.0
+MEMORY_PER_WORKSPACE_MB=4096
+ENABLE_RESOURCE_LIMITS=true
+```
+
+**Enforcement Mechanisms**:
+- **Backend**: Concurrent limit checked in `createProject()` and `startProject()` methods
+- **Frontend**: Dynamic select box population prevents users from selecting values beyond limits
+- **Docker**: Resource limits enforced via Docker's HostConfig.Memory and HostConfig.CpuShares
+- **API Endpoint**: `/api/limits` exposes current configuration to frontend
+
 **System Services**:
 - nginx: 128MB RAM, 0.1 CPU
-- server: 512MB RAM, 0.5 CPU  
+- server: 512MB RAM, 0.5 CPU
 - forgejo: 1GB RAM, 0.5 CPU
 
 ### Volume Management

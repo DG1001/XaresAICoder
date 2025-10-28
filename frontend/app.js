@@ -103,6 +103,90 @@ class XaresAICoder {
                 protocol: 'http'
             };
         }
+
+        // Load resource limits
+        await this.loadResourceLimits();
+    }
+
+    async loadResourceLimits() {
+        try {
+            const response = await fetch(`${this.apiBase}/limits`);
+            const data = await response.json();
+
+            if (response.ok) {
+                this.limits = data;
+                console.log('Resource limits loaded:', this.limits);
+
+                // Populate select boxes based on limits
+                this.populateResourceSelects();
+            } else {
+                console.error('Failed to load resource limits:', data);
+                // Set default limits
+                this.limits = {
+                    maxConcurrentWorkspaces: 3,
+                    cpuPerWorkspace: 1.0,
+                    memoryPerWorkspaceMB: 4096,
+                    enableResourceLimits: true
+                };
+                this.populateResourceSelects();
+            }
+        } catch (error) {
+            console.error('Error loading resource limits:', error);
+            // Set default limits
+            this.limits = {
+                maxConcurrentWorkspaces: 3,
+                cpuPerWorkspace: 1.0,
+                memoryPerWorkspaceMB: 4096,
+                enableResourceLimits: true
+            };
+            this.populateResourceSelects();
+        }
+    }
+
+    populateResourceSelects() {
+        // Memory options in MB
+        const memoryOptions = [
+            { value: '1g', mb: 1024, label: '1 GB RAM' },
+            { value: '2g', mb: 2048, label: '2 GB RAM' },
+            { value: '4g', mb: 4096, label: '4 GB RAM' },
+            { value: '8g', mb: 8192, label: '8 GB RAM' },
+            { value: '16g', mb: 16384, label: '16 GB RAM' }
+        ];
+
+        // CPU options
+        const cpuOptions = [
+            { value: '1', cores: 1, label: '1 Core' },
+            { value: '2', cores: 2, label: '2 Cores' },
+            { value: '4', cores: 4, label: '4 Cores' },
+            { value: '8', cores: 8, label: '8 Cores' }
+        ];
+
+        // Filter options based on limits
+        const maxMemoryMB = this.limits.memoryPerWorkspaceMB || 4096;
+        const maxCpu = this.limits.cpuPerWorkspace || 2.0;
+
+        const availableMemoryOptions = memoryOptions.filter(opt => opt.mb <= maxMemoryMB);
+        const availableCpuOptions = cpuOptions.filter(opt => opt.cores <= maxCpu);
+
+        // Populate memory select
+        const memorySelect = document.getElementById('memoryLimit');
+        if (memorySelect) {
+            memorySelect.innerHTML = availableMemoryOptions.map((opt, index) => {
+                // Set 2GB as default, or the highest available if 2GB not available
+                const isDefault = opt.value === '2g' || (opt.mb === maxMemoryMB && maxMemoryMB < 2048);
+                return `<option value="${opt.value}" ${isDefault ? 'selected' : ''}>${opt.label}${isDefault && opt.value === '2g' ? ' (Default)' : ''}${opt.mb === maxMemoryMB ? ' (Max)' : ''}</option>`;
+            }).join('');
+        }
+
+        // Populate CPU select
+        const cpuSelect = document.getElementById('cpuCores');
+        if (cpuSelect) {
+            cpuSelect.innerHTML = availableCpuOptions.map((opt, index) => {
+                // Set 2 cores as default, or the highest available if 2 cores not available
+                const isDefault = opt.value === '2' || (opt.cores === maxCpu && maxCpu < 2);
+                return `<option value="${opt.value}" ${isDefault ? 'selected' : ''}>${opt.label}${isDefault && opt.value === '2' ? ' (Default)' : ''}${opt.cores === maxCpu ? ' (Max)' : ''}</option>`;
+            }).join('');
+        }
     }
 
     setupUI() {
