@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     ripgrep \
+    tmux \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages for Flask development using --break-system-packages
@@ -66,6 +67,13 @@ RUN /tmp/setup-scripts/workspace-init.sh
 
 # Configure code-server
 COPY config/code-server-config.yaml /home/coder/.config/code-server/config.yaml
+
+# Configure VS Code settings (including tmux terminal profile)
+RUN mkdir -p /home/coder/.local/share/code-server/User
+COPY config/settings.json /home/coder/.local/share/code-server/User/settings.json
+
+# Configure tmux with mouse support
+COPY config/.tmux.conf /home/coder/.tmux.conf
 
 # Set proper permissions for coder user
 RUN chown -R coder:coder /workspace /home/coder

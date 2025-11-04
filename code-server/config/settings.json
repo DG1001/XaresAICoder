@@ -1,0 +1,14 @@
+{
+  "terminal.integrated.profiles.linux": {
+    "bash": {
+      "path": "bash",
+      "icon": "terminal-bash"
+    },
+    "tmux": {
+      "path": "tmux",
+      "args": ["new-session", "-A", "-s", "vscode"],
+      "icon": "terminal-tmux"
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "bash"
+}
