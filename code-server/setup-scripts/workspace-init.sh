@@ -120,7 +120,7 @@ echo ""
 echo "🔄 Update Commands:"
 echo "  • update_aider (pip3)"
 echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex (npm)"
-echo "  • update_opencode (auto-updates)"
+echo "  • update_opencode (downloads and installs latest version)"
 echo ""
 echo "💡 Pro Tips:"
 echo "  • Type 'info' anytime to see this information"
@@ -181,14 +181,49 @@ echo "✅ OpenAI Codex CLI updated successfully!"
 UPDATE_CODEX_EOF
 chmod +x /usr/local/bin/update_codex
 
-# Update OpenCode SST (manual update instructions)
+# Update OpenCode SST
 cat > /usr/local/bin/update_opencode << 'UPDATE_OPENCODE_EOF'
 #!/bin/bash
 echo "🔄 Updating OpenCode SST..."
-echo "OpenCode SST updates automatically through its built-in update mechanism."
-echo "💡 To check for updates, run: opencode --version"
-echo "If an update is available, OpenCode SST will prompt you to update."
-echo "✅ OpenCode SST update check completed!"
+echo ""
+
+# Check current version
+CURRENT_VERSION=$(opencode --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+echo "Current version: ${CURRENT_VERSION:-unknown}"
+
+# Download latest version
+echo "Downloading latest version..."
+if curl -fsSL https://opencode.ai/install | bash; then
+    echo "✅ Download completed"
+
+    # Find the new binary
+    NEW_BINARY=""
+    if [ -f "$HOME/.opencode/bin/opencode" ]; then
+        NEW_BINARY="$HOME/.opencode/bin/opencode"
+    elif [ -f "$HOME/bin/opencode" ]; then
+        NEW_BINARY="$HOME/bin/opencode"
+    elif [ -f "$HOME/.local/bin/opencode" ]; then
+        NEW_BINARY="$HOME/.local/bin/opencode"
+    fi
+
+    if [ -n "$NEW_BINARY" ]; then
+        # Copy to system location
+        echo "Installing to /usr/local/bin/opencode..."
+        if sudo cp "$NEW_BINARY" /usr/local/bin/opencode && sudo chmod +x /usr/local/bin/opencode; then
+            NEW_VERSION=$(opencode --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+            echo "✅ OpenCode SST updated successfully!"
+            echo "New version: ${NEW_VERSION:-unknown}"
+        else
+            echo "❌ Failed to copy binary to /usr/local/bin (permission denied)"
+            echo "💡 Manual fix: sudo cp $NEW_BINARY /usr/local/bin/opencode"
+        fi
+    else
+        echo "⚠️  Could not find downloaded binary"
+        echo "💡 Try manual installation: curl -fsSL https://opencode.ai/install | bash"
+    fi
+else
+    echo "❌ Download failed"
+fi
 UPDATE_OPENCODE_EOF
 chmod +x /usr/local/bin/update_opencode
 
