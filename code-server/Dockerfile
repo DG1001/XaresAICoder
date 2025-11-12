@@ -28,6 +28,11 @@ RUN pip3 install --break-system-packages \
     black \
     pytest
 
+# Install uv (fast Python package installer)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mv /root/.local/bin/uv /usr/local/bin/uv && \
+    chmod +x /usr/local/bin/uv
+
 # Install AI coding tools
 # Install Aider AI pair programming tool
 RUN pip3 install --break-system-packages aider-chat
