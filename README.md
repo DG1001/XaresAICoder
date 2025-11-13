@@ -348,13 +348,23 @@ We welcome contributions! See our [Development Guide](docs/DEVELOPMENT.md) for d
 
 ## 📄 License
 
-This project is licensed under the **MIT License**.
+This project is licensed under the **Functional Source License 1.1 (FSL-1.1-MIT)**.
 
-- ✅ **Completely free** for personal, educational, and commercial use
-- ✅ No restrictions on modification or distribution
-- ✅ Open source and permissive licensing
+- ✅ **Free for self-hosting** - Install and run on your own infrastructure
+- ✅ **Internal use** - Use within your organization without restrictions
+- ✅ **Education & research** - Perfect for learning and academic use
+- ✅ **Professional services** - Deploy for clients as part of consulting services
+- ✅ **Automatically becomes MIT** - Converts to fully permissive MIT license after 2 years
+- ⚠️ **Non-competing use only** - Cannot be used to offer competing commercial SaaS
 
-See the [LICENSE](LICENSE) file for full details.
+**What this means:**
+- You can use XaresAICoder freely for internal development, education, research, and client deployments
+- You cannot offer XaresAICoder as a commercial cloud service that competes with us
+- After 2 years from each release, it becomes fully open source under MIT license
+
+**Why FSL?** We're building a sustainable business while maintaining our commitment to eventual full open source. This protects us from large cloud providers immediately cloning our work, while ensuring all non-competing uses remain free.
+
+See the [LICENSE](LICENSE) file for full legal details.
 
 ## 🆘 Support
 
