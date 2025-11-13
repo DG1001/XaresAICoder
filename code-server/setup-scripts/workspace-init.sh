@@ -105,10 +105,11 @@ echo "  • Gemini CLI - Google's AI coding assistant (pre-installed)"
 echo "  • Claude Code - Anthropic's AI coding tool (pre-installed)"
 echo "  • Qwen Code - AI workflow automation tool (pre-installed)"
 echo "  • OpenAI Codex - OpenAI's coding assistant (pre-installed)"
+echo "  • Crush - Multi-model AI coding agent (pre-installed)"
 echo ""
 echo "⚡ Setup Commands:"
 echo "  • setup_ai_tools - See all AI tool setup instructions"
-echo "  • setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen, setup_codex"
+echo "  • setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen, setup_codex, setup_crush"
 echo ""
 echo "📁 Current Directory: $(pwd)"
 if [ -d ".git" ]; then
@@ -119,7 +120,7 @@ fi
 echo ""
 echo "🔄 Update Commands:"
 echo "  • update_aider (pip3)"
-echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex (npm)"
+echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex, sudo update_crush (npm)"
 echo "  • update_opencode (downloads and installs latest version)"
 echo ""
 echo "💡 Pro Tips:"
@@ -180,6 +181,16 @@ npm install -g @openai/codex --force
 echo "✅ OpenAI Codex CLI updated successfully!"
 UPDATE_CODEX_EOF
 chmod +x /usr/local/bin/update_codex
+
+# Update Crush (requires sudo)
+cat > /usr/local/bin/update_crush << 'UPDATE_CRUSH_EOF'
+#!/bin/bash
+echo "🔄 Updating Crush..."
+echo "💡 Note: Run with sudo if you get permission errors"
+npm update -g @charmland/crush
+echo "✅ Crush updated successfully!"
+UPDATE_CRUSH_EOF
+chmod +x /usr/local/bin/update_crush
 
 # Update OpenCode SST
 cat > /usr/local/bin/update_opencode << 'UPDATE_OPENCODE_EOF'
@@ -381,6 +392,34 @@ setup_codex() {
     echo "   - Auth docs: https://github.com/openai/codex/blob/main/docs/authentication.md"
 }
 
+# Setup Crush
+setup_crush() {
+    echo "🤖 Setting up Crush..."
+    echo ""
+    echo "Crush is already installed!"
+    echo ""
+    echo "To get started:"
+    echo "1. Run: crush"
+    echo "2. Configure your preferred AI provider via environment variables:"
+    echo "   • ANTHROPIC_API_KEY for Anthropic Claude"
+    echo "   • OPENAI_API_KEY for OpenAI"
+    echo "   • GEMINI_API_KEY for Google Gemini"
+    echo "   • GROQ_API_KEY for Groq"
+    echo "   • OPENROUTER_API_KEY for OpenRouter"
+    echo ""
+    echo "💡 Features:"
+    echo "   - Multi-model AI support with in-session switching"
+    echo "   - Session-based context management"
+    echo "   - LSP integration for code understanding"
+    echo "   - MCP support for extensibility"
+    echo "   - Cross-platform terminal interface"
+    echo "   - Permission control for tool execution"
+    echo ""
+    echo "📚 Learn more:"
+    echo "   - GitHub: https://github.com/charmbracelet/crush"
+    echo "   - Docs: https://github.com/charmbracelet/crush#readme"
+}
+
 # Setup all AI tools
 setup_ai_tools() {
     echo "🚀 XaresAICoder AI Tools Setup"
@@ -422,6 +461,12 @@ setup_ai_tools() {
     echo "6️⃣  OpenAI Codex CLI"
     setup_codex
     echo ""
+    echo "----------------------------------------"
+    echo ""
+
+    echo "7️⃣  Crush"
+    setup_crush
+    echo ""
     echo "=============================="
     echo ""
     echo "✅ All AI tools are ready!"
@@ -433,6 +478,7 @@ setup_ai_tools() {
     echo "   • Claude Code: Agentic coding with deep codebase understanding"
     echo "   • Qwen Code: AI workflow automation and code exploration"
     echo "   • OpenAI Codex: OpenAI's terminal-based coding assistant"
+    echo "   • Crush: Multi-model AI with session management and LSP integration"
     echo ""
     echo "🔌 VS Code Extensions (install from marketplace):"
     echo "   • Continue: AI code completion and chat"
@@ -678,7 +724,7 @@ EXTENSIONS_EOF
 }
 
 # Export all functions
-export -f setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_qwen setup_codex setup_ai_tools
+export -f setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_qwen setup_codex setup_crush setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."

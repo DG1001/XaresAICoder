@@ -22,13 +22,14 @@ XaresAICoder provides a curated selection of AI coding assistants that work seam
 - **Continue** - AI code completion and chat
 - **Cline (Claude Dev)** - AI file editing and automation
 
-**⌨️ Command Line Tools** - Terminal-based AI assistants  
+**⌨️ Command Line Tools** - Terminal-based AI assistants
 - **OpenCode SST** - Multi-model AI with project analysis
 - **Aider** - AI pair programming with git integration
 - **Gemini CLI** - Google's AI for code generation
 - **Claude Code** - Anthropic's agentic coding tool
 - **Qwen Code** - AI workflow automation and code exploration
 - **OpenAI Codex CLI** - OpenAI's terminal-based coding assistant
+- **Crush** - Multi-model AI with session management
 
 ## VS Code Extensions
 
@@ -392,6 +393,129 @@ mode = "workspace-write"
 policy = "untrusted"
 ```
 
+### Crush - Multi-Model AI Coding Agent
+
+**Best for**: Multi-model flexibility, session-based workflows, cross-platform terminal coding
+
+#### Features
+- ✅ **Multi-Model Support** - Switch between OpenAI, Anthropic, Google, Groq, OpenRouter
+- ✅ **Session Management** - Maintain multiple work contexts per project
+- ✅ **In-Session Switching** - Change models without losing conversation context
+- ✅ **LSP Integration** - Enhanced code understanding via Language Server Protocol
+- ✅ **MCP Extensibility** - Model Context Protocol support for custom tools
+- ✅ **Cross-Platform** - Works on all major operating systems
+- ✅ **Permission Control** - Approve or whitelist tool executions
+- ✅ **Configuration Files** - Project-specific and global settings support
+
+#### Setup
+
+##### Quick Setup
+```bash
+# Use the built-in setup command
+setup_crush
+```
+
+##### Manual Setup
+```bash
+# Crush is pre-installed via npm
+
+# Set your preferred API key (choose one or more)
+export ANTHROPIC_API_KEY=your_key_here
+export OPENAI_API_KEY=your_key_here
+export GEMINI_API_KEY=your_key_here
+export GROQ_API_KEY=your_key_here
+export OPENROUTER_API_KEY=your_key_here
+```
+
+#### Usage
+```bash
+# Start interactive session
+crush
+
+# Start or resume named session
+crush --session my-feature
+
+# List all sessions
+crush --list-sessions
+
+# Switch models mid-session (type in Crush)
+/model claude-3-5-sonnet
+/model gpt-4
+/model gemini-pro
+
+# Use specific model from start
+crush --model anthropic/claude-3-5-sonnet-20241022
+```
+
+#### Configuration
+
+Create `.crush.json` in your project root or `~/.config/crush/crush.json` globally:
+
+```json
+{
+  "model": "anthropic/claude-3-5-sonnet-20241022",
+  "temperature": 0.7,
+  "tools": {
+    "allowed": ["read_file", "write_file", "run_command"]
+  },
+  "lsp": {
+    "enabled": true
+  },
+  "sessions": {
+    "auto_save": true,
+    "max_history": 100
+  }
+}
+```
+
+#### Example Session
+```bash
+$ crush
+🎀 Crush v1.0.0
+Using model: claude-3-5-sonnet
+
+> Analyze this codebase and suggest improvements
+
+[Crush analyzes files using LSP and provides suggestions]
+
+> /model gpt-4
+Switched to model: gpt-4
+
+> Implement the suggested changes
+[Crush makes changes with GPT-4 context preserved]
+
+> /save improvement-session
+Session saved: improvement-session
+```
+
+#### Key Features Explained
+
+**Session Management**:
+- Maintain separate contexts for different features/tasks
+- Resume work exactly where you left off
+- Share sessions with team members
+
+**Model Switching**:
+- Switch between models without losing context
+- Use different models for different subtasks
+- Cost optimization by using cheaper models when appropriate
+
+**LSP Integration**:
+- Understands your code structure via Language Server Protocol
+- Better code completion and suggestions
+- Intelligent refactoring capabilities
+
+**Permission System**:
+```bash
+# Approve each tool execution (default)
+crush
+
+# Auto-approve all (use with caution)
+crush --yolo
+
+# Configure approved tools in .crush.json
+```
+
 ## Setup Guide
 
 ### Quick Setup for All Tools
@@ -447,6 +571,7 @@ which gemini
 which claude
 which qwen-code
 which codex
+which crush
 
 # Test API connections
 opencode auth status
@@ -454,20 +579,21 @@ aider --version
 gemini --help
 qwen-code --version
 codex --version
+crush --version
 ```
 
 ## Tool Comparison
 
 ### Use Case Matrix
 
-| Task | Continue | Cline | OpenCode | Aider | Gemini | Claude Code | Qwen Code | Codex CLI |
-|------|----------|-------|----------|-------|--------|-------------|-----------|-----------|
-| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐ | ⭐ | ⭐⭐ |
-| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ |
-| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ❌ | ⭐⭐⭐ | ⭐ | ⭐ |
-| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ |
+| Task | Continue | Cline | OpenCode | Aider | Gemini | Claude Code | Qwen Code | Codex CLI | Crush |
+|------|----------|-------|----------|-------|--------|-------------|-----------|-----------|-------|
+| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐⭐ |
+| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ |
+| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ❌ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ |
+| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |
 
 ### Model Support
 
@@ -481,6 +607,7 @@ codex --version
 | **Claude Code** | ❌ | ✅ | ❌ | ❌ |
 | **Qwen Code** | ✅ | ❌ | ❌ | ✅ (Qwen) |
 | **Codex CLI** | ✅ | ❌ | ❌ | ❌ |
+| **Crush** | ✅ | ✅ | ✅ | ❌ |
 
 ## Best Practices
 
@@ -499,10 +626,11 @@ graph TD
 ```
 
 **Recommended Combinations**:
-- **Beginner**: Continue + OpenCode SST + Codex CLI
-- **Intermediate**: Continue + Aider + Gemini CLI + Qwen Code
+- **Beginner**: Continue + OpenCode SST + Crush
+- **Intermediate**: Continue + Aider + Gemini CLI + Crush
 - **Advanced**: All tools based on specific needs
-- **Team Lead**: OpenCode SST + Claude Code + Aider + Qwen Code
+- **Team Lead**: OpenCode SST + Claude Code + Aider + Crush
+- **Multi-Model Focus**: Crush + Continue + OpenCode SST
 - **Performance Focus**: Qwen Code + Claude Code + Aider
 
 ### 2. Workflow Integration

@@ -38,7 +38,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
 RUN pip3 install --break-system-packages aider-chat
 
 # Install Node.js AI tools (first install most tools, then OpenAI Codex separately)
-RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest
+RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest @charmland/crush
 
 # Install OpenAI Codex with environment variables to use system ripgrep
 ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg
