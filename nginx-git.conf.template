@@ -7,14 +7,22 @@
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_set_header X-Forwarded-Host $http_host;
             proxy_set_header X-Forwarded-Port $server_port;
-            
+
             # WebSocket support for Forgejo
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
             proxy_read_timeout 86400;
             proxy_send_timeout 86400;
-            
-            # Handle redirects properly
-            proxy_redirect ~^http://([^/]+)/(.*) ${PROTOCOL}://${BASE_DOMAIN}:${BASE_PORT}/git/$2;
+
+            # Handle redirects properly - let Forgejo use forwarded headers
+            # This prevents redirect loops by trusting Forgejo to build correct URLs
+            proxy_redirect off;
+
+            # Prevent caching issues that cause redirect loops and stale data
+            proxy_no_cache 1;
+            proxy_cache_bypass 1;
+            add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+            add_header Pragma "no-cache" always;
+            add_header Expires "0" always;
         }
