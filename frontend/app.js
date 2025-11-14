@@ -235,6 +235,10 @@ class XaresAICoder {
         const useGitRepositoryCheckbox = document.getElementById('useGitRepository');
         useGitRepositoryCheckbox.addEventListener('change', (e) => this.handleGitRepositoryToggle(e));
 
+        // Git URL auto-fill project name
+        const gitUrlInput = document.getElementById('gitUrl');
+        gitUrlInput.addEventListener('blur', (e) => this.handleGitUrlAutoFill(e));
+
         // Password protection checkbox
         const passwordProtectedCheckbox = document.getElementById('passwordProtected');
         passwordProtectedCheckbox.addEventListener('change', (e) => this.handlePasswordProtectionToggle(e));
@@ -368,6 +372,22 @@ class XaresAICoder {
             document.getElementById('gitUrl').value = '';
             document.getElementById('gitUsername').value = '';
             document.getElementById('gitToken').value = '';
+        }
+    }
+
+    handleGitUrlAutoFill(e) {
+        const gitUrl = e.target.value.trim();
+        if (!gitUrl) return;
+
+        // Use existing method to extract project name from Git URL
+        const projectName = this.extractProjectNameFromGitUrl(gitUrl);
+
+        // Auto-fill project name if it's currently empty
+        if (projectName) {
+            const projectNameInput = document.getElementById('projectName');
+            if (projectNameInput && !projectNameInput.value.trim()) {
+                projectNameInput.value = projectName;
+            }
         }
     }
 

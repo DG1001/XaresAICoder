@@ -234,7 +234,7 @@
                             </div>
 
                             <div class="form-group git-group" id="gitGroup" style="display: none;">
-                                <label for="gitUrl">Git Repository URL</label>
+                                <label for="gitUrl">Git Repository URL (HTTP/HTTPS only)</label>
                                 <input
                                     type="url"
                                     id="gitUrl"
@@ -243,9 +243,6 @@
                                     pattern="https?://.*"
                                     title="Please enter a valid HTTP or HTTPS Git URL"
                                 >
-                                <div class="form-help">
-                                    Only HTTP and HTTPS URLs are supported for security
-                                </div>
                             </div>
 
                             <div class="form-group git-group" id="gitUsernameGroup" style="display: none;">
@@ -257,9 +254,6 @@
                                     placeholder="your-github-username"
                                     maxlength="100"
                                 >
-                                <div class="form-help">
-                                    Your Git username (e.g., GitHub username) for private repositories.
-                                </div>
                             </div>
 
                             <div class="form-group git-group" id="gitTokenGroup" style="display: none;">
@@ -271,9 +265,6 @@
                                     placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                                     maxlength="255"
                                 >
-                                <div class="form-help">
-                                    Personal access token for private repositories.
-                                </div>
                             </div>
 
                             <div class="form-group checkbox-group">

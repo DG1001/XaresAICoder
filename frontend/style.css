@@ -447,18 +447,18 @@ body {
     margin-top: 16px;
 }
 
-.form-help {
-    font-size: 12px;
-    color: var(--vscode-text-muted);
-    margin-top: 4px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
+.git-group input {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 14px;
+    direction: ltr;
+    text-align: left;
 }
 
-.form-help::before {
-    content: "ℹ️";
-    font-size: 12px;
+.git-group label {
+    display: block;
+    text-align: left;
+    margin-bottom: 8px;
 }
 
 /* Git URL info in project list */
