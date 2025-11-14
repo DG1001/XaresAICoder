@@ -138,10 +138,19 @@ echo "  • update_aider (pip3)"
 echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex, sudo update_crush (npm)"
 echo "  • update_opencode (downloads and installs latest version)"
 echo ""
+# Show Git commands only if Git server is enabled
+if [ -n "$GIT_SERVER_ENABLED" ] && [ "$GIT_SERVER_ENABLED" = "true" ]; then
+    echo "🔧 Git Commands:"
+    echo "  • setup_local_remote - Add local Forgejo repository as remote"
+    echo ""
+fi
 echo "💡 Pro Tips:"
 echo "  • Type 'info' anytime to see this information"
 echo "  • Update individual AI tools with their specific update commands"
 echo "  • Ask AI assistants about your codebase and request features"
+if [ -n "$GIT_SERVER_ENABLED" ] && [ "$GIT_SERVER_ENABLED" = "true" ]; then
+    echo "  • Use 'setup_local_remote' to push Quick Clone repos to local Forgejo"
+fi
 echo ""
 INFO_EOF
 chmod +x /usr/local/bin/info
@@ -276,8 +285,23 @@ if [ -z "$GIT_SERVER_URL" ]; then
     exit 1
 fi
 
-# Get current directory name as default repo name
-DEFAULT_REPO_NAME=$(basename "$(pwd)")
+# Try to extract repository name from existing Git remote (GitHub, etc.)
+# Check 'origin' first, then 'github', then fall back to directory name
+DEFAULT_REPO_NAME=""
+
+# Try to get remote URL (origin or github)
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || git remote get-url github 2>/dev/null || echo "")
+
+if [ -n "$REMOTE_URL" ]; then
+    # Extract repo name from URL
+    # Handles: https://github.com/user/repo.git, git@github.com:user/repo.git, http://domain/user/repo.git
+    DEFAULT_REPO_NAME=$(echo "$REMOTE_URL" | sed -E 's|.*/([^/]+)\.git$|\1|' | sed -E 's|.*/([^/]+)$|\1|')
+fi
+
+# Fall back to current directory name if extraction failed
+if [ -z "$DEFAULT_REPO_NAME" ]; then
+    DEFAULT_REPO_NAME=$(basename "$(pwd)")
+fi
 
 # Prompt for repository name
 echo "Enter repository name (default: $DEFAULT_REPO_NAME):"
@@ -290,35 +314,55 @@ echo "   Name: $REPO_NAME"
 echo "   Description: Created from workspace"
 echo ""
 
-# Call the backend API to create Forgejo repository
+# Call Forgejo API to create repository
 echo "🔄 Creating repository on local Forgejo server..."
 
-# The API endpoint would need to be accessible from inside the container
-# This is a simplified version - in practice, you might need to pass auth tokens
-RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
-    -d "{\"name\":\"$REPO_NAME\",\"description\":\"Workspace repository\",\"private\":false}" \
-    "$GIT_SERVER_URL/api/v1/repos/create" 2>/dev/null || echo "")
+# Create Basic Auth credentials
+AUTH_HEADER=$(echo -n "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" | base64)
 
-if [ -z "$RESPONSE" ]; then
-    echo "⚠️  Unable to create repository via API"
+# Call Forgejo API to create repository
+RESPONSE=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Basic $AUTH_HEADER" \
+    -d "{\"name\":\"$REPO_NAME\",\"description\":\"Workspace repository\",\"private\":false,\"auto_init\":false,\"default_branch\":\"main\"}" \
+    "$GIT_SERVER_URL/api/v1/user/repos" 2>/dev/null)
+
+# Check if curl succeeded
+if [ $? -ne 0 ] || [ -z "$RESPONSE" ]; then
+    echo "❌ Failed to connect to Forgejo server"
     echo "💡 Manual setup required:"
     echo ""
-    echo "1. Create a repository on your Forgejo server"
-    echo "2. Add the remote manually:"
-    echo "   git remote add origin <forgejo-clone-url>"
-    echo "3. Push your code:"
-    echo "   git push -u origin --all"
+    echo "1. Visit: $GIT_SERVER_EXTERNAL_URL"
+    echo "2. Create a repository manually"
+    echo "3. Add the remote: git remote add origin <forgejo-clone-url>"
+    echo "4. Push your code: git push -u origin --all"
     exit 1
 fi
 
-# Extract clone URL from response (assuming JSON response)
+# Check for errors in response
+if echo "$RESPONSE" | grep -q '"message"'; then
+    ERROR_MSG=$(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)
+    echo "❌ Failed to create repository: $ERROR_MSG"
+    echo ""
+    echo "💡 The repository might already exist. Try:"
+    echo "   1. Use a different repository name"
+    echo "   2. Or visit $GIT_SERVER_EXTERNAL_URL to manage repositories"
+    exit 1
+fi
+
+# Extract clone URL from response
 GIT_REMOTE_URL=$(echo "$RESPONSE" | grep -o '"clone_url":"[^"]*"' | cut -d'"' -f4)
 
 if [ -z "$GIT_REMOTE_URL" ]; then
-    echo "⚠️  Repository creation response unclear"
-    echo "💡 Please check Forgejo web interface and add remote manually"
+    echo "⚠️  Could not parse repository URL from response"
+    echo "💡 Please check Forgejo web interface at: $GIT_SERVER_EXTERNAL_URL"
     exit 1
 fi
+
+# Convert external clone URL to internal one
+# External: http://localhost/git/developer/repo.git
+# Internal: http://user:pass@forgejo:3000/developer/repo.git (no /git/ prefix)
+GIT_INTERNAL_URL=$(echo "$GIT_REMOTE_URL" | sed "s|https\?://[^/]*/git/|http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/|")
 
 echo "✅ Repository created successfully!"
 echo ""
@@ -348,7 +392,7 @@ if [ -n "$CURRENT_ORIGIN" ]; then
             fi
 
             echo "🔄 Adding Forgejo as 'origin'..."
-            if git remote add origin "$GIT_REMOTE_URL" 2>/dev/null; then
+            if git remote add origin "$GIT_INTERNAL_URL" 2>/dev/null; then
                 echo "✅ Added Forgejo as 'origin'"
             else
                 echo "❌ Failed to add remote"
@@ -367,7 +411,7 @@ if [ -n "$CURRENT_ORIGIN" ]; then
             ;;
         2)
             echo "🔄 Adding Forgejo as 'forgejo' remote..."
-            if git remote add forgejo "$GIT_REMOTE_URL" 2>/dev/null; then
+            if git remote add forgejo "$GIT_INTERNAL_URL" 2>/dev/null; then
                 echo "✅ Added Forgejo as 'forgejo'"
                 echo ""
                 echo "💡 To push to Forgejo: git push forgejo main"
@@ -384,7 +428,7 @@ if [ -n "$CURRENT_ORIGIN" ]; then
 else
     # No origin exists, simply add Forgejo as origin
     echo "🔄 Adding Forgejo as 'origin'..."
-    if git remote add origin "$GIT_REMOTE_URL" 2>/dev/null; then
+    if git remote add origin "$GIT_INTERNAL_URL" 2>/dev/null; then
         echo "✅ Added Forgejo as 'origin'"
 
         # Push to origin

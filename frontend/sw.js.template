@@ -88,30 +88,37 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-  
+
   // Skip non-HTTP requests
   if (!request.url.startsWith('http')) {
     return;
   }
-  
+
+  // Skip service worker for Forgejo Git server - always go to network
+  // This prevents caching of Git pages and ensures fresh data
+  if (url.pathname.startsWith('/git/')) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   // Handle API requests with network-first strategy
   if (isApiRequest(request.url)) {
     event.respondWith(networkFirstStrategy(request));
     return;
   }
-  
+
   // Handle static assets with cache-first strategy
   if (isStaticAsset(request.url)) {
     event.respondWith(cacheFirstStrategy(request));
     return;
   }
-  
+
   // Handle navigation requests with network-first, fallback to offline page
   if (request.mode === 'navigate') {
     event.respondWith(navigationStrategy(request));
     return;
   }
-  
+
   // Default: try network first, then cache
   event.respondWith(networkFirstStrategy(request));
 });

@@ -40,6 +40,32 @@ class DockerService {
         envVars.push(`PASSWORD=${password}`);
       }
 
+      // Add Git server URL to all containers when Git server is enabled
+      // This allows setup_local_remote script to work in any workspace
+      const gitServerEnabled = process.env.ENABLE_GIT_SERVER === 'true';
+      if (gitServerEnabled) {
+        const protocol = process.env.PROTOCOL || 'http';
+        const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+        const basePort = process.env.BASE_PORT || '80';
+        const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
+        const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
+
+        // Build Git server URL (accessible from inside Docker network)
+        envVars.push(`GIT_SERVER_ENABLED=true`);
+        envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
+        envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
+        envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
+
+        // Build external Git server URL for display
+        let externalGitUrl;
+        if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
+          externalGitUrl = `${protocol}://${baseDomain}/git`;
+        } else {
+          externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
+        }
+        envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
+      }
+
       // Add Git repository configuration to environment if available
       if (gitRepository) {
         envVars.push(`GIT_REPO_NAME=${gitRepository.name}`);
