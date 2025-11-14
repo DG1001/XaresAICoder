@@ -116,6 +116,21 @@ if [ -d ".git" ]; then
     echo "🌿 Git Status:"
     git status --short --branch 2>/dev/null | head -5
     echo "    Use 'git status' for full status"
+    echo ""
+    echo "🔗 Git Remotes:"
+    REMOTES=$(git remote -v 2>/dev/null | grep fetch)
+    if [ -n "$REMOTES" ]; then
+        echo "$REMOTES" | sed 's/^/    /'
+        # Check if only external remote exists (no 'origin' or only 'github'/'upstream')
+        HAS_ORIGIN=$(git remote 2>/dev/null | grep -w "origin")
+        HAS_GITHUB=$(git remote 2>/dev/null | grep -w "github")
+        if [ -z "$HAS_ORIGIN" ] && [ -n "$HAS_GITHUB" ]; then
+            echo ""
+            echo "    💡 Tip: Add a local Forgejo remote with 'setup_local_remote'"
+        fi
+    else
+        echo "    No remotes configured"
+    fi
 fi
 echo ""
 echo "🔄 Update Commands:"
@@ -237,6 +252,164 @@ else
 fi
 UPDATE_OPENCODE_EOF
 chmod +x /usr/local/bin/update_opencode
+
+# Create setup_local_remote script to add Forgejo remote to existing workspaces
+cat > /usr/local/bin/setup_local_remote << 'SETUP_LOCAL_REMOTE_EOF'
+#!/bin/bash
+
+echo "🔧 Setting up Local Forgejo Remote"
+echo "===================================="
+echo ""
+
+# Check if we're in a Git repository
+if [ ! -d ".git" ]; then
+    echo "❌ Error: Not a Git repository"
+    echo "💡 Run 'git init' first to initialize a Git repository"
+    exit 1
+fi
+
+# Check if Forgejo server is available
+if [ -z "$GIT_SERVER_URL" ]; then
+    echo "❌ Error: Forgejo Git server is not available"
+    echo "💡 This workspace was created without Git server support"
+    echo "   Contact your administrator to enable the Git server"
+    exit 1
+fi
+
+# Get current directory name as default repo name
+DEFAULT_REPO_NAME=$(basename "$(pwd)")
+
+# Prompt for repository name
+echo "Enter repository name (default: $DEFAULT_REPO_NAME):"
+read -r REPO_NAME
+REPO_NAME=${REPO_NAME:-$DEFAULT_REPO_NAME}
+
+echo ""
+echo "📝 Repository configuration:"
+echo "   Name: $REPO_NAME"
+echo "   Description: Created from workspace"
+echo ""
+
+# Call the backend API to create Forgejo repository
+echo "🔄 Creating repository on local Forgejo server..."
+
+# The API endpoint would need to be accessible from inside the container
+# This is a simplified version - in practice, you might need to pass auth tokens
+RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+    -d "{\"name\":\"$REPO_NAME\",\"description\":\"Workspace repository\",\"private\":false}" \
+    "$GIT_SERVER_URL/api/v1/repos/create" 2>/dev/null || echo "")
+
+if [ -z "$RESPONSE" ]; then
+    echo "⚠️  Unable to create repository via API"
+    echo "💡 Manual setup required:"
+    echo ""
+    echo "1. Create a repository on your Forgejo server"
+    echo "2. Add the remote manually:"
+    echo "   git remote add origin <forgejo-clone-url>"
+    echo "3. Push your code:"
+    echo "   git push -u origin --all"
+    exit 1
+fi
+
+# Extract clone URL from response (assuming JSON response)
+GIT_REMOTE_URL=$(echo "$RESPONSE" | grep -o '"clone_url":"[^"]*"' | cut -d'"' -f4)
+
+if [ -z "$GIT_REMOTE_URL" ]; then
+    echo "⚠️  Repository creation response unclear"
+    echo "💡 Please check Forgejo web interface and add remote manually"
+    exit 1
+fi
+
+echo "✅ Repository created successfully!"
+echo ""
+
+# Check if 'origin' remote already exists
+CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null)
+
+if [ -n "$CURRENT_ORIGIN" ]; then
+    echo "🔀 Current 'origin' remote points to:"
+    echo "   $CURRENT_ORIGIN"
+    echo ""
+    echo "Do you want to:"
+    echo "  1) Rename current 'origin' to 'github' and add Forgejo as new 'origin'"
+    echo "  2) Add Forgejo as 'forgejo' remote (keep current 'origin')"
+    echo "  3) Cancel"
+    echo ""
+    read -p "Enter choice (1/2/3): " CHOICE
+
+    case $CHOICE in
+        1)
+            echo "🔄 Renaming 'origin' to 'github'..."
+            if git remote rename origin github 2>/dev/null; then
+                echo "✅ Renamed to 'github'"
+            else
+                echo "❌ Failed to rename remote"
+                exit 1
+            fi
+
+            echo "🔄 Adding Forgejo as 'origin'..."
+            if git remote add origin "$GIT_REMOTE_URL" 2>/dev/null; then
+                echo "✅ Added Forgejo as 'origin'"
+            else
+                echo "❌ Failed to add remote"
+                exit 1
+            fi
+
+            # Push to new origin
+            echo ""
+            echo "🔄 Pushing to Forgejo..."
+            if git push -u origin --all 2>/dev/null; then
+                echo "✅ Pushed all branches"
+            fi
+            if [ -n "$(git tag)" ]; then
+                git push origin --tags 2>/dev/null && echo "✅ Pushed tags"
+            fi
+            ;;
+        2)
+            echo "🔄 Adding Forgejo as 'forgejo' remote..."
+            if git remote add forgejo "$GIT_REMOTE_URL" 2>/dev/null; then
+                echo "✅ Added Forgejo as 'forgejo'"
+                echo ""
+                echo "💡 To push to Forgejo: git push forgejo main"
+            else
+                echo "❌ Failed to add remote"
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Cancelled"
+            exit 0
+            ;;
+    esac
+else
+    # No origin exists, simply add Forgejo as origin
+    echo "🔄 Adding Forgejo as 'origin'..."
+    if git remote add origin "$GIT_REMOTE_URL" 2>/dev/null; then
+        echo "✅ Added Forgejo as 'origin'"
+
+        # Push to origin
+        echo ""
+        echo "🔄 Pushing to Forgejo..."
+        if git push -u origin --all 2>/dev/null; then
+            echo "✅ Pushed all branches"
+        fi
+        if [ -n "$(git tag)" ]; then
+            git push origin --tags 2>/dev/null && echo "✅ Pushed tags"
+        fi
+    else
+        echo "❌ Failed to add remote"
+        exit 1
+    fi
+fi
+
+echo ""
+echo "✅ Setup complete!"
+echo ""
+echo "📋 Current Git remotes:"
+git remote -v
+
+SETUP_LOCAL_REMOTE_EOF
+chmod +x /usr/local/bin/setup_local_remote
 
 # Create a welcome script that runs when terminal opens
 cat > /home/coder/.bashrc << 'EOF'

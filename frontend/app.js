@@ -350,18 +350,11 @@ class XaresAICoder {
         const gitGroup = document.getElementById('gitGroup');
         const gitUsernameGroup = document.getElementById('gitUsernameGroup');
         const gitTokenGroup = document.getElementById('gitTokenGroup');
-        const createGitRepoCheckbox = document.getElementById('createGitRepo');
 
         if (e.target.checked) {
             gitGroup.style.display = 'block';
             gitUsernameGroup.style.display = 'block';
             gitTokenGroup.style.display = 'block';
-
-            // Disable "Create Git Repository" since we're cloning an existing one
-            if (createGitRepoCheckbox) {
-                createGitRepoCheckbox.disabled = true;
-                createGitRepoCheckbox.checked = false;
-            }
 
             // Focus on Git URL input
             const gitUrlInput = document.getElementById('gitUrl');
@@ -370,11 +363,6 @@ class XaresAICoder {
             gitGroup.style.display = 'none';
             gitUsernameGroup.style.display = 'none';
             gitTokenGroup.style.display = 'none';
-
-            // Re-enable "Create Git Repository" checkbox
-            if (createGitRepoCheckbox) {
-                createGitRepoCheckbox.disabled = false;
-            }
 
             // Clear Git inputs
             document.getElementById('gitUrl').value = '';

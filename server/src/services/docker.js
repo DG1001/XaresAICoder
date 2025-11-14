@@ -159,9 +159,9 @@ class DockerService {
         'git config user.email "user@xaresaicoder.local"'
       ];
 
-      // Add Git remote configuration if repository was created
-      // We'll check for environment variables in the container
-      commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then echo "Configuring Git remote for repository: $GIT_REPO_NAME"; git remote add origin "$GIT_REMOTE_URL"; git branch -M main; fi');
+      // Add Git remote configuration if repository was created (only when NOT cloning)
+      // For git-clone with createGitRepo, we'll set up remotes after cloning
+      commands.push('if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ] && [ -z "$GIT_CLONE_URL" ]; then echo "Configuring Git remote for repository: $GIT_REPO_NAME"; git remote add origin "$GIT_REMOTE_URL"; git branch -M main; fi');
 
       if (projectType === 'empty' || projectType === 'python-flask' || projectType === 'node-react' || projectType === 'java-spring') {
         console.log(`Adding empty project setup commands (legacy type: ${projectType})`);
@@ -202,15 +202,45 @@ if [ -n "$GIT_CLONE_URL" ]; then
     cd /workspace
     echo "✅ Repository cloned successfully to /workspace"
 
-    # Only set up persistent credentials for private repositories
-    if [ -n "$GIT_ACCESS_TOKEN" ]; then
-      git remote set-url origin "\$CLONE_URL"
-      echo "✅ Remote URL configured with credentials for future git operations"
-    fi
-
     # Configure Git user for this repository
     git config user.name "XaresAICoder User"
     git config user.email "user@xaresaicoder.local"
+
+    # Set up dual remotes if local Forgejo repository was also created
+    if [ -n "$GIT_REPO_NAME" ] && [ -n "$GIT_REMOTE_URL" ]; then
+      echo "🔀 Setting up dual remotes (local Forgejo + external repo)"
+
+      # Rename cloned 'origin' to 'github' for external repo
+      if git remote rename origin github 2>/dev/null; then
+        echo "✅ External repo configured as 'github' remote"
+      fi
+
+      # Add local Forgejo as 'origin' (main remote)
+      if git remote add origin "$GIT_REMOTE_URL" 2>/dev/null; then
+        echo "✅ Local Forgejo configured as 'origin' remote"
+
+        # Push all branches to local Forgejo
+        if git push -u origin --all 2>/dev/null; then
+          echo "✅ Pushed branches to local Forgejo"
+        fi
+
+        # Push tags if any exist
+        if [ -n "$(git tag)" ]; then
+          git push origin --tags 2>/dev/null && echo "✅ Pushed tags to local Forgejo"
+        fi
+
+        echo "📋 Git remotes configured:"
+        git remote -v
+      else
+        echo "⚠️  Failed to add local Forgejo remote"
+      fi
+    else
+      # Only set up persistent credentials for private repositories (single remote mode)
+      if [ -n "$GIT_ACCESS_TOKEN" ]; then
+        git remote set-url origin "\$CLONE_URL"
+        echo "✅ Remote URL configured with credentials for future git operations"
+      fi
+    fi
 
     echo "Repository contents:"
     git status --short || true
