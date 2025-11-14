@@ -57,7 +57,6 @@ BASE_DOMAIN=localhost
 BASE_PORT=80
 PROTOCOL=http
 ENABLE_GIT_SERVER=true
-WORKSPACE_TIMEOUT_MINUTES=240  # Longer timeout for development
 MAX_WORKSPACES_PER_USER=10     # More workspaces for testing
 ```
 
