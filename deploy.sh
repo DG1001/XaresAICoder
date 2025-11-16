@@ -435,25 +435,6 @@ deploy_application() {
     fi
     
     if [ "$git_server_enabled" = "true" ]; then
-        # Generate proper Forgejo ROOT_URL based on port configuration
-        local protocol=$(grep "^PROTOCOL=" .env | cut -d'=' -f2 | tr -d ' ')
-        local base_domain=$(grep "^BASE_DOMAIN=" .env | cut -d'=' -f2 | tr -d ' ')
-        local base_port=$(grep "^BASE_PORT=" .env | cut -d'=' -f2 | tr -d ' ')
-
-        # Set default values if not found
-        protocol=${protocol:-http}
-        base_domain=${base_domain:-localhost}
-        base_port=${base_port:-80}
-
-        # Build ROOT_URL without port for standard ports (80 for HTTP, 443 for HTTPS)
-        if { [ "$protocol" = "http" ] && [ "$base_port" = "80" ]; } || { [ "$protocol" = "https" ] && [ "$base_port" = "443" ]; }; then
-            export FORGEJO_ROOT_URL="${protocol}://${base_domain}/git/"
-            print_status "Forgejo ROOT_URL: ${protocol}://${base_domain}/git/ (standard port)"
-        else
-            export FORGEJO_ROOT_URL="${protocol}://${base_domain}:${base_port}/git/"
-            print_status "Forgejo ROOT_URL: ${protocol}://${base_domain}:${base_port}/git/ (custom port)"
-        fi
-
         # Start all services including Git server using profile
         print_status "Enabling Git server profile"
         if $DOCKER_COMPOSE_CMD $compose_files --profile git-server up $build_flag -d; then
