@@ -17,9 +17,10 @@
             proxy_read_timeout 86400;
             proxy_send_timeout 86400;
 
-            # Handle redirects properly - let Forgejo use forwarded headers
-            # This prevents redirect loops by trusting Forgejo to build correct URLs
-            proxy_redirect off;
+            # Handle redirects - rewrite for external access, preserve for localhost
+            # For localhost: proxy_redirect off prevents :80 redirect loops
+            # For external: rewrite Forgejo's http redirects to match BASE_DOMAIN
+            proxy_redirect ~^http://([^/]+)/(.*) ${PROTOCOL}://${BASE_DOMAIN}/git/$2;
 
             # Prevent caching issues that cause redirect loops and stale data
             proxy_no_cache 1;
