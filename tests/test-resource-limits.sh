@@ -1,5 +1,8 @@
 #!/bin/bash
 # Test script for resource limits feature
+# Run from project root: ./tests/test-resource-limits.sh
+
+cd "$(dirname "$0")/.." || exit 1
 
 set -e
 

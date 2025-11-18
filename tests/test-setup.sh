@@ -1,13 +1,16 @@
 #!/bin/bash
 
 # XaresAICoder Setup Test Script
+# Run from project root: ./tests/test-setup.sh
+
+cd "$(dirname "$0")/.." || exit 1
+
 echo "🚀 Testing XaresAICoder Setup..."
 
 # Check if required files exist
 echo "📁 Checking file structure..."
 required_files=(
     "docker-compose.yml"
-    "nginx.conf"
     ".env.example"
     "server/package.json"
     "server/Dockerfile"
@@ -16,7 +19,9 @@ required_files=(
     "frontend/style.css"
     "frontend/app.js"
     "README.md"
-    "docs/user-guide.md"
+    "nginx-base.conf.template"
+    "nginx-git.conf.template"
+    "deploy.sh"
 )
 
 for file in "${required_files[@]}"; do
@@ -43,10 +48,14 @@ else
     exit 1
 fi
 
-# Check Docker Compose
+# Check Docker Compose (v2 or v1)
 echo "🔧 Checking Docker Compose..."
-if command -v docker-compose &> /dev/null; then
-    echo "✅ Docker Compose installed"
+if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    echo "✅ Docker Compose v2 installed"
+    COMPOSE_CMD="docker compose"
+elif command -v docker-compose &> /dev/null; then
+    echo "✅ Docker Compose v1 installed"
+    COMPOSE_CMD="docker-compose"
 else
     echo "❌ Docker Compose not installed"
     exit 1
@@ -54,7 +63,7 @@ fi
 
 # Validate Docker Compose file
 echo "📋 Validating Docker Compose configuration..."
-if docker-compose config &> /dev/null; then
+if $COMPOSE_CMD config &> /dev/null; then
     echo "✅ Docker Compose configuration valid"
 else
     echo "❌ Docker Compose configuration invalid"
@@ -72,11 +81,11 @@ echo ""
 echo "🎉 Setup test completed successfully!"
 echo ""
 echo "Next steps:"
-echo "1. Build the code-server image:"
-echo "   cd code-server && docker build -t xares-aicoder-codeserver:latest . && cd .."
+echo "1. Run the deployment script:"
+echo "   ./deploy.sh"
 echo ""
-echo "2. Start the application:"
-echo "   docker-compose up --build"
+echo "2. Or manually start the application:"
+echo "   $COMPOSE_CMD up --build -d"
 echo ""
 echo "3. Open http://localhost in your browser"
 echo ""

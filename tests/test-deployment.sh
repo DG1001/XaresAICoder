@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # Test script for verifying XaresAICoder deployment configurations
+# Run from project root: ./tests/test-deployment.sh
+
+cd "$(dirname "$0")/.." || exit 1
 
 echo "=== XaresAICoder Deployment Configuration Test ==="
 echo
@@ -12,7 +15,7 @@ echo "   Environment: BASE_DOMAIN=$BASE_DOMAIN, BASE_PORT=$BASE_PORT, PROTOCOL=$
 
 # Generate nginx config snippet
 echo "   Generated nginx config:"
-sed 's/${BASE_DOMAIN}/localhost/g; s/${BASE_PORT}/80/g; s/${PROTOCOL}/http/g' nginx.conf.template | grep -A 3 "server_name"
+sed 's/${BASE_DOMAIN}/localhost/g; s/${BASE_PORT}/80/g; s/${PROTOCOL}/http/g' build/nginx.conf.template | grep -A 3 "server_name"
 
 echo
 echo "   Expected URLs:"
@@ -28,7 +31,7 @@ echo "   Environment: BASE_DOMAIN=$BASE_DOMAIN, BASE_PORT=$BASE_PORT, PROTOCOL=$
 
 # Generate nginx config snippet
 echo "   Generated nginx config:"
-sed 's/${BASE_DOMAIN}/ci.infra/g; s/${BASE_PORT}/8000/g; s/${PROTOCOL}/http/g' nginx.conf.template | grep -A 3 "server_name"
+sed 's/${BASE_DOMAIN}/ci.infra/g; s/${BASE_PORT}/8000/g; s/${PROTOCOL}/http/g' build/nginx.conf.template | grep -A 3 "server_name"
 
 echo
 echo "   Expected URLs:"
@@ -58,5 +61,5 @@ fi
 echo
 echo "=== Test Complete ==="
 echo "To deploy:"
-echo "  Localhost: docker-compose up --build"
-echo "  CI Server: cp .env.ci.infra .env && docker-compose up --build"
+echo "  Localhost: docker compose up --build"
+echo "  CI Server: cp .env.ci.infra .env && docker compose up --build"
