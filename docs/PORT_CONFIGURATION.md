@@ -251,4 +251,4 @@ BASE_PORT=443     # ❌ Wrong port for URL generation
 - [Installation Guide](INSTALLATION.md) - General installation instructions
 - [Architecture Overview](ARCHITECTURE.md) - System architecture details
 - [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
-- [Deployment Guide](../DEPLOYMENT.md) - Deployment-specific instructions
+- [Deployment Guide](DEPLOYMENT.md) - Deployment-specific instructions
