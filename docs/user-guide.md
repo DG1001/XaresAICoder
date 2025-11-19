@@ -63,6 +63,28 @@ setup_claude
 claude  # Start agentic coding session
 ```
 
+#### Qwen Code - AI Workflow Automation
+Best for comprehensive code analysis and workflow automation:
+```bash
+setup_qwen
+qwen  # Start interactive session
+```
+
+#### OpenAI Codex CLI - Terminal-Based Coding Assistant
+Best for terminal-based ChatGPT integration with MCP support:
+```bash
+setup_codex
+codex  # Start interactive coding session
+```
+
+#### Crush - Multi-Model AI Coding Agent
+Best for multi-model flexibility and session-based workflows:
+```bash
+setup_crush
+crush  # Start interactive session
+crush --session feature-name  # Named session management
+```
+
 ## AI Coding Tools Usage
 
 ### OpenCode SST Commands
@@ -92,6 +114,29 @@ claude  # Start agentic coding session
 - **Multi-file editing**: Understands entire codebase context
 - **Git workflows**: Advanced repository operations
 - **Complex reasoning**: Handles multi-step development tasks
+
+### Qwen Code Commands
+
+- **Interactive mode**: `qwen`
+- **Workflow automation**: Automated code analysis and generation
+- **Comprehensive analysis**: Deep understanding of project structure
+- **Multi-language support**: Works with various programming languages
+
+### OpenAI Codex CLI Commands
+
+- **Interactive session**: `codex`
+- **Terminal integration**: ChatGPT-like experience in terminal
+- **MCP support**: Model Context Protocol for enhanced capabilities
+- **Direct code assistance**: Quick coding help without leaving terminal
+
+### Crush Commands
+
+- **Start session**: `crush`
+- **Named sessions**: `crush --session feature-name` (project-specific contexts)
+- **List sessions**: `crush --list-sessions`
+- **Model switching**: `/model claude-3-5-sonnet` or `/model gpt-4` (during session)
+- **Multi-model support**: Switch between OpenAI, Anthropic, Google, Groq, OpenRouter
+- **LSP integration**: Enhanced code understanding via Language Server Protocol
 
 ### VS Code AI Extensions
 

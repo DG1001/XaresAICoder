@@ -436,4 +436,4 @@ tmpfs:
 
 ---
 
-[← Back to Installation](INSTALLATION.md) | [Next: Project Templates →](PROJECT_TEMPLATES.md)
+[← Back to Installation](INSTALLATION.md) | [Next: API Reference →](API.md)

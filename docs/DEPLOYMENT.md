@@ -69,16 +69,100 @@ HOST_PORT=8000
 
 Access: `http://dev.mycompany.internal:8000` → workspaces at `http://workspaceid.dev.mycompany.internal:8000`
 
-#### 3. Production with External SSL Proxy (sensem.de example)
-```bash
-BASE_DOMAIN=coder.sensem.de
-BASE_PORT=443           # SSL termination port
-PROTOCOL=https
-HOST_PORT=8080          # Internal container port (avoids conflicts)
+#### 3. Production with External SSL Proxy
+
+**Architecture:**
+```
+Internet → External nginx (SSL:443) → XaresAICoder nginx (HTTP:8080) → Server (HTTP:3000)
+          [SSL Termination]           [Subdomain Routing]              [API Backend]
 ```
 
-Access: `https://coder.sensem.de` → workspaces at `https://workspaceid.coder.sensem.de`
-(External nginx handles SSL and proxies to `localhost:8080`)
+**Use Case:** Production deployment with external nginx handling SSL/TLS termination
+
+**XaresAICoder Configuration:**
+```bash
+BASE_DOMAIN=coder.example.com
+BASE_PORT=443           # SSL termination port (for URL generation)
+PROTOCOL=https          # External protocol
+HOST_PORT=8080          # Internal container port (customize if needed)
+```
+
+**External nginx Configuration:**
+
+Add this to your main nginx server configuration:
+
+```nginx
+# WebSocket connection upgrade mapping (if not already present)
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+# XaresAICoder proxy server
+server {
+    listen 443 ssl http2;
+    server_name coder.example.com *.coder.example.com;
+
+    # SSL certificate configuration
+    ssl_certificate /path/to/your/wildcard.crt;
+    ssl_certificate_key /path/to/your/wildcard.key;
+
+    # Proxy to XaresAICoder internal nginx
+    location / {
+        proxy_pass http://127.0.0.1:8080;  # Match HOST_PORT in .env
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port 443;
+
+        # WebSocket support (CRITICAL for VS Code functionality)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+
+        # Buffer settings for large file uploads
+        client_max_body_size 512M;
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+}
+
+# HTTP to HTTPS redirect
+server {
+    listen 80;
+    server_name coder.example.com *.coder.example.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+**SSL Certificate Requirements:**
+- **Wildcard certificate** for `*.coder.example.com`
+- Must cover main domain and all subdomains:
+  - `coder.example.com` (main application)
+  - `{workspace-id}.coder.example.com` (workspace access)
+  - `{workspace-id}-{port}.coder.example.com` (application ports)
+
+**Verification:**
+```bash
+# Test nginx configuration
+sudo nginx -t
+sudo systemctl reload nginx
+
+# Verify SSL certificate
+openssl s_client -connect coder.example.com:443 -servername coder.example.com
+
+# Test main application
+curl -I https://coder.example.com
+
+# Test workspace subdomain DNS
+nslookup test-workspace.coder.example.com
+```
+
+Access: `https://coder.example.com` → workspaces at `https://workspaceid.coder.example.com`
 
 #### 4. Production Domain with Custom Port
 ```bash
@@ -165,7 +249,7 @@ cd ..
 
 - **Persistent Network**: `xares-aicoder-network` must exist before starting
 - **Port Conflicts**: Use `HOST_PORT` to avoid conflicts on production servers
-- **SSL Termination**: For production, use external SSL proxy (see `docs/DEPLOYMENT_SENSEM.md`)
+- **SSL Termination**: For production, see section "Production with External SSL Proxy" above
 
 ## DNS Configuration
 
@@ -264,6 +348,68 @@ To switch between environments:
    # Or:  docker-compose (legacy)
    ```
 
+### SSL Proxy Issues
+
+**WebSocket Connection Failures:**
+
+If VS Code workspaces show connection errors or frequent disconnects:
+
+1. **Verify WebSocket headers** in external nginx configuration
+2. **Check browser console** for WebSocket errors (F12 → Console)
+3. **Test WebSocket upgrade:**
+   ```bash
+   curl -I -H "Upgrade: websocket" -H "Connection: upgrade" https://workspace-id.coder.example.com
+   # Should return 101 Switching Protocols
+   ```
+4. **Common fix:** Ensure these nginx settings are present:
+   ```nginx
+   proxy_http_version 1.1;
+   proxy_set_header Upgrade $http_upgrade;
+   proxy_set_header Connection $connection_upgrade;
+   proxy_read_timeout 86400;
+   ```
+
+**SSL Certificate Problems:**
+
+If subdomains don't load or show certificate warnings:
+
+1. **Verify wildcard coverage:**
+   ```bash
+   openssl s_client -connect workspace-id.coder.example.com:443 \
+     -servername workspace-id.coder.example.com | grep subject
+   # Should show *.coder.example.com in certificate
+   ```
+2. **Check certificate chain:**
+   ```bash
+   openssl s_client -connect coder.example.com:443 -showcerts
+   ```
+3. **Ensure certificate includes:**
+   - Main domain: `coder.example.com`
+   - Wildcard: `*.coder.example.com`
+
+**Port Conflicts with External Proxy:**
+
+If XaresAICoder fails to start:
+
+1. **Check port availability:**
+   ```bash
+   sudo netstat -tlpn | grep :8080
+   # Or: sudo lsof -i :8080
+   ```
+2. **Change HOST_PORT in .env:**
+   ```bash
+   HOST_PORT=8081  # or another free port
+   ```
+3. **Update external nginx proxy_pass:**
+   ```nginx
+   proxy_pass http://127.0.0.1:8081;  # Match new HOST_PORT
+   ```
+4. **Restart both services:**
+   ```bash
+   docker compose down && docker compose up -d
+   sudo systemctl reload nginx
+   ```
+
 ### Health Checks
 
 ```bash
@@ -292,8 +438,8 @@ docker compose ps
 ## 📚 Additional Resources
 
 - **Quick Setup**: See `README.md` for streamlined installation
-- **Production SSL**: See `docs/DEPLOYMENT_SENSEM.md` for external SSL proxy setup
-- **Network Issues**: See `docs/NETWORK_TROUBLESHOOTING.md` for detailed network guidance
+- **Production SSL**: See "Production with External SSL Proxy" section above for external SSL setup
+- **Network Issues**: See `NETWORK_TROUBLESHOOTING.md` for detailed network guidance
 - **Credential Management**: See `CREDENTIAL_MANAGEMENT.md` for Git and AI tool integration
 
 ## 🚀 Management Commands

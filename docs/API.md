@@ -613,4 +613,4 @@ if __name__ == "__main__":
 
 ---
 
-[← Back to Project Templates](PROJECT_TEMPLATES.md) | [Next: AI Tools →](AI_TOOLS.md)
+[← Back to Architecture](ARCHITECTURE.md) | [Next: AI Tools →](AI_TOOLS.md)
