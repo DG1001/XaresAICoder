@@ -462,9 +462,15 @@ deploy_application() {
     BASE_DOMAIN=$(grep "^BASE_DOMAIN=" .env | cut -d'=' -f2)
     BASE_PORT=$(grep "^BASE_PORT=" .env | cut -d'=' -f2)
     PROTOCOL=$(grep "^PROTOCOL=" .env | cut -d'=' -f2)
-    
+    HOST_PORT=$(grep "^HOST_PORT=" .env | cut -d'=' -f2)
+    HOST_PORT=${HOST_PORT:-80}
+
     # Construct health check URL
-    if [ "$BASE_PORT" = "80" ] && [ "$PROTOCOL" = "http" ]; then
+    # For external SSL proxy setups (HTTPS/443 with different HOST_PORT), check internal service
+    if [ "$BASE_PORT" = "443" ] && [ "$PROTOCOL" = "https" ] && [ "$HOST_PORT" != "443" ]; then
+        HEALTH_URL="http://localhost:${HOST_PORT}/api/health"
+        print_status "External SSL proxy detected - checking internal service"
+    elif [ "$BASE_PORT" = "80" ] && [ "$PROTOCOL" = "http" ]; then
         HEALTH_URL="http://${BASE_DOMAIN}/api/health"
     elif [ "$BASE_PORT" = "443" ] && [ "$PROTOCOL" = "https" ]; then
         HEALTH_URL="https://${BASE_DOMAIN}/api/health"
