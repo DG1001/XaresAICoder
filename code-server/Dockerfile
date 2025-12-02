@@ -18,7 +18,21 @@ RUN apt-get update && apt-get install -y \
     unzip \
     ripgrep \
     tmux \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Squid CA certificate (if proxy is enabled)
+# This allows workspace containers to trust the proxy's SSL interception
+# Note: deploy.sh copies the real cert here when proxy is enabled (otherwise it's just a placeholder)
+COPY squid-ca-cert.crt /tmp/squid-ca-cert.crt
+RUN if [ -s /tmp/squid-ca-cert.crt ] && grep -q "BEGIN CERTIFICATE" /tmp/squid-ca-cert.crt 2>/dev/null; then \
+        echo "Installing Squid CA certificate for HTTPS proxy support..."; \
+        cp /tmp/squid-ca-cert.crt /usr/local/share/ca-certificates/squid-ca.crt && \
+        update-ca-certificates && \
+        echo "Squid CA certificate installed successfully"; \
+    else \
+        echo "No Squid CA certificate found - proxy not enabled"; \
+    fi
 
 # Install Python packages for Flask development using --break-system-packages
 RUN pip3 install --break-system-packages \

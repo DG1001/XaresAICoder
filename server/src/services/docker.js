@@ -15,6 +15,10 @@ class DockerService {
     this.codeServerImage = process.env.CODESERVER_IMAGE || 'xares-aicoder-codeserver:latest';
     // Disk usage display configuration
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
+    // Proxy configuration
+    this.enableProxy = process.env.ENABLE_PROXY === 'true';
+    this.proxyNetwork = 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
+    this.proxyHost = 'squid-proxy:3128'; // Squid proxy container
   }
 
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
@@ -34,6 +38,18 @@ class DockerService {
         `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
         `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
       ];
+
+      // Add proxy environment variables if proxy is enabled
+      if (this.enableProxy) {
+        // Uppercase (used by some tools)
+        envVars.push(`HTTP_PROXY=http://${this.proxyHost}`);
+        envVars.push(`HTTPS_PROXY=http://${this.proxyHost}`);
+        envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
+        // Lowercase (used by curl and many CLI tools)
+        envVars.push(`http_proxy=http://${this.proxyHost}`);
+        envVars.push(`https_proxy=http://${this.proxyHost}`);
+        envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
+      }
 
       if (passwordProtected && password) {
         authFlag = 'password';
@@ -95,6 +111,9 @@ class DockerService {
         envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
       }
 
+      // Use internal network when proxy is enabled, otherwise use default network
+      const workspaceNetwork = this.enableProxy ? this.proxyNetwork : this.network;
+
       const container = await this.docker.createContainer({
         Image: this.codeServerImage,
         name: containerName,
@@ -112,10 +131,14 @@ class DockerService {
         HostConfig: {
           Memory: memoryBytes,
           CpuShares: cpuShares,
-          NetworkMode: this.network,
+          NetworkMode: workspaceNetwork,
           RestartPolicy: {
             Name: 'unless-stopped'
           },
+          // Add DNS server when proxy is enabled (use dnsmasq on internal network)
+          ...(this.enableProxy && {
+            Dns: [process.env.DNSMASQ_IP || '172.30.0.2']  // dnsmasq container IP
+          }),
           // Only request GPU access if GPU is enabled
           ...(enableGpu && {
             DeviceRequests: [{
@@ -127,7 +150,7 @@ class DockerService {
         },
         NetworkingConfig: {
           EndpointsConfig: {
-            [this.network]: {
+            [workspaceNetwork]: {
               Aliases: [containerName]
             }
           }
@@ -184,6 +207,12 @@ class DockerService {
         'git config user.name "XaresAICoder User"',
         'git config user.email "user@xaresaicoder.local"'
       ];
+
+      // Configure sudo to preserve proxy environment variables when proxy is enabled
+      if (this.enableProxy) {
+        commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
+        commands.push('sudo chmod 440 /etc/sudoers.d/proxy');
+      }
 
       // Add Git remote configuration if repository was created (only when NOT cloning)
       // For git-clone with createGitRepo, we'll set up remotes after cloning

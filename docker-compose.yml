@@ -13,12 +13,13 @@ services:
     depends_on:
       - server
     networks:
-      - xares-aicoder-network
+      - xares-aicoder-network  # External access and server communication
+      - xares-internal         # Workspace access when proxy is enabled
     restart: unless-stopped
 
   server:
     image: ${SERVER_IMAGE:-xares-aicoder-server:local}
-    build: 
+    build:
       context: ./server
       dockerfile: Dockerfile
     environment:
@@ -35,6 +36,7 @@ services:
       - CODESERVER_IMAGE=${CODESERVER_IMAGE:-xares-aicoder-codeserver:latest}
       - ENABLE_GPU=${ENABLE_GPU:-false}
       - SHOW_DISK_USAGE=${SHOW_DISK_USAGE:-false}
+      - ENABLE_PROXY=${ENABLE_PROXY:-false}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
@@ -80,10 +82,58 @@ services:
       retries: 5
       start_period: 90s
 
+  squid-proxy:
+    build:
+      context: ./squid
+      dockerfile: Dockerfile
+    container_name: xaresaicoder-squid-proxy
+    profiles: ["proxy"]
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+      - ./squid/certs:/etc/squid/certs:ro
+      - squid_logs:/var/log/squid
+    ports:
+      - "3128:3128"  # HTTP proxy port (for debugging/monitoring)
+    networks:
+      - xares-aicoder-network  # Internet access
+      - xares-internal         # Workspace-facing network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "timeout", "2", "bash", "-c", "</dev/tcp/localhost/3128"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  dnsmasq:
+    image: andyshinn/dnsmasq:latest
+    container_name: xaresaicoder-dnsmasq
+    profiles: ["proxy"]
+    cap_add:
+      - NET_ADMIN
+    command: >
+      --no-daemon
+      --log-queries
+      --server=8.8.8.8
+      --server=8.8.4.4
+      --server=1.1.1.1
+    networks:
+      xares-aicoder-network:
+      xares-internal:
+        ipv4_address: ${DNSMASQ_IP:-172.30.0.2}  # Fixed IP for DNS server
+    restart: unless-stopped
+
 networks:
   xares-aicoder-network:
     external: true
+  xares-internal:
+    driver: bridge
+    internal: true  # No internet access - forces traffic through proxy
+    ipam:
+      config:
+        - subnet: ${INTERNAL_NETWORK_SUBNET:-172.30.0.0/16}
 
 volumes:
   workspace_data:
   forgejo_data:
+  squid_logs:

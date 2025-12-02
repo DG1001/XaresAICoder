@@ -115,6 +115,7 @@ build_code_server_image() {
 # Function to setup environment
 setup_environment() {
     local enable_git_server=${1:-false}
+    local enable_proxy=${2:-false}
     
     print_status "Setting up environment configuration..."
     
@@ -175,6 +176,48 @@ setup_environment() {
             echo "ENABLE_GIT_SERVER=false" >> .env
         fi
     fi
+
+    # Configure proxy based on flag
+    if [ "$enable_proxy" = true ]; then
+        print_status "Enabling proxy configuration..."
+        if grep -q "^ENABLE_PROXY=" .env; then
+            sed -i 's/^ENABLE_PROXY=.*/ENABLE_PROXY=true/' .env
+        else
+            echo "ENABLE_PROXY=true" >> .env
+        fi
+
+        # Check internal network subnet for conflicts
+        local current_subnet=$(grep "^INTERNAL_NETWORK_SUBNET=" .env | cut -d'=' -f2)
+        if [ -z "$current_subnet" ]; then
+            current_subnet="172.30.0.0/16"
+        fi
+
+        local suggested_subnet=$(check_internal_network_subnet "$current_subnet")
+        if [ $? -eq 0 ] && [ "$suggested_subnet" != "$current_subnet" ]; then
+            print_warning "Using alternative subnet: $suggested_subnet"
+            if grep -q "^INTERNAL_NETWORK_SUBNET=" .env; then
+                sed -i "s|^INTERNAL_NETWORK_SUBNET=.*|INTERNAL_NETWORK_SUBNET=$suggested_subnet|" .env
+            else
+                echo "INTERNAL_NETWORK_SUBNET=$suggested_subnet" >> .env
+            fi
+
+            # Update DNSMASQ_IP based on new subnet
+            local new_dnsmasq_ip=$(echo "$suggested_subnet" | sed 's|0\.0/16|0.2|')
+            if grep -q "^DNSMASQ_IP=" .env; then
+                sed -i "s|^DNSMASQ_IP=.*|DNSMASQ_IP=$new_dnsmasq_ip|" .env
+            else
+                echo "DNSMASQ_IP=$new_dnsmasq_ip" >> .env
+            fi
+
+            print_warning "IMPORTANT: Update squid/squid.conf line 34 to use: $suggested_subnet"
+        fi
+    else
+        if grep -q "^ENABLE_PROXY=" .env; then
+            sed -i 's/^ENABLE_PROXY=.*/ENABLE_PROXY=false/' .env
+        else
+            echo "ENABLE_PROXY=false" >> .env
+        fi
+    fi
     
     # Ensure HOST_PORT is set (fallback to BASE_PORT if not defined)
     if ! grep -q "^HOST_PORT=" .env; then
@@ -207,7 +250,7 @@ setup_environment() {
 # Function to setup network
 setup_network() {
     print_status "Setting up Docker network..."
-    
+
     if [ -f "./setup-network.sh" ]; then
         if ./setup-network.sh; then
             print_success "Docker network setup completed"
@@ -219,6 +262,85 @@ setup_network() {
         print_error "setup-network.sh not found"
         exit 1
     fi
+}
+
+# Function to check internal network subnet conflicts (for proxy mode)
+check_internal_network_subnet() {
+    local requested_subnet="${1:-172.30.0.0/16}"
+
+    print_status "Checking internal network subnet: $requested_subnet" >&2
+
+    # Get all existing network subnets
+    local existing_subnets=$(docker network ls --format "{{.Name}}" | while read network; do
+        docker network inspect "$network" --format '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | grep -v ": $" || true
+    done)
+
+    if [ -n "$existing_subnets" ]; then
+        # Check for overlaps using Python if available
+        if command -v python3 >/dev/null 2>&1; then
+            local conflicts=$(echo "$existing_subnets" | python3 -c "
+import sys
+import ipaddress
+
+requested = ipaddress.IPv4Network('$requested_subnet', strict=False)
+conflicts = []
+
+for line in sys.stdin:
+    if ':' in line:
+        network_name = line.split(':')[0].strip()
+        subnets = line.split(':')[1].strip().split()
+        for subnet in subnets:
+            if subnet and '/' in subnet:
+                try:
+                    existing = ipaddress.IPv4Network(subnet.strip(), strict=False)
+                    if requested.overlaps(existing):
+                        conflicts.append(f'{network_name} ({subnet})')
+                except:
+                    pass
+
+if conflicts:
+    print('\\n'.join(conflicts))
+" 2>/dev/null || true)
+
+            if [ -n "$conflicts" ]; then
+                print_warning "Internal network subnet $requested_subnet conflicts with:" >&2
+                echo "$conflicts" | sed 's/^/  - /' >&2
+                echo >&2
+
+                # Suggest alternative
+                local alternatives=("172.31.0.0/16" "172.25.0.0/16" "10.100.0.0/16")
+                for alt in "${alternatives[@]}"; do
+                    if ! echo "$existing_subnets" | python3 -c "
+import sys
+import ipaddress
+requested = ipaddress.IPv4Network('$alt', strict=False)
+for line in sys.stdin:
+    if ':' in line:
+        subnets = line.split(':')[1].strip().split()
+        for subnet in subnets:
+            if subnet and '/' in subnet:
+                try:
+                    existing = ipaddress.IPv4Network(subnet.strip(), strict=False)
+                    if requested.overlaps(existing):
+                        sys.exit(1)
+                except:
+                    pass
+" 2>/dev/null; then
+                        print_success "Suggested alternative subnet: $alt" >&2
+                        echo "$alt"
+                        return 0
+                    fi
+                done
+
+                print_warning "No automatic alternative found. Please configure manually." >&2
+                return 1
+            fi
+        fi
+    fi
+
+    print_success "No conflicts detected for internal network subnet" >&2
+    echo "$requested_subnet"
+    return 0
 }
 
 # Function to setup Git server
@@ -393,7 +515,8 @@ generate_nginx_config() {
 # Function to deploy application
 deploy_application() {
     local enable_git_server=${1:-false}
-    local use_registry=${2:-false}
+    local enable_proxy=${2:-false}
+    local use_registry=${3:-false}
     
     print_status "Deploying XaresAICoder application..."
     
@@ -406,22 +529,26 @@ deploy_application() {
     # Stop existing containers
     print_status "Stopping existing containers..."
     $DOCKER_COMPOSE_CMD down --remove-orphans
-    
-    # Prepare Docker Compose services list
-    local compose_services="server nginx"
+
+    # Read enabled features from .env
     local git_server_enabled=$(grep "^ENABLE_GIT_SERVER=" .env | cut -d'=' -f2)
-    
+    local proxy_enabled=$(grep "^ENABLE_PROXY=" .env | cut -d'=' -f2)
+
+    # Build profiles string based on enabled features
+    local profiles=""
     if [ "$git_server_enabled" = "true" ]; then
-        compose_services="$compose_services forgejo"
+        profiles="--profile git-server"
         print_status "Git server enabled - including Forgejo service"
-    else
-        print_status "Git server disabled - excluding Forgejo service"
     fi
-    
+    if [ "$proxy_enabled" = "true" ]; then
+        profiles="$profiles --profile proxy"
+        print_status "Proxy enabled - including Squid service"
+    fi
+
     # Determine compose files and build flags
     local compose_files=""
     local build_flag=""
-    
+
     if [ "$use_registry" = "true" ]; then
         # Use registry override to prevent building
         compose_files="-f docker-compose.yml -f docker-compose.registry.yml"
@@ -433,18 +560,18 @@ deploy_application() {
         build_flag="--build"
         print_status "Building and starting services..."
     fi
-    
-    if [ "$git_server_enabled" = "true" ]; then
-        # Start all services including Git server using profile
-        print_status "Enabling Git server profile"
-        if $DOCKER_COMPOSE_CMD $compose_files --profile git-server up $build_flag -d; then
-            print_success "Services started successfully (with Git server)"
+
+    # Start services with appropriate profiles
+    if [ -n "$profiles" ]; then
+        print_status "Starting services with profiles:$profiles"
+        if $DOCKER_COMPOSE_CMD $compose_files $profiles up $build_flag -d; then
+            print_success "Services started successfully"
         else
             print_error "Failed to start services"
             exit 1
         fi
     else
-        # Start only core services (without Git server profile)
+        # Start only core services (no profiles)
         print_status "Starting core services only"
         if $DOCKER_COMPOSE_CMD $compose_files up $build_flag -d; then
             print_success "Services started successfully (core only)"
@@ -662,6 +789,32 @@ setup_registry_images() {
     fi
 }
 
+# Function to generate Squid SSL CA certificate
+generate_proxy_cert() {
+    print_status "Checking Squid SSL CA certificate..."
+
+    if [ -f "./squid/certs/squid-ca-cert.pem" ]; then
+        print_success "SSL CA certificate already exists"
+    else
+        print_status "Generating SSL CA certificate for HTTPS interception..."
+        chmod +x ./squid/generate-ca-cert.sh
+
+        if ./squid/generate-ca-cert.sh; then
+            print_success "SSL CA certificate generated successfully"
+        else
+            print_error "Failed to generate SSL CA certificate"
+            exit 1
+        fi
+    fi
+
+    # Copy certificate to code-server directory for Docker build
+    if [ -f "./squid/certs/squid-ca-cert.crt" ]; then
+        print_status "Copying CA certificate to code-server build context..."
+        cp ./squid/certs/squid-ca-cert.crt ./code-server/squid-ca-cert.crt
+        print_success "CA certificate ready for code-server image build"
+    fi
+}
+
 # Function to show usage
 show_usage() {
     echo "Usage: $0 [options]"
@@ -672,6 +825,7 @@ show_usage() {
     echo "  --skip-network        Skip Docker network setup (use existing network)"
     echo "  --build-only          Only build the code-server image, don't deploy"
     echo "  --git-server          Enable integrated Forgejo Git server"
+    echo "  --enable-proxy        Enable Squid transparent proxy for network access control"
     echo "  --use-registry        Use pre-built images from GitHub Container Registry"
     echo "  --registry-owner      GitHub username/organization (default: auto-detect from git)"
     echo "  --registry-tag        Image tag to use from registry (default: latest)"
@@ -680,6 +834,8 @@ show_usage() {
     echo "Examples:"
     echo "  $0                           # Full deployment (recommended)"
     echo "  $0 --git-server             # Deploy with integrated Git server"
+    echo "  $0 --enable-proxy           # Deploy with network access proxy"
+    echo "  $0 --git-server --enable-proxy  # Deploy with both Git server and proxy"
     echo "  $0 --skip-build             # Deploy without rebuilding image"
     echo "  $0 --build-only             # Only build the code-server image"
     echo "  $0 --use-registry           # Use pre-built images from GitHub registry"
@@ -695,6 +851,7 @@ main() {
     local skip_network=false
     local build_only=false
     local enable_git_server=false
+    local enable_proxy=false
     local use_registry=false
     local registry_owner=""
     local registry_tag="latest"
@@ -720,6 +877,10 @@ main() {
                 ;;
             --git-server)
                 enable_git_server=true
+                shift
+                ;;
+            --enable-proxy)
+                enable_proxy=true
                 shift
                 ;;
             --use-registry)
@@ -761,7 +922,12 @@ main() {
         fi
         setup_registry_images "$registry_owner" "$registry_tag"
     fi
-    
+
+    # Generate proxy CA certificate if proxy is enabled
+    if [ "$enable_proxy" = true ]; then
+        generate_proxy_cert
+    fi
+
     # Build code-server image
     if [ "$skip_build" = false ]; then
         build_code_server_image
@@ -777,20 +943,20 @@ main() {
     
     # Setup environment
     if [ "$skip_env" = false ]; then
-        setup_environment "$enable_git_server"
+        setup_environment "$enable_git_server" "$enable_proxy"
     else
         print_status "Skipping environment setup"
     fi
-    
+
     # Setup Docker network (required for workspace persistence)
     if [ "$skip_network" = false ]; then
         setup_network
     else
         print_status "Skipping Docker network setup"
     fi
-    
+
     # Deploy application
-    deploy_application "$enable_git_server" "$use_registry"
+    deploy_application "$enable_git_server" "$enable_proxy" "$use_registry"
     
     # Show deployment information
     show_deployment_info

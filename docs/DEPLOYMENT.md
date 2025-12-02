@@ -184,7 +184,16 @@ Use the enhanced deployment script for any environment:
 # Full deployment with interactive setup
 ./deploy.sh
 
-# Quick deployment with existing config  
+# Deploy with integrated Git server
+./deploy.sh --git-server
+
+# Deploy with network access control (educational/enterprise)
+./deploy.sh --enable-proxy
+
+# Deploy with both Git server and proxy
+./deploy.sh --git-server --enable-proxy
+
+# Quick deployment with existing config
 ./deploy.sh --skip-env --skip-network
 
 # Skip image rebuild (faster updates)
@@ -439,6 +448,7 @@ docker compose ps
 
 - **Quick Setup**: See `README.md` for streamlined installation
 - **Production SSL**: See "Production with External SSL Proxy" section above for external SSL setup
+- **Network Access Control**: See `OUTGOING_PROXY.md` for configuring network restrictions and monitoring
 - **Network Issues**: See `NETWORK_TROUBLESHOOTING.md` for detailed network guidance
 - **Credential Management**: See `CREDENTIAL_MANAGEMENT.md` for Git and AI tool integration
 

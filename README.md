@@ -22,6 +22,7 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 - **CPU Cores Selection** - Allocate 1-8 CPU cores per workspace
 - **Resource Limits** - Configurable concurrent workspace limits and per-workspace resource caps
 - **GPU Acceleration Support** - Automatic GPU passthrough for ML/AI workloads
+- **Network Access Control** - Optional Squid proxy with whitelist-based filtering and audit logging
 - **Subdomain Port Forwarding** (e.g., `projectid-5000.localhost`)
 - **Real-time Container Management** with start/stop controls
 - **Optional Password Protection** for workspace security
@@ -192,7 +193,13 @@ For detailed information, see our comprehensive documentation:
 # Deploy with integrated Git server (Forgejo)
 ./deploy.sh --git-server
 
-# Skip image rebuild (faster for updates)  
+# Deploy with network access control (educational/enterprise use)
+./deploy.sh --enable-proxy
+
+# Deploy with both Git server and proxy
+./deploy.sh --git-server --enable-proxy
+
+# Skip image rebuild (faster for updates)
 ./deploy.sh --skip-build
 
 # See all options
