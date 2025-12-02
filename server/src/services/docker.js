@@ -213,7 +213,7 @@ class DockerService {
         commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
         commands.push('sudo chmod 440 /etc/sudoers.d/proxy');
 
-        // Configure Maven to use proxy (small file, ignored if Java/Maven not used)
+        // Configure Maven to use proxy and official repositories only
         commands.push('mkdir -p ~/.m2');
         commands.push('cat > ~/.m2/settings.xml << "EOF"\n' +
           '<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"\n' +
@@ -230,10 +230,19 @@ class DockerService {
           '      <nonProxyHosts>localhost|127.0.0.1|forgejo</nonProxyHosts>\n' +
           '    </proxy>\n' +
           '  </proxies>\n' +
+          '  <mirrors>\n' +
+          '    <!-- Use official Maven Central only (whitelisted in proxy) -->\n' +
+          '    <mirror>\n' +
+          '      <id>maven-central</id>\n' +
+          '      <mirrorOf>central</mirrorOf>\n' +
+          '      <name>Maven Central</name>\n' +
+          '      <url>https://repo.maven.apache.org/maven2</url>\n' +
+          '    </mirror>\n' +
+          '  </mirrors>\n' +
           '</settings>\n' +
           'EOF');
 
-        // Configure Gradle to use proxy (small file, ignored if Gradle not used)
+        // Configure Gradle to use proxy (gradle.properties)
         commands.push('mkdir -p ~/.gradle');
         commands.push('cat > ~/.gradle/gradle.properties << "EOF"\n' +
           'systemProp.http.proxyHost=squid-proxy\n' +
@@ -242,6 +251,27 @@ class DockerService {
           'systemProp.https.proxyHost=squid-proxy\n' +
           'systemProp.https.proxyPort=3128\n' +
           'systemProp.https.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
+          'EOF');
+
+        // Configure Gradle to use official repositories only (init.gradle)
+        commands.push('cat > ~/.gradle/init.gradle << "EOF"\n' +
+          '// Global Gradle configuration: Use official repositories only (whitelisted in proxy)\n' +
+          'allprojects {\n' +
+          '    buildscript {\n' +
+          '        repositories {\n' +
+          '            // Remove any configured repositories and use only whitelisted ones\n' +
+          '            clear()\n' +
+          '            mavenCentral()  // Official Maven Central\n' +
+          '            google()        // Official Google Maven\n' +
+          '        }\n' +
+          '    }\n' +
+          '    repositories {\n' +
+          '        // Remove any configured repositories and use only whitelisted ones\n' +
+          '        clear()\n' +
+          '        mavenCentral()  // Official Maven Central\n' +
+          '        google()        // Official Google Maven\n' +
+          '    }\n' +
+          '}\n' +
           'EOF');
       }
 
