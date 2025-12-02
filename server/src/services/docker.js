@@ -212,6 +212,37 @@ class DockerService {
       if (this.enableProxy) {
         commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
         commands.push('sudo chmod 440 /etc/sudoers.d/proxy');
+
+        // Configure Maven to use proxy (small file, ignored if Java/Maven not used)
+        commands.push('mkdir -p ~/.m2');
+        commands.push('cat > ~/.m2/settings.xml << "EOF"\n' +
+          '<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"\n' +
+          '          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n' +
+          '          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 \n' +
+          '                              https://maven.apache.org/xsd/settings-1.2.0.xsd">\n' +
+          '  <proxies>\n' +
+          '    <proxy>\n' +
+          '      <id>squid-proxy</id>\n' +
+          '      <active>true</active>\n' +
+          '      <protocol>http</protocol>\n' +
+          '      <host>squid-proxy</host>\n' +
+          '      <port>3128</port>\n' +
+          '      <nonProxyHosts>localhost|127.0.0.1|forgejo</nonProxyHosts>\n' +
+          '    </proxy>\n' +
+          '  </proxies>\n' +
+          '</settings>\n' +
+          'EOF');
+
+        // Configure Gradle to use proxy (small file, ignored if Gradle not used)
+        commands.push('mkdir -p ~/.gradle');
+        commands.push('cat > ~/.gradle/gradle.properties << "EOF"\n' +
+          'systemProp.http.proxyHost=squid-proxy\n' +
+          'systemProp.http.proxyPort=3128\n' +
+          'systemProp.http.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
+          'systemProp.https.proxyHost=squid-proxy\n' +
+          'systemProp.https.proxyPort=3128\n' +
+          'systemProp.https.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
+          'EOF');
       }
 
       // Add Git remote configuration if repository was created (only when NOT cloning)
