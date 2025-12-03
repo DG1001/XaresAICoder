@@ -250,6 +250,68 @@ Stops a running workspace container gracefully.
 }
 ```
 
+### Get Squid Proxy Logs
+
+Retrieves filtered Squid proxy logs for a specific workspace (only for proxy-enabled workspaces).
+
+**Endpoint**: `GET /api/projects/:projectId/squid-logs`
+
+**Query Parameters**:
+- `lines` (number, optional): Number of log lines to retrieve (default: 50, max: 500)
+
+**Response** (Success - 200):
+```json
+{
+  "success": true,
+  "ipAddress": "172.30.0.5",
+  "logs": [
+    {
+      "timestamp": "1733234567.123",
+      "duration": "4233",
+      "clientIP": "172.30.0.5",
+      "status": "TCP_TUNNEL/200",
+      "bytes": "5688",
+      "method": "CONNECT",
+      "url": "opencode.ai:443",
+      "rawLine": "1733234567.123   4233 172.30.0.5 TCP_TUNNEL/200 5688 CONNECT opencode.ai:443 - HIER_DIRECT/172.65.90.22 -"
+    },
+    {
+      "timestamp": "1733234888.186",
+      "duration": "0",
+      "clientIP": "172.30.0.5",
+      "status": "TCP_DENIED/403",
+      "bytes": "3369",
+      "method": "GET",
+      "url": "http://blocked-site.com/",
+      "rawLine": "1733234888.186      0 172.30.0.5 TCP_DENIED/403 3369 GET http://blocked-site.com/ - HIER_NONE/- text/html"
+    }
+  ]
+}
+```
+
+**Response** (Error - 404):
+```json
+{
+  "success": false,
+  "message": "Workspace not found or not using proxy"
+}
+```
+
+**Log Entry Fields**:
+- `timestamp`: Unix timestamp with milliseconds
+- `duration`: Request duration in milliseconds
+- `clientIP`: Workspace container IP address
+- `status`: Squid status code (e.g., TCP_TUNNEL/200, TCP_DENIED/403)
+- `bytes`: Response size in bytes
+- `method`: HTTP method (GET, POST, CONNECT, etc.)
+- `url`: Destination URL
+- `rawLine`: Original Squid log line
+
+**Status Codes**:
+- `TCP_TUNNEL/200`: Successful HTTPS connection through proxy
+- `TCP_DENIED/403`: Request blocked by proxy whitelist
+- `TCP_MISS/200`: Successful HTTP GET request (not cached)
+
 ## System Endpoints
 
 ### Health Check

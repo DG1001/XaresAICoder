@@ -22,7 +22,7 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 - **CPU Cores Selection** - Allocate 1-8 CPU cores per workspace
 - **Resource Limits** - Configurable concurrent workspace limits and per-workspace resource caps
 - **GPU Acceleration Support** - Automatic GPU passthrough for ML/AI workloads
-- **Network Access Control** - Optional Squid proxy with whitelist-based filtering and audit logging
+- **Per-Workspace Network Proxy** - Individual proxy control with Squid whitelist filtering and real-time logs
 - **Subdomain Port Forwarding** (e.g., `projectid-5000.localhost`)
 - **Real-time Container Management** with start/stop controls
 - **Optional Password Protection** for workspace security
@@ -57,7 +57,15 @@ Pre-configured workspace with multiple AI coding assistants:
 
 ## 🆕 Recent Updates
 
-### Project Organization & Grouping (Latest)
+### Per-Workspace Network Proxy & Logs Viewer (Latest)
+- ✅ **Per-Workspace Proxy Control** - Choose proxy settings individually for each workspace
+- ✅ **Real-time Logs Viewer** - Monitor workspace network activity with filtered Squid logs
+- ✅ **Auto-Refresh Logs** - Live monitoring with 3-second auto-refresh or manual refresh
+- ✅ **Network Activity Icons** - Visual indicators for proxy-enabled workspaces
+- ✅ **Backward Compatible** - Existing workspaces inherit global proxy settings
+- ✅ **Dynamic Container Discovery** - Automatic squid container detection by name pattern
+
+### Project Organization & Grouping
 - ✅ **Smart Project Groups** - Organize projects into custom groups with sidebar navigation
 - ✅ **Drag & Drop Management** - Intuitive file manager-style project organization
 - ✅ **Visual Group Management** - Create, rename, and delete groups with one-click actions

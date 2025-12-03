@@ -507,6 +507,39 @@ Use this flowchart to determine if the transparent proxy solution is appropriate
    - Yes, and initial whitelist unknown → Consider Level 4 (Admin Approval) for discovery, then move to Level 3
    - No → **Use Level 3 (Transparent Proxy)** ✅
 
+### Per-Workspace Proxy Control
+
+XaresAICoder supports **per-workspace proxy configuration**, allowing instructors to choose network access settings individually for each workspace. This provides flexibility for different use cases within the same platform.
+
+**Key Features**:
+- **Individual Control**: Enable/disable proxy per workspace during creation
+- **Global Default**: Set `ENABLE_PROXY=true` in `.env` to show proxy checkbox
+- **Visual Indicators**: Network icon (⊕) shows which workspaces use proxy
+- **Real-time Monitoring**: View filtered Squid logs for each proxy-enabled workspace
+- **Backward Compatible**: Existing workspaces inherit global proxy setting
+
+**Use Cases**:
+- **Unrestricted Workspaces**: For development that requires access to any domain (testing external APIs, exploring new services)
+- **Proxy-Enabled Workspaces**: For controlled environments (student assignments, assessments, production-like scenarios)
+- **Mixed Environments**: Run both types simultaneously on the same platform
+
+**Creating a Proxy-Enabled Workspace**:
+1. Enable `ENABLE_PROXY=true` in `.env` file
+2. During workspace creation, check "Use Network Proxy (Restricted Access)"
+3. Workspace will route all traffic through Squid proxy with whitelist enforcement
+4. Click the logs icon to view real-time proxy logs with auto-refresh
+
+**Creating an Unrestricted Workspace**:
+1. During workspace creation, uncheck the proxy checkbox
+2. Workspace will have direct internet access (bypasses Squid proxy)
+3. No network restrictions or monitoring
+
+**Viewing Proxy Logs**:
+- Proxy-enabled workspaces show a logs icon (document) next to the workspace name
+- Click to view last 50 proxy requests with timestamps, methods, URLs, and status codes
+- Auto-refresh toggle updates every 3 seconds for real-time monitoring
+- Logs filtered by workspace IP address for complete isolation
+
 ### Implementation Phases
 
 **Phase 1: Planning (1-2 weeks)**
