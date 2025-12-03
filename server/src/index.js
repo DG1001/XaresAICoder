@@ -22,6 +22,7 @@ app.get('/api/config', (req, res) => {
   const config = {
     gitServerEnabled: process.env.ENABLE_GIT_SERVER === 'true',
     showDiskUsage: process.env.SHOW_DISK_USAGE === 'true',
+    enableProxy: process.env.ENABLE_PROXY === 'true',
     baseDomain: process.env.BASE_DOMAIN || 'localhost',
     basePort: process.env.BASE_PORT || '80',
     protocol: process.env.PROTOCOL || 'http'

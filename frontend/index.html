@@ -319,6 +319,22 @@
                                     Automatically create a Git repository in the integrated Git server and configure the workspace
                                 </div>
                             </div>
+
+                            <div class="form-group checkbox-group" id="proxyGroup" style="display: none;">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="useProxy" name="useProxy" checked>
+                                    <span class="checkmark"></span>
+                                    <span class="checkbox-text">
+                                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/>
+                                        </svg>
+                                        Use Network Proxy (Restricted Access)
+                                    </span>
+                                </label>
+                                <div class="checkbox-description">
+                                    Route all network traffic through Squid proxy with whitelisted domains only (recommended for security)
+                                </div>
+                            </div>
                         </div>
                         
                         <button type="submit" class="btn-primary" id="createBtn">
@@ -723,6 +739,44 @@
                     Save Notes
                 </button>
                 <button class="btn-secondary" id="cancelNotesBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Squid Logs Modal -->
+    <div id="logsModal" class="modal" style="display: none;">
+        <div class="modal-content logs-modal-content">
+            <div class="modal-header">
+                <h3>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 8px; vertical-align: text-bottom;">
+                        <path d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/>
+                        <path d="M3 3h7v1H3V3zm0 2h7v1H3V5zm0 2h5v1H3V7z"/>
+                    </svg>
+                    <span id="logsModalTitle">Proxy Logs</span>
+                </h3>
+                <div class="logs-controls">
+                    <label class="checkbox-label" style="margin-right: 12px;">
+                        <input type="checkbox" id="autoRefreshLogs">
+                        <span class="checkmark"></span>
+                        <span class="checkbox-text">Auto-refresh</span>
+                    </label>
+                    <button class="btn-icon" id="refreshLogsBtn" title="Refresh Logs">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+                            <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
+                        </svg>
+                    </button>
+                </div>
+                <button class="modal-close" id="closeLogsModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="logs-info">
+                    <span>Workspace IP: <code id="workspaceIP">-</code></span>
+                    <span>Showing last <span id="logCount">50</span> requests</span>
+                </div>
+                <div class="logs-container">
+                    <pre id="logsContent">Loading logs...</pre>
+                </div>
             </div>
         </div>
     </div>

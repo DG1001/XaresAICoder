@@ -194,11 +194,11 @@ class XaresAICoder {
         const gitServerNav = document.querySelector('.nav-item[data-tab="git-server"]');
         const gitServerTab = document.getElementById('git-server-tab');
         const gitRepoGroup = document.getElementById('gitRepoGroup');
-        
+
         if (this.config.gitServerEnabled) {
             if (gitServerNav) gitServerNav.style.display = 'flex';
             if (gitRepoGroup) gitRepoGroup.style.display = 'block';
-            
+
             // Update Git server URL in the tab if available
             if (this.config.gitServerUrl) {
                 const gitServerLink = document.querySelector('#git-server-tab a[href="/git/"]');
@@ -209,6 +209,14 @@ class XaresAICoder {
         } else {
             if (gitServerNav) gitServerNav.style.display = 'none';
             if (gitRepoGroup) gitRepoGroup.style.display = 'none';
+        }
+
+        // Show/hide proxy checkbox based on configuration
+        const proxyGroup = document.getElementById('proxyGroup');
+        if (this.config.enableProxy) {
+            if (proxyGroup) proxyGroup.style.display = 'block';
+        } else {
+            if (proxyGroup) proxyGroup.style.display = 'none';
         }
     }
 
@@ -447,6 +455,7 @@ class XaresAICoder {
         const passwordProtected = formData.get('passwordProtected') === 'on';
         const workspacePassword = formData.get('workspacePassword');
         const createGitRepo = formData.get('createGitRepo') === 'on';
+        const useProxy = formData.get('useProxy') === 'on';
 
         const useGitRepository = formData.get('useGitRepository') === 'on';
         const gitUrl = formData.get('gitUrl')?.trim();
@@ -504,6 +513,11 @@ class XaresAICoder {
 
         if (createGitRepo && this.config.gitServerEnabled) {
             requestBody.createGitRepo = true;
+        }
+
+        // Add proxy setting if proxy is globally enabled
+        if (this.config.enableProxy) {
+            requestBody.useProxy = useProxy;
         }
 
         try {
@@ -857,6 +871,7 @@ class XaresAICoder {
                     <h4>
                         ${this.escapeHtml(project.projectName)}
                         ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
+                        ${project.useProxy ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Using Network Proxy (Restricted Access)"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/></svg>' : ''}
                         ${project.gitRepository && project.gitRepository.webUrl ? `<a href="${project.gitRepository.webUrl}" target="_blank" class="git-repo-link" title="View Git Repository: ${project.gitRepository.name}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>` : ''}
                         <button class="notes-btn" onclick="app.openNotesModal('${project.projectId}')" title="View/Edit Project Notes" aria-label="Project Notes">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -865,6 +880,7 @@ class XaresAICoder {
                             </svg>
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
+                        ${project.useProxy ? `<button class="logs-btn" onclick="app.openLogsModal('${project.projectId}')" title="View Squid Proxy Logs" aria-label="Proxy Logs"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/><path d="M3 3h7v1H3V3zm0 2h7v1H3V5zm0 2h5v1H3V7z"/></svg></button>` : ''}
                         ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}" style="margin-left: 12px;">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
                     </h4>
                     <div class="project-meta">
@@ -1882,6 +1898,118 @@ class XaresAICoder {
         if (currentLength > maxLength) {
             charCount.classList.add('error');
         }
+    }
+
+    // Squid Logs Modal Methods
+    async openLogsModal(projectId) {
+        try {
+            const project = this.projects.find(p => p.projectId === projectId);
+            if (!project) {
+                this.showError('Project not found');
+                return;
+            }
+
+            if (!project.useProxy) {
+                this.showError('This workspace is not using the proxy');
+                return;
+            }
+
+            // Set current project ID
+            this.currentLogsProjectId = projectId;
+
+            // Set modal title
+            document.getElementById('logsModalTitle').textContent = `Proxy Logs - ${project.projectName}`;
+
+            // Show modal
+            document.getElementById('logsModal').style.display = 'flex';
+
+            // Load logs
+            await this.loadSquidLogs(projectId);
+
+            // Setup auto-refresh
+            this.setupLogsAutoRefresh();
+
+        } catch (error) {
+            console.error('Error opening logs modal:', error);
+            this.showError('Failed to open logs viewer');
+        }
+    }
+
+    async loadSquidLogs(projectId, showLoader = true) {
+        try {
+            if (showLoader) {
+                document.getElementById('logsContent').textContent = 'Loading logs...';
+            }
+
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/squid-logs?lines=50`);
+            const data = await response.json();
+
+            if (response.ok) {
+                document.getElementById('workspaceIP').textContent = data.ipAddress || 'N/A';
+
+                if (!data.logs || data.logs.length === 0) {
+                    document.getElementById('logsContent').textContent = 'No proxy logs found for this workspace.';
+                } else {
+                    // Format logs for display
+                    const formattedLogs = data.logs.map(log => {
+                        if (!log.timestamp) {
+                            return log.rawLine;
+                        }
+                        const date = new Date(parseFloat(log.timestamp) * 1000).toISOString();
+                        return `${date} ${log.method} ${log.url} - ${log.status}`;
+                    }).join('\n');
+                    document.getElementById('logsContent').textContent = formattedLogs;
+                }
+            } else {
+                document.getElementById('logsContent').textContent = `Error: ${data.message}`;
+            }
+        } catch (error) {
+            console.error('Error loading squid logs:', error);
+            document.getElementById('logsContent').textContent = 'Failed to load logs.';
+        }
+    }
+
+    setupLogsAutoRefresh() {
+        const autoRefreshCheckbox = document.getElementById('autoRefreshLogs');
+        const refreshBtn = document.getElementById('refreshLogsBtn');
+        const closeBtn = document.getElementById('closeLogsModal');
+
+        // Clear any existing interval
+        if (this.logsRefreshInterval) {
+            clearInterval(this.logsRefreshInterval);
+            this.logsRefreshInterval = null;
+        }
+
+        // Manual refresh
+        refreshBtn.onclick = () => this.loadSquidLogs(this.currentLogsProjectId, false);
+
+        // Auto-refresh toggle
+        autoRefreshCheckbox.onchange = () => {
+            if (autoRefreshCheckbox.checked) {
+                // Start auto-refresh
+                this.logsRefreshInterval = setInterval(() => {
+                    this.loadSquidLogs(this.currentLogsProjectId, false);
+                }, 3000); // Refresh every 3 seconds
+            } else {
+                // Stop auto-refresh
+                if (this.logsRefreshInterval) {
+                    clearInterval(this.logsRefreshInterval);
+                    this.logsRefreshInterval = null;
+                }
+            }
+        };
+
+        // Clear interval when modal closes
+        closeBtn.onclick = () => {
+            if (this.logsRefreshInterval) {
+                clearInterval(this.logsRefreshInterval);
+                this.logsRefreshInterval = null;
+            }
+            // Reset checkbox
+            autoRefreshCheckbox.checked = false;
+            document.getElementById('logsModal').style.display = 'none';
+            this.currentLogsProjectId = null;
+        };
     }
 
     // Group Management Methods

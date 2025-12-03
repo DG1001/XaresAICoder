@@ -30,7 +30,7 @@ class DockerService {
       await this.ensureCodeServerImage();
 
       // Setup authentication and Git configuration
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitUsername = null, gitToken = null } = authOptions;
+      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitUsername = null, gitToken = null, useProxy = false } = authOptions;
       let authFlag = 'none'; // Default to no auth
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
@@ -39,8 +39,8 @@ class DockerService {
         `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
       ];
 
-      // Add proxy environment variables if proxy is enabled
-      if (this.enableProxy) {
+      // Add proxy environment variables if THIS workspace uses proxy
+      if (useProxy) {
         // Uppercase (used by some tools)
         envVars.push(`HTTP_PROXY=http://${this.proxyHost}`);
         envVars.push(`HTTPS_PROXY=http://${this.proxyHost}`);
@@ -111,8 +111,8 @@ class DockerService {
         envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
       }
 
-      // Use internal network when proxy is enabled, otherwise use default network
-      const workspaceNetwork = this.enableProxy ? this.proxyNetwork : this.network;
+      // Use internal network when THIS workspace uses proxy, otherwise use default network
+      const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
 
       const container = await this.docker.createContainer({
         Image: this.codeServerImage,
@@ -135,8 +135,8 @@ class DockerService {
           RestartPolicy: {
             Name: 'unless-stopped'
           },
-          // Add DNS server when proxy is enabled (use dnsmasq on internal network)
-          ...(this.enableProxy && {
+          // Add DNS server when THIS workspace uses proxy (use dnsmasq on internal network)
+          ...(useProxy && {
             Dns: [process.env.DNSMASQ_IP || '172.30.0.2']  // dnsmasq container IP
           }),
           // Only request GPU access if GPU is enabled
@@ -167,7 +167,7 @@ class DockerService {
       console.log(`Workspace ${containerName} is ready, now initializing project`);
 
       // Initialize git repository and project structure after container is ready
-      await this.initializeProject(container, projectType);
+      await this.initializeProject(container, projectType, useProxy);
       console.log(`Initialization completed for ${containerName}`);
 
       this.activeContainers.set(projectId, {
@@ -191,7 +191,7 @@ class DockerService {
     }
   }
 
-  async initializeProject(container, projectType) {
+  async initializeProject(container, projectType, useProxy = false) {
     console.log(`Starting project initialization for type: ${projectType}`);
     try {
       // Create a marker file to verify the function is running
@@ -201,15 +201,15 @@ class DockerService {
         AttachStderr: true
       });
       await markerExec.start();
-      
+
       const commands = [
         'git init',
         'git config user.name "XaresAICoder User"',
         'git config user.email "user@xaresaicoder.local"'
       ];
 
-      // Configure sudo to preserve proxy environment variables when proxy is enabled
-      if (this.enableProxy) {
+      // Configure sudo to preserve proxy environment variables when THIS workspace uses proxy
+      if (useProxy) {
         commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
         commands.push('sudo chmod 440 /etc/sudoers.d/proxy');
 
@@ -669,6 +669,116 @@ fi`.trim();
   extractProjectTypeFromEnv(envArray) {
     const projectTypeVar = envArray.find(env => env.startsWith('PROJECT_TYPE='));
     return projectTypeVar ? projectTypeVar.split('=')[1] : 'unknown';
+  }
+
+  // Get workspace container IP address from internal network (for proxy logs filtering)
+  async getWorkspaceIPAddress(projectId) {
+    const containerName = `workspace-${projectId}`;
+
+    try {
+      const container = this.docker.getContainer(containerName);
+      const inspectData = await container.inspect();
+
+      // Get IP from xares-internal network (proxy network)
+      const networks = inspectData.NetworkSettings.Networks;
+      const internalNetwork = networks['xaresaicoder_xares-internal'];
+
+      return internalNetwork ? internalNetwork.IPAddress : null;
+    } catch (error) {
+      console.error(`Error getting IP address for project ${projectId}:`, error);
+      return null;
+    }
+  }
+
+  // Helper method to convert Docker exec stream to string
+  async streamToString(stream) {
+    return new Promise((resolve, reject) => {
+      const stdout = [];
+      const stderr = [];
+
+      // Demultiplex Docker stream (removes 8-byte headers)
+      this.docker.modem.demuxStream(stream,
+        {
+          write: (chunk) => stdout.push(chunk)
+        },
+        {
+          write: (chunk) => stderr.push(chunk)
+        }
+      );
+
+      stream.on('end', () => {
+        const output = Buffer.concat(stdout).toString('utf8');
+        resolve(output);
+      });
+      stream.on('error', reject);
+    });
+  }
+
+  // Parse squid log format into structured data
+  parseSquidLogs(logText) {
+    // Squid log format: %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt
+    // Example: 1638360000.123 100 172.30.0.3 TCP_MISS/200 1234 GET http://example.com/path - HIER_DIRECT/93.184.216.34 text/html
+    return logText.split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        const parts = line.split(/\s+/);
+        if (parts.length < 7) {
+          return {
+            rawLine: line,
+            timestamp: null,
+            duration: null,
+            clientIP: null,
+            status: null,
+            bytes: null,
+            method: null,
+            url: null
+          };
+        }
+        return {
+          timestamp: parts[0],
+          duration: parts[1],
+          clientIP: parts[2],
+          status: parts[3],
+          bytes: parts[4],
+          method: parts[5],
+          url: parts[6],
+          rawLine: line
+        };
+      });
+  }
+
+  // Get squid logs filtered by workspace IP address
+  async getSquidLogsForWorkspace(ipAddress, lines = 50) {
+    try {
+      // Find squid container dynamically (more robust than hardcoding name)
+      const containers = await this.docker.listContainers();
+      const squidContainerInfo = containers.find(c =>
+        c.Names.some(name => name.includes('squid-proxy'))
+      );
+
+      if (!squidContainerInfo) {
+        console.error('Squid proxy container not found');
+        return [];
+      }
+
+      const squidContainer = this.docker.getContainer(squidContainerInfo.Id);
+
+      // Execute command to read and filter logs
+      const exec = await squidContainer.exec({
+        Cmd: ['bash', '-c', `tail -n 500 /var/log/squid/access.log | grep "${ipAddress}" | tail -n ${lines}`],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      const stream = await exec.start();
+      const output = await this.streamToString(stream);
+
+      // Parse squid logs
+      return this.parseSquidLogs(output);
+    } catch (error) {
+      console.error('Error reading squid logs:', error);
+      return [];
+    }
   }
 
   async startWorkspace(projectId) {

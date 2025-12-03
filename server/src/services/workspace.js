@@ -90,6 +90,7 @@ class WorkspaceService {
         createGitRepo: options.createGitRepo || false,
         gitRepository: null, // Will be set if Git repo is created
         gitUrl: options.gitUrl || null, // Store Git URL for cloned repositories
+        useProxy: options.useProxy !== undefined ? options.useProxy : (process.env.ENABLE_PROXY === 'true'), // Per-workspace proxy setting (defaults to global setting)
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'creating',
@@ -153,6 +154,10 @@ class WorkspaceService {
         }
       }
       
+      // Get project's useProxy setting
+      let project = this.projects.get(projectId);
+      const useProxy = project ? project.useProxy : (process.env.ENABLE_PROXY === 'true');
+
       // Create Docker container with auth options and Git config
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
         memoryLimit: options.memoryLimit || '2g',
@@ -162,11 +167,12 @@ class WorkspaceService {
         gitRepository: gitRepository,
         gitUrl: options.gitUrl || null,
         gitUsername: options.gitUsername || null,
-        gitToken: options.gitToken || null
+        gitToken: options.gitToken || null,
+        useProxy: useProxy
       });
 
       // Update project with workspace URL, Git info, and running status
-      const project = this.projects.get(projectId);
+      project = this.projects.get(projectId);
       if (project) {
         project.status = 'running';
         project.workspaceUrl = workspace.workspaceUrl;
@@ -381,7 +387,8 @@ class WorkspaceService {
           diskUsage: null, // Will be loaded asynchronously
           createdAt: p.createdAt,
           lastAccessed: p.lastAccessed,
-          notes: p.notes || ''
+          notes: p.notes || '',
+          useProxy: p.useProxy || false
         };
       } catch (error) {
         console.error(`Error getting status for project ${p.projectId}:`, error);
@@ -400,7 +407,8 @@ class WorkspaceService {
           diskUsage: null,
           createdAt: p.createdAt,
           lastAccessed: p.lastAccessed,
-          notes: p.notes || ''
+          notes: p.notes || '',
+          useProxy: p.useProxy || false
         };
       }
     });

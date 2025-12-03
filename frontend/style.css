@@ -1850,6 +1850,122 @@ code {
     }
 }
 
+/* Squid Logs Modal Styles */
+.logs-modal-content {
+    max-width: 900px;
+    width: 95%;
+    max-height: 90vh;
+}
+
+.logs-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    margin-right: 12px;
+}
+
+.logs-controls .checkbox-label {
+    margin: 0;
+    font-size: 13px;
+}
+
+.logs-controls .checkbox-text {
+    margin-left: 6px;
+}
+
+.logs-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: var(--vscode-bg-secondary);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--vscode-text-muted);
+}
+
+.logs-info code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    background: var(--vscode-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--vscode-text-accent);
+}
+
+.logs-container {
+    background: var(--vscode-bg);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 6px;
+    padding: 12px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.logs-container pre {
+    margin: 0;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--vscode-text);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.logs-btn {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    cursor: pointer;
+    color: var(--vscode-text-muted);
+    transition: color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.logs-btn:hover {
+    color: var(--vscode-text-accent);
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    cursor: pointer;
+    color: var(--vscode-text-muted);
+    transition: color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 4px;
+}
+
+.btn-icon:hover {
+    color: var(--vscode-text-accent);
+    background: var(--vscode-bg-secondary);
+}
+
+/* Responsive Logs Modal */
+@media (max-width: 768px) {
+    .logs-modal-content {
+        width: 98%;
+        max-height: 95vh;
+    }
+
+    .logs-container {
+        max-height: 400px;
+    }
+
+    .logs-container pre {
+        font-size: 11px;
+    }
+
+    .logs-controls {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+}
+
 /* Groups Section Styles */
 .groups-section {
     margin-top: 20px;

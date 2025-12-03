@@ -1,12 +1,13 @@
 const express = require('express');
 const workspaceService = require('../services/workspace');
+const dockerService = require('../services/docker');
 
 const router = express.Router();
 
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group } = req.body;
+    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group, useProxy } = req.body;
     
     if (!projectName) {
       return res.status(400).json({
@@ -78,7 +79,8 @@ router.post('/create', async (req, res) => {
       gitUrl: gitUrl || null,
       gitUsername: gitUsername || null,
       gitToken: gitToken || null,
-      group: group || null // Will default to 'Uncategorized' in service
+      group: group || null, // Will default to 'Uncategorized' in service
+      useProxy: useProxy !== undefined ? useProxy : (process.env.ENABLE_PROXY === 'true') // Default to global proxy setting
     });
     
     res.status(201).json({
@@ -322,6 +324,40 @@ router.get('/:projectId/disk-usage', async (req, res) => {
     const statusCode = error.message === 'Project not found' ? 404 : 500;
     res.status(statusCode).json({
       error: 'Failed to get disk usage',
+      message: error.message
+    });
+  }
+});
+
+// Get squid proxy logs for a project
+router.get('/:projectId/squid-logs', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { lines = 50 } = req.query;
+
+    // Get workspace IP address
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found or not using proxy'
+      });
+    }
+
+    // Get squid logs filtered by IP
+    const logs = await dockerService.getSquidLogsForWorkspace(ipAddress, parseInt(lines));
+
+    res.json({
+      success: true,
+      logs,
+      ipAddress
+    });
+
+  } catch (error) {
+    console.error('Get squid logs error:', error);
+    const statusCode = error.message === 'Project not found' ? 404 : 500;
+    res.status(statusCode).json({
+      error: 'Failed to get squid logs',
       message: error.message
     });
   }
