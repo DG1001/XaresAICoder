@@ -611,7 +611,8 @@ class XaresAICoder {
             memoryLimit: '2g',  // Default 2GB
             cpuCores: '2',      // Default 2 cores
             gitUrl,
-            group: this.selectedGroup || 'Uncategorized'
+            group: this.selectedGroup || 'Uncategorized',
+            useProxy: false     // Quick clone always uses unrestricted network
         };
 
         try {

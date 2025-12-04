@@ -262,7 +262,7 @@ class WorkspaceService {
     }
 
     try {
-      const result = await dockerService.startWorkspace(projectId);
+      const result = await dockerService.startWorkspace(projectId, project.useProxy);
       project.status = result.status || 'running';
       project.lastAccessed = new Date();
 

@@ -781,23 +781,23 @@ fi`.trim();
     }
   }
 
-  async startWorkspace(projectId) {
+  async startWorkspace(projectId, useProxy = false) {
     const containerName = `workspace-${projectId}`;
-    
+
     try {
       // Try to get container by name from Docker API
       const container = this.docker.getContainer(containerName);
       const containerInfo = await container.inspect();
-      
+
       if (containerInfo.State.Running) {
         return { success: true, message: 'Workspace is already running' };
       }
 
       // Check if container is orphaned (not connected to network)
-      const isOrphaned = await this.isContainerOrphaned(container);
+      const isOrphaned = await this.isContainerOrphaned(container, useProxy);
       if (isOrphaned) {
         console.log(`Container ${containerName} is orphaned, attempting network recovery...`);
-        const recoveryResult = await this.recoverOrphanedContainer(container, containerName);
+        const recoveryResult = await this.recoverOrphanedContainer(container, containerName, useProxy);
         if (!recoveryResult.success) {
           throw new Error(`Network recovery failed: ${recoveryResult.error}`);
         }
@@ -924,22 +924,25 @@ fi`.trim();
     }
   }
 
-  async isContainerOrphaned(container) {
+  async isContainerOrphaned(container, useProxy = false) {
     try {
       const containerInfo = await container.inspect();
       const networks = containerInfo.NetworkSettings.Networks;
-      
-      // Check if container is connected to our required network
-      if (!networks || !networks[this.network]) {
+
+      // Determine which network the container should be on
+      const requiredNetwork = useProxy ? this.proxyNetwork : this.network;
+
+      // Check if container is connected to the correct network
+      if (!networks || !networks[requiredNetwork]) {
         return true; // Orphaned - not connected to required network
       }
-      
+
       // Check if the network actually exists
       const networkExists = await this.ensureNetworkExists();
       if (!networkExists) {
         return true; // Network doesn't exist, container is orphaned
       }
-      
+
       return false; // Container is properly connected
     } catch (error) {
       console.error('Error checking container orphan status:', error);
@@ -947,22 +950,25 @@ fi`.trim();
     }
   }
 
-  async recoverOrphanedContainer(container, containerName) {
+  async recoverOrphanedContainer(container, containerName, useProxy = false) {
     try {
       console.log(`Attempting to recover orphaned container: ${containerName}`);
-      
+
+      // Determine which network the container should be on
+      const requiredNetwork = useProxy ? this.proxyNetwork : this.network;
+
       // Ensure the network exists
       const networkExists = await this.ensureNetworkExists();
       if (!networkExists) {
-        return { 
-          success: false, 
-          error: `Required network '${this.network}' does not exist. Run ./setup-network.sh first.` 
+        return {
+          success: false,
+          error: `Required network '${requiredNetwork}' does not exist. Run ./setup-network.sh first.`
         };
       }
-      
+
       // Get the network object
-      const network = this.docker.getNetwork(this.network);
-      
+      const network = this.docker.getNetwork(requiredNetwork);
+
       // Connect container to network with alias
       await network.connect({
         Container: containerName,
@@ -970,8 +976,8 @@ fi`.trim();
           Aliases: [containerName]
         }
       });
-      
-      console.log(`Successfully connected ${containerName} to network ${this.network}`);
+
+      console.log(`Successfully connected ${containerName} to network ${requiredNetwork}`);
       return { success: true, message: 'Container recovered successfully' };
       
     } catch (error) {
