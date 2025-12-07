@@ -17,11 +17,11 @@ class DockerService {
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
     // Security and isolation configuration
     this.securityConfig = {
-      pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 512,
+      pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 2048,
       maxFileDescriptors: parseInt(process.env.CONTAINER_MAX_FDS) || 4096,
       maxFileDescriptorsHard: parseInt(process.env.CONTAINER_MAX_FDS_HARD) || 8192,
-      maxProcessesPerUser: parseInt(process.env.CONTAINER_MAX_PROCS) || 512,
-      maxProcessesPerUserHard: parseInt(process.env.CONTAINER_MAX_PROCS_HARD) || 1024
+      maxProcessesPerUser: parseInt(process.env.CONTAINER_MAX_PROCS) || 2048,
+      maxProcessesPerUserHard: parseInt(process.env.CONTAINER_MAX_PROCS_HARD) || 4096
     };
   }
 
