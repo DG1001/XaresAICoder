@@ -36,3 +36,5 @@ Thumbs.db
 CLAUDE.md
 prompt.md
 docs/DEPLOYMENT_SENSEM.md
+code-server/squid-ca-*
+squid/certs/squid-ca-*
