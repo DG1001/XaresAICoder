@@ -15,6 +15,14 @@ class DockerService {
     this.codeServerImage = process.env.CODESERVER_IMAGE || 'xares-aicoder-codeserver:latest';
     // Disk usage display configuration
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
+    // Security and isolation configuration
+    this.securityConfig = {
+      pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 512,
+      maxFileDescriptors: parseInt(process.env.CONTAINER_MAX_FDS) || 4096,
+      maxFileDescriptorsHard: parseInt(process.env.CONTAINER_MAX_FDS_HARD) || 8192,
+      maxProcessesPerUser: parseInt(process.env.CONTAINER_MAX_PROCS) || 512,
+      maxProcessesPerUserHard: parseInt(process.env.CONTAINER_MAX_PROCS_HARD) || 1024
+    };
   }
 
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
@@ -113,6 +121,28 @@ class DockerService {
           Memory: memoryBytes,
           CpuShares: cpuShares,
           NetworkMode: this.network,
+          PidMode: '', // Isolated PID namespace (default, but explicit for security)
+          IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
+          PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
+          SecurityOpt: [
+            'no-new-privileges:true', // Prevents privilege escalation
+            'seccomp=unconfined' // Allow system calls needed for development tools (debuggers, etc.)
+          ],
+          // Drop all capabilities, then add back only what's needed for development
+          CapDrop: ['ALL'],
+          CapAdd: [
+            'CHOWN',           // Change file ownership
+            'DAC_OVERRIDE',    // Bypass file permission checks (needed for some dev tools)
+            'FOWNER',          // Bypass permission checks on file operations
+            'SETGID',          // Set GID (needed for some installers)
+            'SETUID',          // Set UID (needed for some installers)
+            'NET_BIND_SERVICE' // Bind to ports < 1024 (useful for web servers)
+          ],
+          // Resource limits to prevent abuse
+          Ulimits: [
+            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard },
+            { Name: 'nproc', Soft: this.securityConfig.maxProcessesPerUser, Hard: this.securityConfig.maxProcessesPerUserHard }
+          ],
           RestartPolicy: {
             Name: 'unless-stopped'
           },

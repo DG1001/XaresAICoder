@@ -35,6 +35,11 @@ services:
       - CODESERVER_IMAGE=${CODESERVER_IMAGE:-xares-aicoder-codeserver:latest}
       - ENABLE_GPU=${ENABLE_GPU:-false}
       - SHOW_DISK_USAGE=${SHOW_DISK_USAGE:-false}
+      - CONTAINER_PIDS_LIMIT=${CONTAINER_PIDS_LIMIT:-512}
+      - CONTAINER_MAX_FDS=${CONTAINER_MAX_FDS:-4096}
+      - CONTAINER_MAX_FDS_HARD=${CONTAINER_MAX_FDS_HARD:-8192}
+      - CONTAINER_MAX_PROCS=${CONTAINER_MAX_PROCS:-512}
+      - CONTAINER_MAX_PROCS_HARD=${CONTAINER_MAX_PROCS_HARD:-1024}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
