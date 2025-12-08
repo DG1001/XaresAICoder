@@ -19,6 +19,8 @@ class DockerService {
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
     this.proxyNetwork = 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
     this.proxyHost = 'squid-proxy:3128'; // Squid proxy container
+    // Workspace sudo privileges configuration
+    this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
     // Security and isolation configuration
     this.securityConfig = {
       pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 512,
@@ -144,7 +146,8 @@ class DockerService {
           IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
           PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
           SecurityOpt: [
-            'no-new-privileges:true', // Prevents privilege escalation
+            // Conditionally prevent privilege escalation based on sudo configuration
+            ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
             'seccomp=unconfined' // Allow system calls needed for development tools (debuggers, etc.)
           ],
           // Drop all capabilities, then add back only what's needed for development
