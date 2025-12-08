@@ -139,7 +139,8 @@ class DockerService {
             'FOWNER',          // Bypass permission checks on file operations
             'SETGID',          // Set GID (needed for some installers)
             'SETUID',          // Set UID (needed for some installers)
-            'NET_BIND_SERVICE' // Bind to ports < 1024 (useful for web servers)
+            'NET_BIND_SERVICE', // Bind to ports < 1024 (useful for web servers)
+            'AUDIT_WRITE'      // Write to audit logs (suppresses sudo audit warnings)
           ],
           // Resource limits to prevent abuse
           Ulimits: [

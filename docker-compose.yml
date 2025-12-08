@@ -40,6 +40,7 @@ services:
       - CONTAINER_MAX_FDS_HARD=${CONTAINER_MAX_FDS_HARD:-8192}
       - CONTAINER_MAX_PROCS=${CONTAINER_MAX_PROCS:-512}
       - CONTAINER_MAX_PROCS_HARD=${CONTAINER_MAX_PROCS_HARD:-1024}
+      - WORKSPACE_SUDO_ENABLED=${WORKSPACE_SUDO_ENABLED:-false}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
