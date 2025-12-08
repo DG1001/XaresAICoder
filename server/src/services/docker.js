@@ -15,6 +15,8 @@ class DockerService {
     this.codeServerImage = process.env.CODESERVER_IMAGE || 'xares-aicoder-codeserver:latest';
     // Disk usage display configuration
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
+    // Workspace sudo privileges configuration
+    this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
     // Security and isolation configuration
     this.securityConfig = {
       pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 2048,
@@ -125,7 +127,8 @@ class DockerService {
           IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
           PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
           SecurityOpt: [
-            'no-new-privileges:true', // Prevents privilege escalation
+            // Conditionally prevent privilege escalation based on sudo configuration
+            ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
             'seccomp=unconfined' // Allow system calls needed for development tools (debuggers, etc.)
           ],
           // Drop all capabilities, then add back only what's needed for development
