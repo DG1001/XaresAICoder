@@ -135,8 +135,8 @@ fi
 echo ""
 echo "🔄 Update Commands:"
 echo "  • update_aider (pip3)"
-echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex, sudo update_crush (npm)"
-echo "  • update_opencode (downloads and installs latest version)"
+echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex (npm)"
+echo "  • sudo update_crush, update_opencode (downloads and installs latest version)"
 echo ""
 # Show Git commands only if Git server is enabled
 if [ -n "$GIT_SERVER_ENABLED" ] && [ "$GIT_SERVER_ENABLED" = "true" ]; then
@@ -211,8 +211,89 @@ cat > /usr/local/bin/update_crush << 'UPDATE_CRUSH_EOF'
 #!/bin/bash
 echo "🔄 Updating Crush..."
 echo "💡 Note: Run with sudo if you get permission errors"
-npm update -g @charmland/crush
-echo "✅ Crush updated successfully!"
+echo ""
+
+# Fetch latest release version from GitHub API
+echo "📡 Fetching latest version from GitHub..."
+LATEST_VERSION=$(curl -s https://api.github.com/repos/charmbracelet/crush/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+' || echo "")
+
+if [ -z "$LATEST_VERSION" ]; then
+    echo "❌ Failed to fetch latest version from GitHub API"
+    exit 1
+fi
+
+echo "📦 Latest version: $LATEST_VERSION"
+
+# Determine architecture
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64) ARCH_NAME="x86_64" ;;
+    aarch64|arm64) ARCH_NAME="arm64" ;;
+    *) echo "❌ Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
+# Build download URL and directory name
+VERSION_NUM="${LATEST_VERSION#v}"
+DOWNLOAD_URL="https://github.com/charmbracelet/crush/releases/download/${LATEST_VERSION}/crush_${VERSION_NUM}_Linux_${ARCH_NAME}.tar.gz"
+EXTRACTED_DIR="crush_${VERSION_NUM}_Linux_${ARCH_NAME}"
+
+echo "⬇️  Downloading from: $DOWNLOAD_URL"
+
+# Download to temp directory
+TEMP_DIR=$(mktemp -d)
+cd "$TEMP_DIR" || exit 1
+
+if ! curl -L "$DOWNLOAD_URL" -o crush.tar.gz; then
+    echo "❌ Download failed"
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
+echo "📂 Extracting archive..."
+if ! tar -xzf crush.tar.gz; then
+    echo "❌ Extraction failed"
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
+# Check if expected directory exists
+if [ ! -d "$EXTRACTED_DIR" ]; then
+    echo "❌ Expected directory $EXTRACTED_DIR not found"
+    echo "Contents of temp directory:"
+    ls -la
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
+cd "$EXTRACTED_DIR" || exit 1
+
+if [ ! -f "crush" ]; then
+    echo "❌ Binary not found in archive"
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
+echo "📦 Installing Crush..."
+mv crush /usr/local/bin/
+chmod +x /usr/local/bin/crush
+
+# Optional: Install completions and man pages
+if [ -d "completions" ]; then
+    mkdir -p /etc/bash_completion.d
+    cp completions/crush.bash /etc/bash_completion.d/ 2>/dev/null || true
+fi
+
+if [ -d "manpages" ]; then
+    mkdir -p /usr/share/man/man1
+    cp manpages/* /usr/share/man/man1/ 2>/dev/null || true
+fi
+
+# Cleanup
+cd /
+rm -rf "$TEMP_DIR"
+
+echo "✅ Crush updated successfully to $LATEST_VERSION!"
+crush --version
 UPDATE_CRUSH_EOF
 chmod +x /usr/local/bin/update_crush
 
