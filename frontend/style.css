@@ -1943,6 +1943,36 @@ code {
     color: var(--vscode-text-accent);
 }
 
+/* Success Toast Notification */
+.success-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #2ea043;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateX(100px);
+    transition: all 0.3s ease;
+    z-index: 10000;
+    max-width: 400px;
+}
+
+.success-toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.success-toast svg {
+    flex-shrink: 0;
+}
+
 .btn-icon {
     background: none;
     border: none;

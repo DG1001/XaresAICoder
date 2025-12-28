@@ -1267,6 +1267,28 @@ class XaresAICoder {
         modal.style.display = 'flex';
     }
 
+    showSuccess(message) {
+        // Create a temporary toast notification for success messages
+        const toast = document.createElement('div');
+        toast.className = 'success-toast';
+        toast.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 8px;">
+                <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm3.354 5.646a.5.5 0 0 0-.708-.708L7 8.586 5.354 6.94a.5.5 0 1 0-.708.708l2 2a.5.5 0 0 0 .708 0l4-4z"/>
+            </svg>
+            ${this.escapeHtml(message)}
+        `;
+        document.body.appendChild(toast);
+
+        // Show toast
+        setTimeout(() => toast.classList.add('show'), 10);
+
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
     hideErrorModal() {
         const modal = document.getElementById('errorModal');
         modal.style.display = 'none';
@@ -2046,7 +2068,7 @@ class XaresAICoder {
                                 <button class="modal-close" onclick="document.getElementById('aiConversationsModal').remove()">&times;</button>
                             </div>
                         </div>
-                        <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 0;">
+                        <div class="modal-body" style="overflow-y: auto; max-height: calc(90vh - 180px);">
                             <p><strong>Total Conversations:</strong> ${data.count}</p>
                             ${data.count === 0 ? '<p>No AI conversations recorded yet for this workspace.</p>' : ''}
                             <div class="conversation-list" style="margin-top: 20px;">
@@ -2063,14 +2085,14 @@ class XaresAICoder {
                                                 <button class="btn-danger" style="font-size: 11px; padding: 2px 6px;" onclick="app.deleteConversation('${projectId}', '${timestamp}', ${idx})" title="Delete this conversation">Delete</button>
                                             </div>
                                             <div id="conv-${idx}" class="conversation-body" style="display: none;">
-                                                <pre style="background: var(--vscode-editor-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">${JSON.stringify(conv, null, 2)}</pre>
+                                                <pre style="background: var(--vscode-editor-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">${this.escapeHtml(JSON.stringify(conv, null, 2))}</pre>
                                             </div>
                                         </div>
                                     `;
                                 }).join('')}
                             </div>
                         </div>
-                        <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding-top: 15px; border-top: 1px solid var(--vscode-panel-border);">
+                        <div class="modal-footer">
                             <button class="btn-primary" onclick="app.generateDocumentation('${projectId}')">Generate Documentation</button>
                             <button class="btn-secondary" onclick="document.getElementById('aiConversationsModal').remove()">Close</button>
                         </div>

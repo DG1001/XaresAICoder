@@ -69,14 +69,62 @@ class LLMConversationLogger:
                 }
 
             if log_data['response']['body']:
-                resp_json = json.loads(log_data['response']['body'])
-                log_data['parsed_response'] = {
-                    'id': resp_json.get('id'),
-                    'model': resp_json.get('model'),
-                    'choices': resp_json.get('choices'),
-                    'content': resp_json.get('content'),
-                    'usage': resp_json.get('usage')
-                }
+                resp_body = log_data['response']['body']
+
+                # Check if response is SSE format (Anthropic streaming)
+                if resp_body.startswith('event:') or '\nevent:' in resp_body:
+                    # Parse SSE response
+                    content_blocks = []
+                    usage_data = None
+                    model_name = None
+                    message_id = None
+
+                    for line in resp_body.split('\n'):
+                        if line.startswith('data: '):
+                            try:
+                                event_data = json.loads(line[6:])  # Remove 'data: ' prefix
+
+                                # Extract model and ID from message_start
+                                if event_data.get('type') == 'message_start':
+                                    msg = event_data.get('message', {})
+                                    model_name = msg.get('model')
+                                    message_id = msg.get('id')
+                                    usage_data = msg.get('usage')
+
+                                # Collect content_block_delta events
+                                elif event_data.get('type') == 'content_block_delta':
+                                    delta = event_data.get('delta', {})
+                                    if delta.get('type') == 'text_delta':
+                                        content_blocks.append({
+                                            'type': 'text',
+                                            'text': delta.get('text', '')
+                                        })
+                            except json.JSONDecodeError:
+                                pass
+
+                    # Combine text content
+                    combined_content = []
+                    if content_blocks:
+                        combined_text = ''.join(block.get('text', '') for block in content_blocks if block.get('type') == 'text')
+                        if combined_text:
+                            combined_content.append({'type': 'text', 'text': combined_text})
+
+                    log_data['parsed_response'] = {
+                        'id': message_id,
+                        'model': model_name,
+                        'content': combined_content,
+                        'usage': usage_data
+                    }
+                else:
+                    # Regular JSON response (OpenAI, OpenCode, etc.)
+                    resp_json = json.loads(resp_body)
+                    log_data['parsed_response'] = {
+                        'id': resp_json.get('id'),
+                        'model': resp_json.get('model'),
+                        'choices': resp_json.get('choices'),
+                        'content': resp_json.get('content'),
+                        'usage': resp_json.get('usage')
+                    }
         except json.JSONDecodeError:
             ctx.log.warn(f"Failed to parse JSON for {log_data['url']}")
 

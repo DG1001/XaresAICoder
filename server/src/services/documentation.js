@@ -47,7 +47,19 @@ function generateMarkdownDocumentation(conversations) {
     markdown += `#### Request\n\n`;
     if (conv.parsed_request?.messages) {
       conv.parsed_request.messages.forEach(msg => {
-        markdown += `**${msg.role}:**\n\`\`\`\n${msg.content}\n\`\`\`\n\n`;
+        let content = '';
+        if (Array.isArray(msg.content)) {
+          // Extract text from content blocks
+          content = msg.content
+            .filter(block => block.type === 'text')
+            .map(block => block.text)
+            .join('\n');
+        } else if (typeof msg.content === 'string') {
+          content = msg.content;
+        }
+        if (content) {
+          markdown += `**${msg.role}:**\n\`\`\`\n${content}\n\`\`\`\n\n`;
+        }
       });
     } else if (conv.parsed_request?.prompt) {
       markdown += `\`\`\`\n${conv.parsed_request.prompt}\n\`\`\`\n\n`;
@@ -60,17 +72,31 @@ function generateMarkdownDocumentation(conversations) {
                      conv.parsed_response.choices[0]?.text || 'N/A';
       markdown += `\`\`\`\n${content}\n\`\`\`\n\n`;
     } else if (conv.parsed_response?.content) {
-      const content = Array.isArray(conv.parsed_response.content)
-        ? conv.parsed_response.content.map(c => c.text).join('\n')
-        : conv.parsed_response.content;
+      let content = 'N/A';
+      if (Array.isArray(conv.parsed_response.content)) {
+        // Handle Anthropic's content blocks
+        content = conv.parsed_response.content
+          .filter(block => block.type === 'text' && block.text)
+          .map(block => block.text)
+          .join('\n');
+      } else if (typeof conv.parsed_response.content === 'string') {
+        content = conv.parsed_response.content;
+      }
       markdown += `\`\`\`\n${content}\n\`\`\`\n\n`;
     }
 
     // Token usage
     if (conv.parsed_response?.usage) {
-      markdown += `**Tokens:** Prompt: ${conv.parsed_response.usage.prompt_tokens}, `;
-      markdown += `Completion: ${conv.parsed_response.usage.completion_tokens}, `;
-      markdown += `Total: ${conv.parsed_response.usage.total_tokens}\n\n`;
+      const usage = conv.parsed_response.usage;
+      // Handle both OpenAI format (prompt_tokens) and Anthropic format (input_tokens)
+      const promptTokens = usage.prompt_tokens || usage.input_tokens || 'N/A';
+      const completionTokens = usage.completion_tokens || usage.output_tokens || 'N/A';
+      const totalTokens = usage.total_tokens ||
+                         ((usage.input_tokens && usage.output_tokens) ?
+                          usage.input_tokens + usage.output_tokens : 'N/A');
+      markdown += `**Tokens:** Prompt: ${promptTokens}, `;
+      markdown += `Completion: ${completionTokens}, `;
+      markdown += `Total: ${totalTokens}\n\n`;
     }
 
     markdown += `---\n\n`;
@@ -104,9 +130,15 @@ function extractResponse(parsedResponse) {
     return parsedResponse.choices[0]?.message?.content ||
            parsedResponse.choices[0]?.text;
   } else if (parsedResponse?.content) {
-    return Array.isArray(parsedResponse.content)
-      ? parsedResponse.content.map(c => c.text).join('\n')
-      : parsedResponse.content;
+    if (Array.isArray(parsedResponse.content)) {
+      // Handle Anthropic's content blocks
+      return parsedResponse.content
+        .filter(block => block.type === 'text' && block.text)
+        .map(block => block.text)
+        .join('\n');
+    } else if (typeof parsedResponse.content === 'string') {
+      return parsedResponse.content;
+    }
   }
   return null;
 }
