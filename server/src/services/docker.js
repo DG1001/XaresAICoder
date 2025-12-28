@@ -289,6 +289,9 @@ class DockerService {
           'systemProp.https.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
           'EOF');
 
+        // Configure npm to trust proxy CA certificate (speeds up package installs)
+        commands.push('npm config set cafile /usr/local/share/ca-certificates/squid-ca.crt');
+
         // Configure Gradle to use official repositories only (init.gradle)
         commands.push('cat > ~/.gradle/init.gradle << "EOF"\n' +
           '// Global Gradle configuration: Use official repositories only (whitelisted in proxy)\n' +
