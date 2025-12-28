@@ -830,6 +830,73 @@ fi`.trim();
     }
   }
 
+  /**
+   * Delete all LLM conversations for a workspace
+   */
+  async deleteAllLLMConversations(ipAddress) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) {
+        throw new Error('mitmproxy container not found');
+      }
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+
+      // Delete the entire workspace directory
+      const exec = await container.exec({
+        Cmd: ['rm', '-rf', `/var/log/mitmproxy/llm_conversations/${ipAddress}`],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      await exec.start();
+
+      console.log(`Deleted all LLM conversations for IP ${ipAddress}`);
+
+    } catch (error) {
+      console.error('Error deleting all LLM conversations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a specific LLM conversation file
+   */
+  async deleteLLMConversation(ipAddress, timestamp) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) {
+        throw new Error('mitmproxy container not found');
+      }
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+
+      // Delete the specific conversation file
+      const filename = `${timestamp}.json`;
+      const exec = await container.exec({
+        Cmd: ['rm', '-f', `/var/log/mitmproxy/llm_conversations/${ipAddress}/${filename}`],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      await exec.start();
+
+      console.log(`Deleted LLM conversation ${filename} for IP ${ipAddress}`);
+
+    } catch (error) {
+      console.error('Error deleting LLM conversation:', error);
+      throw error;
+    }
+  }
+
   // Helper method to convert Docker exec stream to string
   async streamToString(stream) {
     return new Promise((resolve, reject) => {

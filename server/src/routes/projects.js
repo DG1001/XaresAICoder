@@ -447,4 +447,64 @@ router.post('/:projectId/generate-documentation', async (req, res) => {
   }
 });
 
+// Delete all LLM conversations for a project
+router.delete('/:projectId/llm-conversations', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found'
+      });
+    }
+
+    await dockerService.deleteAllLLMConversations(ipAddress);
+
+    res.json({
+      success: true,
+      message: 'All conversations deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete all conversations error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete conversations',
+      message: error.message
+    });
+  }
+});
+
+// Delete a specific LLM conversation
+router.delete('/:projectId/llm-conversations/:timestamp', async (req, res) => {
+  try {
+    const { projectId, timestamp } = req.params;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found'
+      });
+    }
+
+    await dockerService.deleteLLMConversation(ipAddress, timestamp);
+
+    res.json({
+      success: true,
+      message: 'Conversation deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete conversation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete conversation',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;

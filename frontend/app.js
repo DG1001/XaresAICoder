@@ -2039,9 +2039,12 @@ class XaresAICoder {
             const modalHTML = `
                 <div id="aiConversationsModal" class="modal" style="display: flex;">
                     <div class="modal-content" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column;">
-                        <div class="modal-header">
+                        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
                             <h2>AI Conversations - ${this.escapeHtml(project.projectName.substring(0, 30))}</h2>
-                            <button class="modal-close" onclick="document.getElementById('aiConversationsModal').remove()">&times;</button>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                ${data.count > 0 ? `<button class="btn-danger" style="font-size: 12px; padding: 4px 8px;" onclick="app.deleteAllConversations('${projectId}')" title="Delete all conversations">Clear All</button>` : ''}
+                                <button class="modal-close" onclick="document.getElementById('aiConversationsModal').remove()">&times;</button>
+                            </div>
                         </div>
                         <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 0;">
                             <p><strong>Total Conversations:</strong> ${data.count}</p>
@@ -2050,10 +2053,14 @@ class XaresAICoder {
                                 ${data.conversations.map((conv, idx) => {
                                     const model = conv.parsed_request?.model || 'Unknown';
                                     const time = new Date(conv.timestamp).toLocaleString();
+                                    const timestamp = conv.timestamp.replace(/:/g, '-').replace(/\./g, '-');
                                     return `
-                                        <div class="conversation-item" style="margin-bottom: 15px; border: 1px solid var(--vscode-panel-border); padding: 10px; border-radius: 4px;">
-                                            <div class="conversation-header" style="cursor: pointer; font-weight: bold; margin-bottom: 5px;" onclick="document.getElementById('conv-${idx}').style.display = document.getElementById('conv-${idx}').style.display === 'none' ? 'block' : 'none'">
-                                                <span>#${idx + 1}</span> ${model} - ${time}
+                                        <div class="conversation-item" id="conv-item-${idx}" style="margin-bottom: 15px; border: 1px solid var(--vscode-panel-border); padding: 10px; border-radius: 4px;">
+                                            <div class="conversation-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                                <div style="cursor: pointer; font-weight: bold; flex: 1;" onclick="document.getElementById('conv-${idx}').style.display = document.getElementById('conv-${idx}').style.display === 'none' ? 'block' : 'none'">
+                                                    <span>#${idx + 1}</span> ${model} - ${time}
+                                                </div>
+                                                <button class="btn-danger" style="font-size: 11px; padding: 2px 6px;" onclick="app.deleteConversation('${projectId}', '${timestamp}', ${idx})" title="Delete this conversation">Delete</button>
                                             </div>
                                             <div id="conv-${idx}" class="conversation-body" style="display: none;">
                                                 <pre style="background: var(--vscode-editor-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">${JSON.stringify(conv, null, 2)}</pre>
@@ -2126,6 +2133,87 @@ class XaresAICoder {
         } catch (error) {
             console.error('Error generating documentation:', error);
             this.showError('Failed to generate documentation: ' + error.message);
+        }
+    }
+
+    async deleteAllConversations(projectId) {
+        try {
+            if (!confirm('Delete ALL AI conversations for this workspace? This cannot be undone.')) {
+                return;
+            }
+
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/llm-conversations`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                this.showError(data.message || 'Failed to delete conversations');
+                return;
+            }
+
+            this.showSuccess('All conversations deleted successfully');
+
+            // Close and reopen modal to refresh
+            document.getElementById('aiConversationsModal').remove();
+            this.openAIConversationsModal(projectId);
+
+        } catch (error) {
+            console.error('Error deleting all conversations:', error);
+            this.showError('Failed to delete conversations: ' + error.message);
+        }
+    }
+
+    async deleteConversation(projectId, timestamp, idx) {
+        try {
+            if (!confirm('Delete this conversation? This cannot be undone.')) {
+                return;
+            }
+
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/llm-conversations/${timestamp}`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                this.showError(data.message || 'Failed to delete conversation');
+                return;
+            }
+
+            this.showSuccess('Conversation deleted');
+
+            // Remove the conversation item from UI
+            const item = document.getElementById(`conv-item-${idx}`);
+            if (item) {
+                item.remove();
+            }
+
+            // Update count
+            const modal = document.getElementById('aiConversationsModal');
+            if (modal) {
+                const items = modal.querySelectorAll('.conversation-item');
+                const countElem = modal.querySelector('.modal-body p strong');
+                if (countElem && countElem.parentElement) {
+                    countElem.parentElement.innerHTML = `<strong>Total Conversations:</strong> ${items.length}`;
+                }
+
+                // If no conversations left, show message
+                if (items.length === 0) {
+                    const list = modal.querySelector('.conversation-list');
+                    if (list) {
+                        list.innerHTML = '<p>No AI conversations recorded yet for this workspace.</p>';
+                    }
+                    // Remove "Clear All" button
+                    const clearBtn = modal.querySelector('.btn-danger');
+                    if (clearBtn) clearBtn.remove();
+                }
+            }
+
+        } catch (error) {
+            console.error('Error deleting conversation:', error);
+            this.showError('Failed to delete conversation: ' + error.message);
         }
     }
 
