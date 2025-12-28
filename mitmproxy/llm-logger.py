@@ -17,6 +17,7 @@ LLM_DOMAINS = [
     'generativelanguage.googleapis.com',
     'api.google.dev',
     'api.opencode.ai',
+    'opencode.ai',  # OpenCode free tier uses opencode.ai/zen/v1/
     'api.huggingface.co'
 ]
 

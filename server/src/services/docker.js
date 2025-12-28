@@ -59,6 +59,8 @@ class DockerService {
         envVars.push(`http_proxy=http://${this.proxyHost}`);
         envVars.push(`https_proxy=http://${this.proxyHost}`);
         envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
+        // Tell Node.js to trust the proxy CA certificate
+        envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
       }
 
       if (passwordProtected && password) {
