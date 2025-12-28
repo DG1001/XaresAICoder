@@ -46,18 +46,26 @@ function generateMarkdownDocumentation(conversations) {
     // Request
     markdown += `#### Request\n\n`;
     if (conv.parsed_request?.messages) {
-      conv.parsed_request.messages.forEach(msg => {
+      // Filter out system prompts and tool responses - only show user/assistant conversation
+      const conversationMessages = conv.parsed_request.messages.filter(msg =>
+        msg.role === 'user' || msg.role === 'assistant'
+      );
+
+      conversationMessages.forEach(msg => {
         let content = '';
         if (Array.isArray(msg.content)) {
-          // Extract text from content blocks
+          // Extract text from content blocks, skip tool/system-reminder blocks
           content = msg.content
-            .filter(block => block.type === 'text')
+            .filter(block => block.type === 'text' && !block.text?.includes('<system-reminder>'))
             .map(block => block.text)
             .join('\n');
         } else if (typeof msg.content === 'string') {
-          content = msg.content;
+          // Skip system reminders in string content
+          if (!msg.content.includes('<system-reminder>')) {
+            content = msg.content;
+          }
         }
-        if (content) {
+        if (content && content.trim().length > 0) {
           markdown += `**${msg.role}:**\n\`\`\`\n${content}\n\`\`\`\n\n`;
         }
       });
