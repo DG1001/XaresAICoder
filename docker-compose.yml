@@ -115,17 +115,20 @@ services:
     image: mitmproxy/mitmproxy:latest
     container_name: xaresaicoder-mitmproxy-logger
     profiles: ["proxy"]
+    user: root
     volumes:
       - ./mitmproxy/llm-logger.py:/scripts/llm-logger.py:ro
       - mitmproxy_logs:/var/log/mitmproxy
       - ./squid/certs:/certs:ro
     command: >
-      mitmproxy
+      sh -c "mkdir -p /var/log/mitmproxy/llm_conversations &&
+      chmod -R 777 /var/log/mitmproxy &&
+      mitmdump
       --mode regular
       --listen-host 0.0.0.0
       --listen-port 8080
       --set ssl_insecure=true
-      -s /scripts/llm-logger.py
+      -s /scripts/llm-logger.py"
     networks:
       - xares-internal
       - xares-aicoder-network
