@@ -411,7 +411,7 @@ router.get('/:projectId/llm-conversations', async (req, res) => {
 router.post('/:projectId/generate-documentation', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { format = 'markdown' } = req.body;
+    const { format = 'markdown', type = 'clean' } = req.body;
 
     const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
     if (!ipAddress) {
@@ -427,12 +427,13 @@ router.post('/:projectId/generate-documentation', async (req, res) => {
     );
 
     const { generateDocumentationFromConversations } = require('../services/documentation');
-    const documentation = generateDocumentationFromConversations(conversations, format);
+    const documentation = generateDocumentationFromConversations(conversations, format, type);
 
     res.json({
       success: true,
       projectId,
       format,
+      type,
       documentation,
       conversationCount: conversations.length
     });

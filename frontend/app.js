@@ -2093,7 +2093,12 @@ class XaresAICoder {
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button class="btn-primary" onclick="app.generateDocumentation('${projectId}')">Generate Documentation</button>
+                            <button class="btn-primary" onclick="app.generateDocumentation('${projectId}', 'clean')" title="Generate clean documentation (conversation only)">
+                                📄 Clean Docs
+                            </button>
+                            <button class="btn-primary" onclick="app.generateDocumentation('${projectId}', 'detailed')" title="Generate detailed documentation (with system prompts and metadata)">
+                                📋 Detailed Docs
+                            </button>
                             <button class="btn-secondary" onclick="document.getElementById('aiConversationsModal').remove()">Close</button>
                         </div>
                     </div>
@@ -2113,16 +2118,17 @@ class XaresAICoder {
         }
     }
 
-    async generateDocumentation(projectId) {
+    async generateDocumentation(projectId, type = 'clean') {
         try {
-            if (!confirm('Generate documentation from all AI conversations? This may take a moment.')) {
+            const typeLabel = type === 'detailed' ? 'detailed' : 'clean';
+            if (!confirm(`Generate ${typeLabel} documentation from all AI conversations? This may take a moment.`)) {
                 return;
             }
 
             const response = await fetch(`${this.apiBase}/projects/${projectId}/generate-documentation`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ format: 'markdown' })
+                body: JSON.stringify({ format: 'markdown', type })
             });
 
             const data = await response.json();
@@ -2138,7 +2144,7 @@ class XaresAICoder {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `ai-documentation-${Date.now()}.md`;
+                a.download = `ai-documentation-${typeLabel}-${Date.now()}.md`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -2146,7 +2152,7 @@ class XaresAICoder {
                 // Revoke URL after a short delay to ensure download starts
                 setTimeout(() => URL.revokeObjectURL(url), 100);
 
-                this.showSuccess(`Generated documentation from ${data.conversationCount} conversations!`);
+                this.showSuccess(`Generated ${typeLabel} documentation from ${data.conversationCount} conversations!`);
             } catch (downloadError) {
                 console.error('Download error:', downloadError);
                 this.showError('Documentation generated but download failed. Check console for details.');
