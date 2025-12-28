@@ -2038,12 +2038,12 @@ class XaresAICoder {
             // Create modal
             const modalHTML = `
                 <div id="aiConversationsModal" class="modal" style="display: flex;">
-                    <div class="modal-content" style="max-width: 900px; max-height: 90vh;">
+                    <div class="modal-content" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column;">
                         <div class="modal-header">
                             <h2>AI Conversations - ${this.escapeHtml(project.projectName.substring(0, 30))}</h2>
                             <button class="modal-close" onclick="document.getElementById('aiConversationsModal').remove()">&times;</button>
                         </div>
-                        <div class="modal-body" style="overflow-y: auto;">
+                        <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 0;">
                             <p><strong>Total Conversations:</strong> ${data.count}</p>
                             ${data.count === 0 ? '<p>No AI conversations recorded yet for this workspace.</p>' : ''}
                             <div class="conversation-list" style="margin-top: 20px;">
