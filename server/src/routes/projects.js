@@ -440,6 +440,7 @@ router.post('/:projectId/generate-documentation', async (req, res) => {
   } catch (error) {
     console.error('Generate documentation error:', error);
     res.status(500).json({
+      success: false,
       error: 'Failed to generate documentation',
       message: error.message
     });

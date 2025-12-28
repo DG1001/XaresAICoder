@@ -2100,24 +2100,33 @@ class XaresAICoder {
             const data = await response.json();
 
             if (!response.ok || !data.success) {
-                this.showError(data.message || 'Failed to generate documentation');
+                this.showError(data.message || data.error || 'Failed to generate documentation');
                 return;
             }
 
             // Download documentation
-            const blob = new Blob([data.documentation], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `ai-documentation-${Date.now()}.md`;
-            a.click();
-            URL.revokeObjectURL(url);
+            try {
+                const blob = new Blob([data.documentation], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ai-documentation-${Date.now()}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
 
-            this.showSuccess(`Generated documentation from ${data.conversationCount} conversations!`);
+                // Revoke URL after a short delay to ensure download starts
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+
+                this.showSuccess(`Generated documentation from ${data.conversationCount} conversations!`);
+            } catch (downloadError) {
+                console.error('Download error:', downloadError);
+                this.showError('Documentation generated but download failed. Check console for details.');
+            }
 
         } catch (error) {
             console.error('Error generating documentation:', error);
-            this.showError('Failed to generate documentation');
+            this.showError('Failed to generate documentation: ' + error.message);
         }
     }
 
