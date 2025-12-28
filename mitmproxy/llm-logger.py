@@ -86,6 +86,12 @@ class LLMConversationLogger:
             ctx.log.debug(f"Skipping incomplete conversation: {log_data['url']}")
             return
 
+        # Skip logging if no model is present in the request
+        # (filters out internal events, telemetry, non-LLM API calls)
+        if not log_data.get('parsed_request', {}).get('model'):
+            ctx.log.debug(f"Skipping non-LLM request (no model): {log_data['url']}")
+            return
+
         # Write to per-workspace directory
         client_ip = log_data['client_ip']
         workspace_dir = os.path.join(LOG_DIR, client_ip)
