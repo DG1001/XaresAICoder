@@ -80,6 +80,12 @@ class LLMConversationLogger:
         except json.JSONDecodeError:
             ctx.log.warn(f"Failed to parse JSON for {log_data['url']}")
 
+        # Skip logging if both request and response bodies are empty
+        # (these are usually streaming chunks, health checks, or empty requests)
+        if not log_data.get('body') and not log_data['response'].get('body'):
+            ctx.log.debug(f"Skipping empty conversation: {log_data['url']}")
+            return
+
         # Write to per-workspace directory
         client_ip = log_data['client_ip']
         workspace_dir = os.path.join(LOG_DIR, client_ip)
