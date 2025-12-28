@@ -111,6 +111,32 @@ services:
       retries: 3
       start_period: 30s
 
+  mitmproxy-logger:
+    image: mitmproxy/mitmproxy:latest
+    container_name: xaresaicoder-mitmproxy-logger
+    profiles: ["proxy"]
+    volumes:
+      - ./mitmproxy/llm-logger.py:/scripts/llm-logger.py:ro
+      - mitmproxy_logs:/var/log/mitmproxy
+      - ./squid/certs:/certs:ro
+    command: >
+      mitmproxy
+      --mode regular
+      --listen-host 0.0.0.0
+      --listen-port 8080
+      --set ssl_insecure=true
+      -s /scripts/llm-logger.py
+    networks:
+      - xares-internal
+      - xares-aicoder-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -sf http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   dnsmasq:
     image: andyshinn/dnsmasq:latest
     container_name: xaresaicoder-dnsmasq
@@ -143,3 +169,4 @@ volumes:
   workspace_data:
   forgejo_data:
   squid_logs:
+  mitmproxy_logs:

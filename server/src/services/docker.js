@@ -18,7 +18,7 @@ class DockerService {
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
     this.proxyNetwork = 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
-    this.proxyHost = 'squid-proxy:3128'; // Squid proxy container
+    this.proxyHost = 'mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
     // Workspace sudo privileges configuration
     this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
     // Security and isolation configuration
@@ -279,11 +279,11 @@ class DockerService {
         // Configure Gradle to use proxy (gradle.properties)
         commands.push('mkdir -p ~/.gradle');
         commands.push('cat > ~/.gradle/gradle.properties << "EOF"\n' +
-          'systemProp.http.proxyHost=squid-proxy\n' +
-          'systemProp.http.proxyPort=3128\n' +
+          'systemProp.http.proxyHost=mitmproxy-logger\n' +
+          'systemProp.http.proxyPort=8080\n' +
           'systemProp.http.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
-          'systemProp.https.proxyHost=squid-proxy\n' +
-          'systemProp.https.proxyPort=3128\n' +
+          'systemProp.https.proxyHost=mitmproxy-logger\n' +
+          'systemProp.https.proxyPort=8080\n' +
           'systemProp.https.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
           'EOF');
 
@@ -721,6 +721,107 @@ fi`.trim();
     } catch (error) {
       console.error(`Error getting IP address for project ${projectId}:`, error);
       return null;
+    }
+  }
+
+  /**
+   * Get projectId from container IP address (reverse lookup)
+   * Used for mapping LLM conversation logs to projects
+   */
+  async getProjectIdFromIP(ipAddress) {
+    try {
+      const containers = await this.docker.listContainers({ all: true });
+
+      for (const container of containers) {
+        const containerName = container.Names[0]?.replace(/^\//, '');
+        if (!containerName?.startsWith('workspace-')) continue;
+
+        const projectIdMatch = containerName.match(/^workspace-(.+)$/);
+        if (!projectIdMatch) continue;
+
+        const projectId = projectIdMatch[1];
+        const containerIP = await this.getWorkspaceIPAddress(projectId);
+
+        if (containerIP === ipAddress) {
+          return projectId;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error mapping IP ${ipAddress} to projectId:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get LLM conversations for workspace by IP address
+   * Reads JSON conversation logs from mitmproxy logger
+   */
+  async getLLMConversationsForWorkspace(ipAddress, limit = 100, offset = 0, filters = {}) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) {
+        console.error('mitmproxy container not found');
+        return [];
+      }
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+
+      // List JSON files in workspace directory, sorted by timestamp
+      const exec = await container.exec({
+        Cmd: ['bash', '-c',
+          `find /var/log/mitmproxy/llm_conversations/${ipAddress} -name "*.json" -type f 2>/dev/null | sort -r | head -n ${limit + offset} | tail -n ${limit}`
+        ],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      const stream = await exec.start();
+      const output = await this.streamToString(stream);
+      const files = output.trim().split('\n').filter(f => f);
+
+      // Read and parse each file
+      const conversations = [];
+      for (const file of files) {
+        const readExec = await container.exec({
+          Cmd: ['cat', file],
+          AttachStdout: true,
+          AttachStderr: true
+        });
+
+        const readStream = await readExec.start();
+        const content = await this.streamToString(readStream);
+
+        try {
+          const conversation = JSON.parse(content);
+
+          // Apply filters if provided
+          if (filters.model && conversation.parsed_request?.model !== filters.model) {
+            continue;
+          }
+          if (filters.dateFrom && conversation.timestamp < filters.dateFrom) {
+            continue;
+          }
+          if (filters.dateTo && conversation.timestamp > filters.dateTo) {
+            continue;
+          }
+
+          conversations.push(conversation);
+        } catch (parseError) {
+          console.error(`Failed to parse ${file}:`, parseError);
+        }
+      }
+
+      return conversations;
+
+    } catch (error) {
+      console.error('Error reading LLM conversations:', error);
+      return [];
     }
   }
 

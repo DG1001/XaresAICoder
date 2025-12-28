@@ -882,6 +882,11 @@ class XaresAICoder {
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
                         ${project.useProxy ? `<button class="logs-btn" onclick="app.openLogsModal('${project.projectId}')" title="View Squid Proxy Logs" aria-label="Proxy Logs"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/><path d="M3 3h7v1H3V3zm0 2h7v1H3V5zm0 2h5v1H3V7z"/></svg></button>` : ''}
+                        <button class="ai-conv-btn" onclick="app.openAIConversationsModal('${project.projectId}')" title="View AI Conversations" aria-label="AI Conversations">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M8 15c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7c0 1.76.743 3.37 1.97 4.6-.097 1.016-.417 2.13-.771 2.966-.079.186.074.394.273.362 2.256-.37 3.597-.938 4.18-1.234A9.06 9.06 0 0 0 8 15z"/>
+                            </svg>
+                        </button>
                         ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}" style="margin-left: 12px;">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
                     </h4>
                     <div class="project-meta">
@@ -2011,6 +2016,109 @@ class XaresAICoder {
             document.getElementById('logsModal').style.display = 'none';
             this.currentLogsProjectId = null;
         };
+    }
+
+    // AI Conversations Modal Methods
+    async openAIConversationsModal(projectId) {
+        try {
+            const project = this.projects.find(p => p.projectId === projectId);
+            if (!project) {
+                this.showError('Project not found');
+                return;
+            }
+
+            // Fetch conversations
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/llm-conversations?limit=50`);
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                this.showError(data.message || 'Failed to load conversations');
+                return;
+            }
+
+            // Create modal
+            const modalHTML = `
+                <div id="aiConversationsModal" class="modal" style="display: flex;">
+                    <div class="modal-content" style="max-width: 900px; max-height: 90vh;">
+                        <div class="modal-header">
+                            <h2>AI Conversations - ${this.escapeHtml(project.projectName.substring(0, 30))}</h2>
+                            <button class="modal-close" onclick="document.getElementById('aiConversationsModal').remove()">&times;</button>
+                        </div>
+                        <div class="modal-body" style="overflow-y: auto;">
+                            <p><strong>Total Conversations:</strong> ${data.count}</p>
+                            ${data.count === 0 ? '<p>No AI conversations recorded yet for this workspace.</p>' : ''}
+                            <div class="conversation-list" style="margin-top: 20px;">
+                                ${data.conversations.map((conv, idx) => {
+                                    const model = conv.parsed_request?.model || 'Unknown';
+                                    const time = new Date(conv.timestamp).toLocaleString();
+                                    return `
+                                        <div class="conversation-item" style="margin-bottom: 15px; border: 1px solid var(--vscode-panel-border); padding: 10px; border-radius: 4px;">
+                                            <div class="conversation-header" style="cursor: pointer; font-weight: bold; margin-bottom: 5px;" onclick="document.getElementById('conv-${idx}').style.display = document.getElementById('conv-${idx}').style.display === 'none' ? 'block' : 'none'">
+                                                <span>#${idx + 1}</span> ${model} - ${time}
+                                            </div>
+                                            <div id="conv-${idx}" class="conversation-body" style="display: none;">
+                                                <pre style="background: var(--vscode-editor-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">${JSON.stringify(conv, null, 2)}</pre>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                        <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding-top: 15px; border-top: 1px solid var(--vscode-panel-border);">
+                            <button class="btn-primary" onclick="app.generateDocumentation('${projectId}')">Generate Documentation</button>
+                            <button class="btn-secondary" onclick="document.getElementById('aiConversationsModal').remove()">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if present
+            const existing = document.getElementById('aiConversationsModal');
+            if (existing) existing.remove();
+
+            // Add modal to page
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        } catch (error) {
+            console.error('Error opening AI conversations modal:', error);
+            this.showError('Failed to load AI conversations');
+        }
+    }
+
+    async generateDocumentation(projectId) {
+        try {
+            if (!confirm('Generate documentation from all AI conversations? This may take a moment.')) {
+                return;
+            }
+
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/generate-documentation`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ format: 'markdown' })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                this.showError(data.message || 'Failed to generate documentation');
+                return;
+            }
+
+            // Download documentation
+            const blob = new Blob([data.documentation], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ai-documentation-${Date.now()}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            this.showSuccess(`Generated documentation from ${data.conversationCount} conversations!`);
+
+        } catch (error) {
+            console.error('Error generating documentation:', error);
+            this.showError('Failed to generate documentation');
+        }
     }
 
     // Group Management Methods

@@ -363,4 +363,87 @@ router.get('/:projectId/squid-logs', async (req, res) => {
   }
 });
 
+// Get LLM conversations for a project
+router.get('/:projectId/llm-conversations', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const {
+      limit = 100,
+      offset = 0,
+      model,
+      dateFrom,
+      dateTo
+    } = req.query;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found or not using proxy'
+      });
+    }
+
+    const conversations = await dockerService.getLLMConversationsForWorkspace(
+      ipAddress,
+      parseInt(limit),
+      parseInt(offset),
+      { model, dateFrom, dateTo }
+    );
+
+    res.json({
+      success: true,
+      projectId,
+      ipAddress,
+      conversations,
+      count: conversations.length
+    });
+
+  } catch (error) {
+    console.error('Get LLM conversations error:', error);
+    res.status(500).json({
+      error: 'Failed to get LLM conversations',
+      message: error.message
+    });
+  }
+});
+
+// Generate documentation from LLM conversations
+router.post('/:projectId/generate-documentation', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { format = 'markdown' } = req.body;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found'
+      });
+    }
+
+    const conversations = await dockerService.getLLMConversationsForWorkspace(
+      ipAddress,
+      10000  // Get all
+    );
+
+    const { generateDocumentationFromConversations } = require('../services/documentation');
+    const documentation = generateDocumentationFromConversations(conversations, format);
+
+    res.json({
+      success: true,
+      projectId,
+      format,
+      documentation,
+      conversationCount: conversations.length
+    });
+
+  } catch (error) {
+    console.error('Generate documentation error:', error);
+    res.status(500).json({
+      error: 'Failed to generate documentation',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
