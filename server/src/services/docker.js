@@ -18,7 +18,7 @@ class DockerService {
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
     this.proxyNetwork = 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
-    this.proxyHost = 'mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
+    this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging (using container name for DNS resolution)
     // Workspace sudo privileges configuration
     this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
     // Security and isolation configuration
@@ -279,10 +279,10 @@ class DockerService {
         // Configure Gradle to use proxy (gradle.properties)
         commands.push('mkdir -p ~/.gradle');
         commands.push('cat > ~/.gradle/gradle.properties << "EOF"\n' +
-          'systemProp.http.proxyHost=mitmproxy-logger\n' +
+          'systemProp.http.proxyHost=xaresaicoder-mitmproxy-logger\n' +
           'systemProp.http.proxyPort=8080\n' +
           'systemProp.http.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
-          'systemProp.https.proxyHost=mitmproxy-logger\n' +
+          'systemProp.https.proxyHost=xaresaicoder-mitmproxy-logger\n' +
           'systemProp.https.proxyPort=8080\n' +
           'systemProp.https.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
           'EOF');
