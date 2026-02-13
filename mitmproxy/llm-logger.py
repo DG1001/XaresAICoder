@@ -18,7 +18,9 @@ LLM_DOMAINS = [
     'api.google.dev',
     'api.opencode.ai',
     'opencode.ai',  # OpenCode free tier uses opencode.ai/zen/v1/
-    'api.huggingface.co'
+    'api.huggingface.co',
+    'z.ai',  # z.ai LLM API
+    'api.z.ai'
 ]
 
 class LLMConversationLogger:
