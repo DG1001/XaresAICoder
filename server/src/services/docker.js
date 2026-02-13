@@ -1038,6 +1038,113 @@ fi`.trim();
     }
   }
 
+  // Create a minimal tar archive containing a single file (for putArchive API)
+  createTarWithFile(filename, content) {
+    const contentBuffer = Buffer.from(content, 'utf-8');
+    const fileSize = contentBuffer.length;
+
+    // Tar header is 512 bytes
+    const header = Buffer.alloc(512, 0);
+
+    // File name (first 100 bytes)
+    header.write(filename, 0, Math.min(filename.length, 100), 'utf-8');
+
+    // File mode: 0644
+    header.write('0000644\0', 100, 8, 'utf-8');
+
+    // Owner UID: 1000 (coder user)
+    header.write('0001750\0', 108, 8, 'utf-8');
+
+    // Group GID: 1000 (coder group)
+    header.write('0001750\0', 116, 8, 'utf-8');
+
+    // File size in octal
+    header.write(fileSize.toString(8).padStart(11, '0') + '\0', 124, 12, 'utf-8');
+
+    // Modification time
+    const mtime = Math.floor(Date.now() / 1000);
+    header.write(mtime.toString(8).padStart(11, '0') + '\0', 136, 12, 'utf-8');
+
+    // Initialize checksum field with spaces (required for checksum calculation)
+    header.write('        ', 148, 8, 'utf-8');
+
+    // Type flag: '0' = regular file
+    header.write('0', 156, 1, 'utf-8');
+
+    // Calculate checksum (sum of all bytes in header, treating checksum field as spaces)
+    let checksum = 0;
+    for (let i = 0; i < 512; i++) {
+      checksum += header[i];
+    }
+    header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 8, 'utf-8');
+
+    // Pad content to 512-byte boundary
+    const paddingSize = (512 - (fileSize % 512)) % 512;
+    const contentPadding = Buffer.alloc(paddingSize, 0);
+
+    // End-of-archive marker (two 512-byte blocks of zeros)
+    const endMarker = Buffer.alloc(1024, 0);
+
+    return Buffer.concat([header, contentBuffer, contentPadding, endMarker]);
+  }
+
+  // Update workspace password by writing a persistent auth override file
+  // If password is null, removes password protection; otherwise sets/updates it
+  async updateWorkspacePassword(projectId, password) {
+    const containerName = `workspace-${projectId}`;
+
+    // Build the auth override file content
+    let overrideContent;
+    if (password) {
+      const escapedPassword = password.replace(/'/g, "'\\''");
+      overrideContent = `AUTH_FLAG=password\nexport PASSWORD='${escapedPassword}'\n`;
+    } else {
+      overrideContent = `AUTH_FLAG=none\nunset PASSWORD\n`;
+    }
+
+    try {
+      const container = this.docker.getContainer(containerName);
+      const containerInfo = await container.inspect();
+
+      if (containerInfo.State.Running) {
+        // Running container: write file via exec, then stop+start
+        const writeCmd = `cat > /home/coder/.code-server-auth << 'AUTHEOF'\n${overrideContent}AUTHEOF`;
+        const exec = await container.exec({
+          Cmd: ['bash', '-c', writeCmd],
+          AttachStdout: true,
+          AttachStderr: true
+        });
+        const stream = await exec.start();
+        await this.streamToString(stream);
+
+        // Stop and start the container (entrypoint will read the override file)
+        await container.stop({ t: 10 });
+        await container.start();
+
+        // Wait for code-server to become ready
+        await this.waitForWorkspaceReady(containerName, 15000);
+
+        console.log(`Password updated for running container ${containerName}`);
+        return { success: true, message: 'Password updated successfully' };
+      } else {
+        // Stopped container: write file via putArchive API
+        const tarBuffer = this.createTarWithFile('.code-server-auth', overrideContent);
+        await container.putArchive(tarBuffer, { path: '/home/coder' });
+
+        console.log(`Password override written to stopped container ${containerName}`);
+        return { success: true, message: 'Password updated (will apply on next start)' };
+      }
+
+    } catch (error) {
+      if (error.statusCode === 404) {
+        console.log(`Container ${containerName} not found, password will apply on next creation`);
+        return { success: true, message: 'Container not found, password stored for next start' };
+      }
+      console.error(`Error updating password for workspace ${projectId}:`, error);
+      throw new Error(`Failed to update workspace password: ${error.message}`);
+    }
+  }
+
   async stopWorkspaceContainer(projectId) {
     const containerName = `workspace-${projectId}`;
     

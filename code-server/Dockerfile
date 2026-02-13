@@ -119,16 +119,9 @@ RUN chmod +x /usr/local/bin/check-extensions.sh /usr/local/bin/test-extension-in
 # Run the test to debug extension installation (optional - can be removed after debugging)
 # RUN /usr/local/bin/test-extension-install.sh
 
-# Create a startup script that ensures extensions are installed
-RUN echo '#!/bin/bash\n\
-echo "Starting XaresAICoder code-server..."\n\
-\n\
-# Check and install missing extensions\n\
-/usr/local/bin/check-extensions.sh\n\
-\n\
-# Start code-server with the provided arguments\n\
-exec "$@"\n\
-' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
+# Copy entrypoint script with auth override support
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER coder
 

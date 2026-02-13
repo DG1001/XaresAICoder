@@ -308,6 +308,62 @@ router.put('/:projectId/group', async (req, res) => {
   }
 });
 
+// Update workspace password
+router.put('/:projectId/password', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { currentPassword, newPassword, removePassword } = req.body;
+
+    // Validate new password if provided
+    if (newPassword) {
+      if (newPassword.length < 8) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be at least 8 characters long'
+        });
+      }
+      if (newPassword.length > 50) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be less than 50 characters'
+        });
+      }
+    }
+
+    if (!newPassword && !removePassword) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Either newPassword or removePassword must be provided'
+      });
+    }
+
+    const result = await workspaceService.updatePassword(projectId, {
+      currentPassword,
+      newPassword,
+      removePassword: !!removePassword
+    });
+
+    res.json({
+      success: true,
+      message: removePassword ? 'Password protection removed' : 'Password updated successfully',
+      passwordProtected: result.passwordProtected
+    });
+
+  } catch (error) {
+    console.error('Update password error:', error);
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.message === 'Invalid current password') statusCode = 401;
+    if (error.message === 'Current password is required for protected workspaces') statusCode = 401;
+    if (error.message.includes('Password must be')) statusCode = 400;
+
+    res.status(statusCode).json({
+      error: 'Failed to update password',
+      message: error.message
+    });
+  }
+});
+
 // Get disk usage for a project
 router.get('/:projectId/disk-usage', async (req, res) => {
   try {

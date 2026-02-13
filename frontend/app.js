@@ -316,6 +316,53 @@ class XaresAICoder {
                 this.hideNotesModal();
             }
         });
+
+        // Password management modal handlers
+        const closePasswordManageModal = document.getElementById('closePasswordManageModal');
+        const savePasswordBtn = document.getElementById('savePasswordBtn');
+        const cancelPasswordManageBtn = document.getElementById('cancelPasswordManageBtn');
+        const generateManagePasswordBtn = document.getElementById('generateManagePasswordBtn');
+
+        closePasswordManageModal.addEventListener('click', () => this.hidePasswordManageModal());
+        cancelPasswordManageBtn.addEventListener('click', () => this.hidePasswordManageModal());
+        savePasswordBtn.addEventListener('click', () => this.savePasswordSettings());
+        generateManagePasswordBtn.addEventListener('click', () => {
+            document.getElementById('newPasswordInput').value = this.generateSecurePasswordValue();
+        });
+
+        // Toggle new password visibility
+        document.getElementById('toggleNewPasswordVisibility').addEventListener('click', () => {
+            const input = document.getElementById('newPasswordInput');
+            const showIcon = document.getElementById('eyeIconShow');
+            const hideIcon = document.getElementById('eyeIconHide');
+            const btn = document.getElementById('toggleNewPasswordVisibility');
+            if (input.type === 'password') {
+                input.type = 'text';
+                showIcon.style.display = 'none';
+                hideIcon.style.display = '';
+                btn.title = 'Hide Password';
+            } else {
+                input.type = 'password';
+                showIcon.style.display = '';
+                hideIcon.style.display = 'none';
+                btn.title = 'Show Password';
+            }
+        });
+
+        // Toggle new password section based on radio selection
+        document.querySelectorAll('input[name="passwordAction"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const newPasswordSection = document.getElementById('newPasswordSection');
+                newPasswordSection.style.display = e.target.value === 'set' ? 'block' : 'none';
+            });
+        });
+
+        // Close password manage modal on outside click
+        document.getElementById('passwordManageModal').addEventListener('click', (e) => {
+            if (e.target.id === 'passwordManageModal') {
+                this.hidePasswordManageModal();
+            }
+        });
     }
 
     handleTabSwitch(e) {
@@ -425,6 +472,24 @@ class XaresAICoder {
         password = this.shuffleString(password);
         
         document.getElementById('workspacePassword').value = password;
+    }
+
+    generateSecurePasswordValue() {
+        const length = 12;
+        const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        const lowercase = 'abcdefghijkmnpqrstuvwxyz';
+        const numbers = '23456789';
+        const symbols = '!@#$%&*+-=?';
+        const allChars = uppercase + lowercase + numbers + symbols;
+        let password = '';
+        password += this.getRandomChar(uppercase);
+        password += this.getRandomChar(lowercase);
+        password += this.getRandomChar(numbers);
+        password += this.getRandomChar(symbols);
+        for (let i = 4; i < length; i++) {
+            password += this.getRandomChar(allChars);
+        }
+        return this.shuffleString(password);
     }
 
     getRandomChar(chars) {
@@ -874,6 +939,12 @@ class XaresAICoder {
                         ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
                         ${project.useProxy ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Using Network Proxy (LLM Logging)"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/></svg>' : ''}
                         ${project.gitRepository && project.gitRepository.webUrl ? `<a href="${project.gitRepository.webUrl}" target="_blank" class="git-repo-link" title="View Git Repository: ${project.gitRepository.name}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>` : ''}
+                        ${project.status !== 'creating' ? `<button class="notes-btn" onclick="app.openPasswordManageModal('${project.projectId}')" title="Manage Password" aria-label="Manage Password">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M0 8a4 4 0 0 1 7.465-2H14a.5.5 0 0 1 .354.146l1.5 1.5a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0L13 9.207l-.646.647a.5.5 0 0 1-.708 0L11 9.207l-.646.647a.5.5 0 0 1-.708 0L9 9.207l-.646.647A.5.5 0 0 1 8 10h-.535A4 4 0 0 1 0 8zm4-3a3 3 0 1 0 2.959 3.5H8a.5.5 0 0 0 .354-.146l.646-.647.646.647a.5.5 0 0 0 .708 0l.646-.647.646.647a.5.5 0 0 0 .708 0l.646-.647.646.647a.5.5 0 0 0 .708 0l1.146-1.147-1.146-1.147a.5.5 0 0 0-.354-.146h-6.46A3 3 0 0 0 4 5z"/>
+                                <path d="M4 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+                            </svg>
+                        </button>` : ''}
                         <button class="notes-btn" onclick="app.openNotesModal('${project.projectId}')" title="View/Edit Project Notes" aria-label="Project Notes">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/>
@@ -1925,6 +1996,138 @@ class XaresAICoder {
         }
         if (currentLength > maxLength) {
             charCount.classList.add('error');
+        }
+    }
+
+    // Password Management Modal Methods
+    openPasswordManageModal(projectId) {
+        const project = this.projects.find(p => p.projectId === projectId);
+        if (!project) {
+            this.showError('Project not found');
+            return;
+        }
+
+        this.currentPasswordManageProjectId = projectId;
+
+        // Set project name
+        document.getElementById('passwordManageProjectName').textContent = `Workspace: ${project.projectName}`;
+
+        // Show/hide current password field based on protection status
+        const currentPasswordSection = document.getElementById('currentPasswordSection');
+        const currentPasswordInput = document.getElementById('currentPasswordInput');
+        if (project.passwordProtected) {
+            currentPasswordSection.style.display = 'block';
+            currentPasswordInput.value = '';
+        } else {
+            currentPasswordSection.style.display = 'none';
+            currentPasswordInput.value = '';
+        }
+
+        // Reset form state
+        document.getElementById('passwordActionSet').checked = true;
+        document.getElementById('newPasswordSection').style.display = 'block';
+        document.getElementById('newPasswordInput').value = '';
+        document.getElementById('newPasswordInput').type = 'password';
+        document.getElementById('eyeIconShow').style.display = '';
+        document.getElementById('eyeIconHide').style.display = 'none';
+        document.getElementById('toggleNewPasswordVisibility').title = 'Show Password';
+        document.getElementById('passwordManageError').style.display = 'none';
+
+        // Show modal
+        document.getElementById('passwordManageModal').style.display = 'flex';
+    }
+
+    hidePasswordManageModal() {
+        document.getElementById('passwordManageModal').style.display = 'none';
+        this.currentPasswordManageProjectId = null;
+    }
+
+    async savePasswordSettings() {
+        if (!this.currentPasswordManageProjectId) return;
+
+        const projectId = this.currentPasswordManageProjectId;
+        const project = this.projects.find(p => p.projectId === projectId);
+        if (!project) return;
+
+        const errorEl = document.getElementById('passwordManageError');
+        errorEl.style.display = 'none';
+
+        const action = document.querySelector('input[name="passwordAction"]:checked').value;
+        const currentPassword = document.getElementById('currentPasswordInput').value.trim();
+        const newPassword = document.getElementById('newPasswordInput').value.trim();
+
+        // Validate current password is provided if workspace is protected
+        if (project.passwordProtected && !currentPassword) {
+            errorEl.textContent = 'Current password is required.';
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        // Validate new password if setting
+        if (action === 'set') {
+            if (!newPassword) {
+                errorEl.textContent = 'Please enter a new password.';
+                errorEl.style.display = 'block';
+                return;
+            }
+            if (newPassword.length < 8) {
+                errorEl.textContent = 'Password must be at least 8 characters long.';
+                errorEl.style.display = 'block';
+                return;
+            }
+            if (newPassword.length > 50) {
+                errorEl.textContent = 'Password must be less than 50 characters.';
+                errorEl.style.display = 'block';
+                return;
+            }
+        }
+
+        const saveBtn = document.getElementById('savePasswordBtn');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+
+        try {
+            const body = {};
+            if (project.passwordProtected) {
+                body.currentPassword = currentPassword;
+            }
+            if (action === 'remove') {
+                body.removePassword = true;
+            } else {
+                body.newPassword = newPassword;
+            }
+
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/password`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.hidePasswordManageModal();
+                this.loadProjects();
+
+                // Show success toast
+                // Show brief success feedback
+                const msg = action === 'remove' ? 'Password protection removed' : 'Password updated successfully';
+                const successFeedback = document.createElement('div');
+                successFeedback.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--vscode-success); color: white; padding: 8px 16px; border-radius: 4px; z-index: 10001; font-size: 13px;';
+                successFeedback.textContent = msg;
+                document.body.appendChild(successFeedback);
+                setTimeout(() => { document.body.removeChild(successFeedback); }, 2000);
+            } else {
+                errorEl.textContent = data.message || 'Failed to update password';
+                errorEl.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error updating password:', error);
+            errorEl.textContent = 'Failed to update password. Please try again.';
+            errorEl.style.display = 'block';
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save';
         }
     }
 
