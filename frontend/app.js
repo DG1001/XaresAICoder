@@ -1796,8 +1796,9 @@ class XaresAICoder {
             // Set current project ID for save operation
             this.currentNotesProjectId = projectId;
             
-            // Set modal title
+            // Set modal title and workspace ID
             document.getElementById('notesModalTitle').textContent = `Notes - ${project.projectName}`;
+            document.getElementById('notesWorkspaceId').textContent = projectId;
             
             // Load current notes
             const response = await fetch(`${this.apiBase}/projects/${projectId}/notes`);
