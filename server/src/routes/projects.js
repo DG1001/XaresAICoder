@@ -356,6 +356,43 @@ router.put('/:projectId/notes', async (req, res) => {
   }
 });
 
+// Update project name
+router.put('/:projectId/name', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { name } = req.body;
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({
+        error: 'Invalid name',
+        message: 'Project name is required and must be a string'
+      });
+    }
+
+    if (name.trim().length === 0 || name.trim().length > 100) {
+      return res.status(400).json({
+        error: 'Invalid name',
+        message: 'Project name must be between 1 and 100 characters'
+      });
+    }
+
+    const result = await workspaceService.updateProjectName(projectId, name);
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Update project name error:', error);
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.message.includes('Project name')) statusCode = 400;
+
+    res.status(statusCode).json({
+      error: 'Failed to update project name',
+      message: error.message
+    });
+  }
+});
+
 // Update project group
 router.put('/:projectId/group', async (req, res) => {
   try {

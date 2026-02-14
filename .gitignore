@@ -41,5 +41,7 @@ docs/DEPLOYMENT_SENSEM.md
 squid/certs/*.pem
 squid/certs/*.crt
 squid/certs/*.key
+squid/certs/*.cer
+squid/certs/*.p12
 !squid/certs/.gitkeep
 code-server/squid-ca-cert.crt

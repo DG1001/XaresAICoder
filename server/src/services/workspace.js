@@ -736,6 +736,29 @@ class WorkspaceService {
     });
   }
 
+  // Update project name
+  async updateProjectName(projectId, newName) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    const name = (newName || '').trim();
+    if (!name) {
+      throw new Error('Project name is required');
+    }
+    if (name.length > 100) {
+      throw new Error('Project name must be 100 characters or less');
+    }
+
+    project.projectName = name;
+    project.lastAccessed = new Date();
+
+    await this.saveProjectsToDisk();
+
+    return { success: true, projectName: name };
+  }
+
   // Update project group
   async updateProjectGroup(projectId, newGroup) {
     const project = this.projects.get(projectId);
