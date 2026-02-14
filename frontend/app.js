@@ -958,6 +958,11 @@ class XaresAICoder {
                                 <path fill-rule="evenodd" d="M2.678 11.894a1 1 0 0 1 .287.801 10.97 10.97 0 0 1-.398 2c1.395-.323 2.247-.697 2.634-.893a1 1 0 0 1 .71-.074A8.06 8.06 0 0 0 8 14c3.996 0 7-2.807 7-6 0-3.192-3.004-6-7-6S1 4.808 1 8c0 1.468.617 2.83 1.678 3.894zm-.493 3.905a21.682 21.682 0 0 1-.713.129c-.2.032-.352-.176-.273-.362.354-.836.674-1.95.77-2.966C.744 11.37 0 9.76 0 8c0-3.866 3.582-7 8-7s8 3.134 8 7-3.582 7-8 7a9.06 9.06 0 0 1-2.347-.306c-.52.263-1.639.742-3.468 1.105zM4 5.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zM4.5 7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/>
                             </svg>
                         </button>` : ''}
+                        ${project.proxyMode === 'logging' ? `<button class="notes-btn" onclick="app.openRecordedDomainsModal('${project.projectId}')" title="View Recorded Domains" aria-label="Recorded Domains">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/>
+                            </svg>
+                        </button>` : ''}
                         ${project.proxyMode === 'security' ? `<button class="notes-btn" onclick="app.openLogsModal('${project.projectId}')" title="View Proxy Logs" aria-label="Proxy Logs">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/>
@@ -2754,6 +2759,116 @@ class XaresAICoder {
 
         this.draggedProjectId = null;
         this.draggedProject = null;
+    }
+
+    // Recorded Domains Modal Methods
+    async openRecordedDomainsModal(projectId) {
+        try {
+            const project = this.projects.find(p => p.projectId === projectId);
+            if (!project) {
+                this.showError('Project not found');
+                return;
+            }
+
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/recorded-domains`);
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                this.showError(data.message || 'Failed to load recorded domains');
+                return;
+            }
+
+            const categorized = data.categorized || {};
+            const totalDomains = data.totalDomains || 0;
+
+            let categoriesHTML = '';
+            if (totalDomains === 0) {
+                categoriesHTML = '<p>No domains recorded yet. Use the workspace to browse, install packages, or make API calls.</p>';
+            } else {
+                for (const [category, domains] of Object.entries(categorized)) {
+                    categoriesHTML += `
+                        <div style="margin-bottom: 15px;">
+                            <h3 style="margin: 0 0 8px 0; font-size: 14px; color: var(--vscode-text-muted);">${this.escapeHtml(category)} (${domains.length})</h3>
+                            ${domains.map(d => `
+                                <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; cursor: pointer;">
+                                    <input type="checkbox" class="domain-checkbox" value="${this.escapeHtml(d.domain)}" checked>
+                                    <span style="flex: 1;">${this.escapeHtml(d.domain)}</span>
+                                    <span style="color: var(--vscode-text-muted); font-size: 11px;">${d.count} hits</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+            }
+
+            const modalHTML = `
+                <div id="recordedDomainsModal" class="modal" style="display: flex;">
+                    <div class="modal-content" style="max-width: 700px; max-height: 90vh; display: flex; flex-direction: column;">
+                        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <h2>Recorded Domains - ${this.escapeHtml(project.projectName.substring(0, 30))}</h2>
+                            <button class="modal-close" onclick="document.getElementById('recordedDomainsModal').remove()">&times;</button>
+                        </div>
+                        <div class="modal-body" style="overflow-y: auto; max-height: calc(90vh - 180px);">
+                            <p><strong>Total Domains:</strong> ${totalDomains}</p>
+                            <div style="margin-bottom: 10px;">
+                                <button class="btn-secondary" style="font-size: 12px; padding: 4px 8px; margin-right: 5px;" onclick="document.querySelectorAll('#recordedDomainsModal .domain-checkbox').forEach(c => c.checked = true)">Select All</button>
+                                <button class="btn-secondary" style="font-size: 12px; padding: 4px 8px;" onclick="document.querySelectorAll('#recordedDomainsModal .domain-checkbox').forEach(c => c.checked = false)">Deselect All</button>
+                            </div>
+                            ${categoriesHTML}
+                        </div>
+                        <div class="modal-footer">
+                            ${totalDomains > 0 ? `<button class="btn-primary" onclick="app.applyDomainsAsWhitelist()">Apply as Security Proxy Whitelist</button>` : ''}
+                            <button class="btn-secondary" onclick="document.getElementById('recordedDomainsModal').remove()">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const existing = document.getElementById('recordedDomainsModal');
+            if (existing) existing.remove();
+
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        } catch (error) {
+            console.error('Error opening recorded domains modal:', error);
+            this.showError('Failed to load recorded domains');
+        }
+    }
+
+    async applyDomainsAsWhitelist() {
+        try {
+            const checkboxes = document.querySelectorAll('#recordedDomainsModal .domain-checkbox:checked');
+            const selectedDomains = Array.from(checkboxes).map(cb => cb.value);
+
+            if (selectedDomains.length === 0) {
+                this.showError('No domains selected');
+                return;
+            }
+
+            if (!confirm(`Apply ${selectedDomains.length} domains as the Security Proxy whitelist? This will update the squid configuration for all Security Proxy workspaces.`)) {
+                return;
+            }
+
+            const response = await fetch(`${this.apiBase}/whitelist`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domains: selectedDomains })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                this.showError(data.message || 'Failed to update whitelist');
+                return;
+            }
+
+            this.showSuccess(`Whitelist updated with ${data.domainCount} domains. New Security Proxy workspaces will use this whitelist.`);
+            document.getElementById('recordedDomainsModal').remove();
+
+        } catch (error) {
+            console.error('Error applying whitelist:', error);
+            this.showError('Failed to apply whitelist: ' + error.message);
+        }
     }
 
     attachProjectActionListeners() {

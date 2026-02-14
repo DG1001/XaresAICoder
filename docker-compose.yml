@@ -95,7 +95,6 @@ services:
     container_name: xaresaicoder-squid-proxy
     profiles: ["proxy"]
     volumes:
-      - ./squid/squid.conf:/etc/squid/squid.conf:ro
       - ./squid/certs:/etc/squid/certs:ro
       - squid_logs:/var/log/squid
     ports:
@@ -121,7 +120,7 @@ services:
       - mitmproxy_logs:/var/log/mitmproxy
       - ./squid/certs:/certs
     command: >
-      sh -c "mkdir -p /var/log/mitmproxy/llm_conversations &&
+      sh -c "mkdir -p /var/log/mitmproxy/llm_conversations /var/log/mitmproxy/domains &&
       chmod -R 777 /var/log/mitmproxy &&
       mitmdump
       --mode regular

@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
 mitmproxy addon that captures full LLM API conversations
-Logs request/response bodies to per-workspace JSON files
+and records all accessed domains per workspace for whitelist generation.
+Logs request/response bodies to per-workspace JSON files.
 """
 
 import json
 import os
+import time
 from datetime import datetime
 from mitmproxy import ctx, http
 
 LOG_DIR = "/var/log/mitmproxy/llm_conversations"
+DOMAINS_DIR = "/var/log/mitmproxy/domains"
 
 LLM_DOMAINS = [
     'api.openai.com',
@@ -26,9 +29,77 @@ LLM_DOMAINS = [
 class LLMConversationLogger:
     def __init__(self):
         os.makedirs(LOG_DIR, exist_ok=True)
+        os.makedirs(DOMAINS_DIR, exist_ok=True)
+        # Domain tracker: {client_ip: {domain: {count, first_seen, last_seen}}}
+        self.domain_tracker = {}
+        self._last_flush_time = time.time()
+        self._load_existing_domains()
+
+    def _load_existing_domains(self):
+        """Load existing domain files from disk on startup."""
+        try:
+            for filename in os.listdir(DOMAINS_DIR):
+                if filename.endswith('.json'):
+                    ip = filename[:-5]  # Remove .json
+                    filepath = os.path.join(DOMAINS_DIR, filename)
+                    with open(filepath, 'r') as f:
+                        self.domain_tracker[ip] = json.load(f)
+            if self.domain_tracker:
+                ctx.log.info(f"Loaded domain data for {len(self.domain_tracker)} workspace(s)")
+        except Exception as e:
+            ctx.log.warn(f"Error loading existing domain data: {e}")
+
+    def _track_domain(self, flow):
+        """Track domain from any request, keyed by client IP."""
+        try:
+            client_ip = flow.client_conn.peername[0]
+            domain = flow.request.host
+            now = datetime.utcnow().isoformat()
+
+            if client_ip not in self.domain_tracker:
+                self.domain_tracker[client_ip] = {}
+
+            ip_domains = self.domain_tracker[client_ip]
+            is_new = domain not in ip_domains
+
+            if is_new:
+                ip_domains[domain] = {
+                    'count': 1,
+                    'first_seen': now,
+                    'last_seen': now
+                }
+                # Write to disk immediately for new domains
+                self._write_domains(client_ip)
+            else:
+                ip_domains[domain]['count'] += 1
+                ip_domains[domain]['last_seen'] = now
+
+            # Periodic flush every 60 seconds for count/last_seen updates
+            if time.time() - self._last_flush_time >= 60:
+                self._flush_all_domains()
+                self._last_flush_time = time.time()
+        except Exception as e:
+            ctx.log.warn(f"Error tracking domain: {e}")
+
+    def _write_domains(self, client_ip):
+        """Write domain data for a specific client IP to disk."""
+        try:
+            filepath = os.path.join(DOMAINS_DIR, f"{client_ip}.json")
+            with open(filepath, 'w') as f:
+                json.dump(self.domain_tracker[client_ip], f, indent=2)
+        except Exception as e:
+            ctx.log.warn(f"Error writing domain data for {client_ip}: {e}")
+
+    def _flush_all_domains(self):
+        """Flush all domain data to disk."""
+        for client_ip in self.domain_tracker:
+            self._write_domains(client_ip)
 
     def request(self, flow: http.HTTPFlow):
-        """Capture request data"""
+        """Capture request data and track domain."""
+        # Track ALL domains for whitelist generation (before LLM check)
+        self._track_domain(flow)
+
         if not any(domain in flow.request.host for domain in LLM_DOMAINS):
             return
 
@@ -44,7 +115,10 @@ class LLMConversationLogger:
         }
 
     def response(self, flow: http.HTTPFlow):
-        """Capture response and write complete conversation"""
+        """Capture response and write complete conversation."""
+        # Track domain in response too (catches HTTPS CONNECT tunnels)
+        self._track_domain(flow)
+
         if 'llm_log' not in flow.metadata:
             return
 

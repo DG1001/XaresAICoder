@@ -474,6 +474,40 @@ router.get('/:projectId/llm-conversations', async (req, res) => {
   }
 });
 
+// Get recorded domains for a workspace (for whitelist generation)
+router.get('/:projectId/recorded-domains', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found or not using proxy'
+      });
+    }
+
+    const domains = await dockerService.getRecordedDomainsForWorkspace(ipAddress);
+    const categorized = dockerService.categorizeDomainsForDisplay(domains);
+
+    res.json({
+      success: true,
+      projectId,
+      ipAddress,
+      domains,
+      categorized,
+      totalDomains: Object.keys(domains).length
+    });
+
+  } catch (error) {
+    console.error('Get recorded domains error:', error);
+    res.status(500).json({
+      error: 'Failed to get recorded domains',
+      message: error.message
+    });
+  }
+});
+
 // Generate documentation from LLM conversations
 router.post('/:projectId/generate-documentation', async (req, res) => {
   try {

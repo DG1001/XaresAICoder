@@ -48,6 +48,33 @@ app.get('/api/limits', (req, res) => {
   res.json(workspaceService.limits);
 });
 
+// Whitelist API routes
+const whitelistService = require('./services/whitelist');
+
+app.get('/api/whitelist', async (req, res) => {
+  try {
+    const result = await whitelistService.getWhitelist();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Get whitelist error:', error);
+    res.status(500).json({ error: 'Failed to get whitelist', message: error.message });
+  }
+});
+
+app.put('/api/whitelist', async (req, res) => {
+  try {
+    const { domains } = req.body;
+    if (!Array.isArray(domains)) {
+      return res.status(400).json({ error: 'Invalid request', message: 'domains must be an array' });
+    }
+    const result = await whitelistService.applyWhitelist(domains);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Apply whitelist error:', error);
+    res.status(500).json({ error: 'Failed to apply whitelist', message: error.message });
+  }
+});
+
 // Routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/workspace', workspaceRouter);

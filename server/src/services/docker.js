@@ -839,6 +839,111 @@ fi`.trim();
   }
 
   /**
+   * Get recorded domains for a workspace by IP address
+   * Reads domain tracking JSON from mitmproxy logger
+   */
+  async getRecordedDomainsForWorkspace(ipAddress) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) {
+        console.error('mitmproxy container not found');
+        return {};
+      }
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+
+      const exec = await container.exec({
+        Cmd: ['cat', `/var/log/mitmproxy/domains/${ipAddress}.json`],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      const stream = await exec.start();
+      const output = await this.streamToString(stream);
+
+      if (!output.trim()) {
+        return {};
+      }
+
+      return JSON.parse(output);
+    } catch (error) {
+      console.error('Error reading recorded domains:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Categorize domains by known patterns for display
+   */
+  categorizeDomainsForDisplay(domains) {
+    const categories = {
+      'Package Managers': [],
+      'AI APIs': [],
+      'Documentation': [],
+      'Version Control': [],
+      'System': [],
+      'Other': []
+    };
+
+    const patterns = {
+      'Package Managers': [
+        'pypi.org', 'pythonhosted.org', 'npmjs.org', 'npmjs.com', 'yarnpkg.com',
+        'registry.npmjs.org', 'maven.org', 'maven.apache.org', 'repo.maven.apache.org',
+        'dl.google.com', 'maven.google.com', 'jitpack.io', 'repo.spring.io',
+        'rubygems.org', 'crates.io', 'pkg.go.dev', 'proxy.golang.org',
+        'packagist.org', 'nuget.org', 'hex.pm', 'pub.dev',
+        'open-vsx.org', 'openvsx.org', 'eclipsecontent.org'
+      ],
+      'AI APIs': [
+        'openai.com', 'anthropic.com', 'googleapis.com', 'google.dev',
+        'opencode.ai', 'huggingface.co', 'ollama.ai', 'ollama.com',
+        'z.ai', 'api.z.ai', 'cohere.ai', 'mistral.ai'
+      ],
+      'Documentation': [
+        'docs.python.org', 'developer.mozilla.org', 'nodejs.org',
+        'stackoverflow.com', 'stackexchange.com', 'readthedocs.io',
+        'readthedocs.org', 'docs.rs', 'doc.rust-lang.org',
+        'devdocs.io', 'w3schools.com'
+      ],
+      'Version Control': [
+        'github.com', 'githubusercontent.com', 'gitlab.com', 'bitbucket.org',
+        'forgejo', 'gitea.io', 'codeberg.org'
+      ],
+      'System': [
+        'debian.org', 'ubuntu.com', 'nodesource.com', 'apache.org',
+        'cloudflare.com', 'akamaihd.net', 'fastly.net'
+      ]
+    };
+
+    for (const [domain, data] of Object.entries(domains)) {
+      let categorized = false;
+      for (const [category, domainPatterns] of Object.entries(patterns)) {
+        if (domainPatterns.some(p => domain === p || domain.endsWith('.' + p))) {
+          categories[category].push({ domain, ...data });
+          categorized = true;
+          break;
+        }
+      }
+      if (!categorized) {
+        categories['Other'].push({ domain, ...data });
+      }
+    }
+
+    // Remove empty categories
+    for (const key of Object.keys(categories)) {
+      if (categories[key].length === 0) {
+        delete categories[key];
+      }
+    }
+
+    return categories;
+  }
+
+  /**
    * Delete all LLM conversations for a workspace
    */
   async deleteAllLLMConversations(ipAddress) {
