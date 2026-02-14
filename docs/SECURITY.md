@@ -19,11 +19,12 @@ Comprehensive security guide for XaresAICoder platform.
 
 XaresAICoder implements a multi-layered security approach focusing on:
 - ✅ **Container Isolation** - Each workspace runs in isolated containers
-- ✅ **Optional Password Protection** - Workspace-level authentication
-- ✅ **Network Segmentation** - Isolated Docker networks
+- ✅ **Password Protection & Management** - Workspace-level authentication with set/update/remove support
+- ✅ **Network Segmentation** - Isolated Docker networks with dual proxy modes
 - ✅ **Resource Limits** - Prevent resource exhaustion attacks
 - ✅ **No Root Access** - Non-privileged container execution
 - ✅ **Data Isolation** - Separate storage for each workspace
+- ✅ **Outgoing Traffic Control** - Security Proxy with domain whitelisting, LLM Logging Proxy for monitoring
 
 ### Security Principles
 
@@ -53,27 +54,61 @@ XaresAICoder implements a multi-layered security approach focusing on:
 #### Password Requirements
 
 - **Minimum Length**: 8 characters
+- **Maximum Length**: 50 characters
 - **Recommended**: 12+ characters with mixed case, numbers, symbols
-- **Auto-Generated**: Secure 12-character passwords available
+- **Auto-Generated**: Secure 12-character passwords available via UI
 - **Custom Passwords**: User-defined passwords supported
 
 #### Password Storage
 
-```javascript
-// Server-side (memory only, not persisted)
-const workspacePasswords = new Map();
-workspacePasswords.set(workspaceId, hashedPassword);
+Passwords are persisted to disk via `saveProjectsToDisk()` and survive server restarts:
 
-// Passwords are hashed using bcrypt
+```javascript
+// Passwords are hashed using bcrypt with 10 salt rounds
 const bcrypt = require('bcrypt');
-const hashedPassword = await bcrypt.hash(password, 12);
+const hashedPassword = await bcrypt.hash(password, 10);
+
+// Stored in project metadata (hashed, never plaintext)
+project.passwordProtected = true;
+project.passwordHash = hashedPassword;
 ```
 
 **Security Features**:
-- ✅ **Bcrypt Hashing** - Industry-standard password hashing
-- ✅ **Memory Storage** - Passwords not persisted to disk
-- ✅ **Salt Rounds**: 12 rounds for strong protection
-- ✅ **Session Timeout** - Protection expires with container
+- ✅ **Bcrypt Hashing** - Industry-standard password hashing with salt
+- ✅ **Persistent Storage** - Password state survives server restarts via disk serialization
+- ✅ **Container Override File** - Password changes applied to running/stopped containers via `/home/coder/.code-server-auth`
+- ✅ **No Plaintext Storage** - Only bcrypt hashes stored server-side
+
+#### Password Management (Set, Update, Remove)
+
+Workspace passwords can be managed after creation via the `PUT /api/projects/:projectId/password` endpoint:
+
+**Set password on unprotected workspace:**
+```bash
+curl -X PUT http://localhost/api/projects/abc123/password \
+  -H "Content-Type: application/json" \
+  -d '{"newPassword": "MySecurePassword123!"}'
+```
+
+**Update existing password:**
+```bash
+curl -X PUT http://localhost/api/projects/abc123/password \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword": "OldPassword123!", "newPassword": "NewPassword456!"}'
+```
+
+**Remove password protection:**
+```bash
+curl -X PUT http://localhost/api/projects/abc123/password \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword": "OldPassword123!", "removePassword": true}'
+```
+
+**Implementation details:**
+- For **running containers**: writes override file via `docker exec`, then stop+start to apply
+- For **stopped containers**: writes override file via `putArchive` API (applied on next start)
+- The entrypoint script reads `/home/coder/.code-server-auth` to configure code-server auth mode
+- Current password is required when changing or removing protection on already-protected workspaces
 
 #### Protected Operations
 
@@ -81,6 +116,7 @@ Operations requiring password verification:
 - **Workspace Access** - VS Code authentication prompt
 - **Stop Workspace** - API requires password
 - **Delete Workspace** - API requires password
+- **Password Change/Remove** - Requires current password
 
 ```bash
 # Stop protected workspace
@@ -91,8 +127,9 @@ curl -X POST http://localhost/api/projects/abc123/stop \
 
 ### Visual Security Indicators
 
-- **🔒 Lock Icons** - Protected workspaces show lock symbols
-- **Password Prompts** - Clear authentication requirements
+- **Lock Icons** - Protected workspaces show lock symbols in the project list
+- **Password Management Modal** - UI for setting, updating, or removing passwords (key icon button)
+- **Password Prompts** - Clear authentication requirements for protected operations
 - **Status Messages** - Security status in project lists
 
 ## Container Isolation
@@ -168,6 +205,32 @@ networks:
 
 ## Network Security
 
+### Outgoing Traffic Control — Dual Proxy Modes
+
+XaresAICoder supports two proxy modes for controlling workspace outgoing traffic:
+
+**Security Proxy (squid)** — Whitelist-only access for student workspaces:
+- All traffic must pass through squid proxy with domain whitelist enforcement
+- Unauthorized domains return `TCP_DENIED/403`
+- Whitelist is dynamically managed via `PUT /api/whitelist` API
+- Base domains (apt repos, VS Code extensions) always included
+
+**LLM Logging Proxy (mitmproxy)** — Unrestricted access with recording for teacher workspaces:
+- All traffic passes through mitmproxy (no blocking)
+- Every accessed domain is recorded per workspace IP
+- LLM API conversations are captured in full
+- Recorded domains can be reviewed and applied as the Security Proxy whitelist
+
+**Teacher-to-Student Workflow:**
+1. Teacher creates workspace with LLM Logging Proxy (unrestricted)
+2. Teacher works normally — installs packages, uses AI tools, browses docs
+3. All accessed domains are recorded automatically
+4. Teacher reviews recorded domains via UI (categorized by type)
+5. Teacher applies selected domains as the global squid whitelist
+6. Students create workspaces with Security Proxy — only whitelisted domains accessible
+
+See [OUTGOING_PROXY.md](OUTGOING_PROXY.md) for detailed proxy configuration and [LLM_CONVERSATION_LOGGING.md](LLM_CONVERSATION_LOGGING.md) for domain recording details.
+
 ### Reverse Proxy Configuration
 
 ```nginx
@@ -228,9 +291,12 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" alway
 |-----------|----------|------------------|-----------|
 | **Workspace Code** | Container volumes | Isolated | Until deletion |
 | **API Keys** | Container environment | User-managed | Session-based |
-| **Passwords** | Server memory | Hashed | Non-persistent |
+| **Passwords** | Server disk (hashed) | Bcrypt hashed | Persistent |
 | **System Logs** | Host filesystem | Standard | Configurable |
 | **Git Repositories** | Forgejo volumes | Git server auth | Persistent |
+| **Recorded Domains** | mitmproxy volume | Per-workspace IP | Until container reset |
+| **LLM Conversations** | mitmproxy volume | Per-workspace IP | Until container reset |
+| **Proxy Logs** | Squid volume | Per-workspace IP | Until container reset |
 
 ### Data Isolation
 
@@ -278,45 +344,27 @@ graph TD
     D --> E{Valid Password?}
     E -->|Yes| F[VS Code Access]
     E -->|No| G[Access Denied]
+    F --> H[Password can be changed/removed at any time]
+    C --> I[Password can be added at any time]
 ```
 
 ### VS Code Authentication
 
-Protected workspaces use VS Code's built-in authentication:
+Protected workspaces use VS Code's built-in authentication, controlled by the entrypoint script which reads an optional override file:
 
-```javascript
-// VS Code server authentication
-const codeServerConfig = {
-  auth: passwordProtected ? 'password' : 'none',
-  password: workspacePassword,
-  'bind-addr': '0.0.0.0:8080',
-  'disable-telemetry': true
-};
+```bash
+# /home/coder/.code-server-auth (written by password management API)
+AUTH_FLAG=password          # or "none" to remove protection
+export PASSWORD='secret'    # set when AUTH_FLAG=password
 ```
 
 ### API Authentication
 
 API endpoints respect workspace protection:
-
-```javascript
-// Middleware for protected operations
-const requireWorkspacePassword = async (req, res, next) => {
-  const { projectId } = req.params;
-  const { password } = req.body;
-  
-  if (isPasswordProtected(projectId)) {
-    const isValid = await verifyWorkspacePassword(projectId, password);
-    if (!isValid) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid password for password-protected workspace'
-      });
-    }
-  }
-  
-  next();
-};
-```
+- **Stop/Delete** operations require the workspace password in the request body
+- **Password management** (`PUT /api/projects/:id/password`) requires current password when changing/removing
+- **Adding** a password to an unprotected workspace does not require authentication
+- Returns `401 Unauthorized` for invalid passwords
 
 ## Best Practices
 
@@ -521,6 +569,8 @@ fi
 3. **Container Escape** - Attempt to break container isolation
 4. **Data Breach** - Unauthorized access to workspace data
 5. **API Abuse** - Excessive API requests or attacks
+6. **Proxy Bypass** - Workspace attempting to bypass proxy restrictions
+7. **Whitelist Abuse** - Unauthorized whitelist modifications
 
 ### Response Procedures
 

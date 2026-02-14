@@ -507,38 +507,89 @@ Use this flowchart to determine if the transparent proxy solution is appropriate
    - Yes, and initial whitelist unknown → Consider Level 4 (Admin Approval) for discovery, then move to Level 3
    - No → **Use Level 3 (Transparent Proxy)** ✅
 
-### Per-Workspace Proxy Control
+### Dual Proxy Modes
 
-XaresAICoder supports **per-workspace proxy configuration**, allowing instructors to choose network access settings individually for each workspace. This provides flexibility for different use cases within the same platform.
+XaresAICoder supports **two proxy modes** per workspace, enabling a teacher-to-student workflow where the teacher prepares a whitelist and students work under restrictions.
+
+**Proxy Modes** (selected per workspace during creation):
+
+| Mode | Proxy | Access | Purpose |
+|------|-------|--------|---------|
+| **None** | No proxy | Unrestricted | Default, no monitoring or restrictions |
+| **LLM Logging Proxy** | mitmproxy | Unrestricted (all traffic recorded) | Teacher preparation, domain discovery |
+| **Security Proxy** | Squid | Whitelist-only (blocked = HTTP 403) | Student workspaces, assessments |
 
 **Key Features**:
-- **Individual Control**: Enable/disable proxy per workspace during creation
-- **Global Default**: Set `ENABLE_PROXY=true` in `.env` to show proxy checkbox
-- **Visual Indicators**: Network icon (⊕) shows which workspaces use proxy
-- **Real-time Monitoring**: View filtered Squid logs for each proxy-enabled workspace
-- **Backward Compatible**: Existing workspaces inherit global proxy setting
+- **Individual Control**: Choose proxy mode per workspace during creation
+- **Global Default**: Set `ENABLE_PROXY=true` in `.env` to show proxy radio buttons
+- **Visual Indicators**: Shield icon (Security), clock icon (Logging) next to workspace names
+- **Whitelist Generation**: Record domains from Logging workspaces and apply as Security Proxy whitelist
 
-**Use Cases**:
-- **Unrestricted Workspaces**: For development that requires access to any domain (testing external APIs, exploring new services)
-- **Proxy-Enabled Workspaces**: For controlled environments (student assignments, assessments, production-like scenarios)
-- **Mixed Environments**: Run both types simultaneously on the same platform
+### Teacher Workflow: Whitelist Generation
 
-**Creating a Proxy-Enabled Workspace**:
-1. Enable `ENABLE_PROXY=true` in `.env` file
-2. During workspace creation, check "Use Network Proxy (Restricted Access)"
-3. Workspace will route all traffic through Squid proxy with whitelist enforcement
-4. Click the logs icon to view real-time proxy logs with auto-refresh
+The recommended workflow for workshop preparation:
 
-**Creating an Unrestricted Workspace**:
-1. During workspace creation, uncheck the proxy checkbox
-2. Workspace will have direct internet access (bypasses Squid proxy)
-3. No network restrictions or monitoring
+1. **Create workspace with LLM Logging Proxy** — teacher works unrestricted
+2. **Work on the project** — install packages, use AI tools, browse docs, etc.
+3. **All accessed domains are automatically recorded** by mitmproxy
+4. **Click globe icon** on the workspace to view recorded domains, organized by category:
+   - Package Managers (pypi.org, npmjs.org, etc.)
+   - AI APIs (anthropic.com, openai.com, etc.)
+   - Documentation (stackoverflow.com, docs.python.org, etc.)
+   - Version Control (github.com, gitlab.com)
+   - System (debian.org, ubuntu.com)
+   - Other
+5. **Select domains** and click "Apply as Security Proxy Whitelist"
+6. **Create student workspaces with Security Proxy** — they can only access whitelisted domains
 
-**Viewing Proxy Logs**:
-- Proxy-enabled workspaces show a logs icon (document) next to the workspace name
+### Whitelist Management
+
+**Dynamic whitelist updates via API**:
+- `GET /api/whitelist` — view current squid whitelist
+- `PUT /api/whitelist` — apply domain list (merges with base defaults, reconfigures squid)
+
+**Base defaults** always included regardless of input:
+- APT repos (.debian.org, .ubuntu.com, .nodesource.com)
+- VS Code extensions (.open-vsx.org, .openvsx.org, .eclipsecontent.org)
+
+**Domain normalization**:
+- All domains converted to squid `.domain` format (matches bare domain + all subdomains)
+- Redundant subdomains automatically removed (prevents squid ACL fatal errors)
+- Changes take effect immediately via `squid -k reconfigure`
+
+**Squid config management**:
+- Default squid.conf baked into Docker image (from `squid/squid.conf`)
+- API modifies in-container copy (persists across restarts, resets on container recreation)
+- Host file `squid/squid.conf` never modified by the API
+
+### Creating Workspaces
+
+**LLM Logging Proxy workspace** (teacher):
+1. Enable `ENABLE_PROXY=true` in `.env`
+2. During creation, select "LLM Logging Proxy"
+3. All traffic flows through mitmproxy (unrestricted, recorded)
+4. Use AI Conversations button to view captured LLM conversations
+5. Use globe button to view recorded domains and generate whitelist
+
+**Security Proxy workspace** (student):
+1. During creation, select "Security Proxy"
+2. All traffic flows through Squid (whitelist enforcement)
+3. Use logs button to view allowed/denied proxy requests
+
+**Unrestricted workspace**:
+1. During creation, select "None"
+2. Direct internet access, no monitoring
+
+### Viewing Proxy Logs
+
+**Security Proxy workspaces** show a logs icon next to the workspace name:
 - Click to view last 50 proxy requests with timestamps, methods, URLs, and status codes
 - Auto-refresh toggle updates every 3 seconds for real-time monitoring
 - Logs filtered by workspace IP address for complete isolation
+
+**LLM Logging Proxy workspaces** show two additional buttons:
+- **AI Conversations** (chat icon): View/export captured LLM API conversations
+- **Recorded Domains** (globe icon): View all accessed domains with hit counts, apply as whitelist
 
 ### Implementation Phases
 

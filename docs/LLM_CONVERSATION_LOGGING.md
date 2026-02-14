@@ -41,30 +41,36 @@ The captured data enables:
 └──────────┬───────────┘
            │ HTTP/HTTPS
            ▼
-┌─────────────────────┐
-│   mitmproxy-logger  │
-│  - SSL interception  │
-│  - Request/response  │
-│    body capture      │
-│  - SSE parsing       │
-└──────────┬───────────┘
+┌──────────────────────────┐
+│     mitmproxy-logger     │
+│  - SSL interception      │
+│  - Domain recording      │  ← ALL requests
+│  - LLM request/response  │  ← LLM API calls only
+│    body capture           │
+│  - SSE parsing            │
+└──────────┬───────────────┘
            │ Writes JSON logs
            ▼
-┌─────────────────────┐
-│  /var/log/mitmproxy/│
-│  llm_conversations/  │
-│  ├── 172.30.0.5/    │ (per workspace IP)
-│  │   ├── 2025-*.json│
-│  │   └── ...         │
-│  └── 172.30.0.6/    │
-└─────────────────────┘
+┌──────────────────────────┐
+│  /var/log/mitmproxy/     │
+│  ├── llm_conversations/  │  (LLM API calls)
+│  │   ├── 172.30.0.5/    │
+│  │   │   ├── 2025-*.json│
+│  │   │   └── ...         │
+│  │   └── 172.30.0.6/    │
+│  └── domains/            │  (ALL accessed domains)
+│      ├── 172.30.0.5.json │
+│      └── 172.30.0.6.json │
+└──────────────────────────┘
            │
            ▼
-┌─────────────────────┐
-│  Backend API        │
-│  - Retrieve logs     │
-│  - Generate docs     │
-└─────────────────────┘
+┌──────────────────────────┐
+│  Backend API             │
+│  - Retrieve LLM logs     │
+│  - Generate docs         │
+│  - Get recorded domains  │
+│  - Apply as whitelist    │
+└──────────────────────────┘
 ```
 
 ## Features
@@ -75,6 +81,13 @@ The captured data enables:
 - ✅ Per-workspace organization by container IP
 - ✅ No configuration required in workspaces
 - ✅ Works with all pre-installed AI tools
+
+### Domain Recording & Whitelist Generation
+- ✅ Records ALL accessed domains (not just LLM APIs)
+- ✅ Per-workspace tracking with hit count, first/last seen timestamps
+- ✅ Auto-categorization (Package Managers, AI APIs, Documentation, etc.)
+- ✅ Apply recorded domains as Security Proxy whitelist
+- ✅ Survives mitmproxy restarts (persistent storage)
 
 ### Documentation Generation
 - ✅ Two documentation types: Clean and Detailed
@@ -226,6 +239,68 @@ curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
 
 # Delete specific conversation
 curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations/{timestamp}
+```
+
+## Domain Recording & Whitelist Generation
+
+### How Domain Recording Works
+
+In addition to LLM conversation capture, mitmproxy records **every domain** accessed through the proxy. This enables teachers to discover which domains are needed for a project and create a targeted whitelist.
+
+**What gets recorded:**
+- Domain name (not full URLs) for every HTTP/HTTPS request
+- Hit count per domain
+- First seen and last seen timestamps
+- Organized per workspace IP address
+
+**Storage format** (`/var/log/mitmproxy/domains/{client_ip}.json`):
+```json
+{
+  "pypi.org": {"count": 15, "first_seen": "2026-02-14T10:00:00Z", "last_seen": "2026-02-14T11:30:00Z"},
+  "api.anthropic.com": {"count": 3, "first_seen": "2026-02-14T10:05:00Z", "last_seen": "2026-02-14T11:00:00Z"},
+  "github.com": {"count": 8, "first_seen": "2026-02-14T10:02:00Z", "last_seen": "2026-02-14T11:25:00Z"}
+}
+```
+
+**Recording behavior:**
+- New domains written to disk immediately
+- Hit counts and last_seen flushed to disk every 60 seconds
+- Existing data loaded from disk on mitmproxy startup (survives restarts)
+- Domain tracking happens in both `request()` and `response()` hooks
+
+### Viewing Recorded Domains
+
+1. Create a workspace with **LLM Logging Proxy** mode
+2. Work in the workspace (install packages, use AI tools, browse docs)
+3. Click the **globe icon** next to the workspace name
+4. View domains grouped by auto-detected category:
+   - **Package Managers**: pypi.org, npmjs.org, maven.org, etc.
+   - **AI APIs**: openai.com, anthropic.com, googleapis.com, etc.
+   - **Documentation**: docs.python.org, stackoverflow.com, etc.
+   - **Version Control**: github.com, gitlab.com
+   - **System**: debian.org, ubuntu.com
+   - **Other**: everything else
+
+### Applying as Whitelist
+
+1. In the Recorded Domains modal, check/uncheck domains as needed
+2. Click **"Apply as Security Proxy Whitelist"**
+3. The selected domains are sent to `PUT /api/whitelist`
+4. The server merges with base defaults, normalizes to squid format, and reconfigures squid
+5. New Security Proxy workspaces immediately use the updated whitelist
+
+**Via API:**
+```bash
+# View recorded domains for a workspace
+curl http://localhost/api/projects/{projectId}/recorded-domains
+
+# Apply domains as whitelist
+curl -X PUT http://localhost/api/whitelist \
+  -H "Content-Type: application/json" \
+  -d '{"domains": ["pypi.org", "api.anthropic.com", "github.com", "registry.npmjs.org"]}'
+
+# View current whitelist
+curl http://localhost/api/whitelist
 ```
 
 ## Documentation Types

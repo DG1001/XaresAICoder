@@ -9,6 +9,9 @@ Complete API documentation for XaresAICoder platform.
 - [Project Management](#project-management)
 - [Container Control](#container-control)
 - [System Endpoints](#system-endpoints)
+- [Password Management](#password-management)
+- [Network Proxy & Monitoring](#network-proxy--monitoring)
+- [Whitelist Management](#whitelist-management)
 - [Git Integration](#git-integration)
 - [Error Handling](#error-handling)
 - [Rate Limiting](#rate-limiting)
@@ -70,6 +73,10 @@ Creates a new workspace with the specified configuration.
 - `passwordProtected` (boolean, optional): Enable password protection
 - `password` (string, conditional): Required if `passwordProtected` is true (min 8 chars)
 - `createGitRepo` (boolean, optional): Create Git repository (requires Git server)
+- `proxyMode` (string, optional): Network proxy mode — `none` (default), `logging` (LLM Logging Proxy, unrestricted with recording), `security` (Security Proxy, whitelist-only)
+- `memoryLimit` (string, optional): Memory limit — `1g`, `2g` (default), `4g`, `8g`, `16g`
+- `cpuCores` (string, optional): CPU cores — `1`, `2` (default), `4`, `8`
+- `group` (string, optional): Group name for organizing workspaces
 
 **Response** (Success - 201):
 ```json
@@ -419,6 +426,135 @@ curl http://localhost/api/limits
 ```
 
 This endpoint is used by the frontend to dynamically populate resource selection options, ensuring users can only choose values within configured limits.
+
+## Password Management
+
+### Update Workspace Password
+
+Update or remove password protection for a workspace.
+
+**Endpoint**: `PUT /api/projects/:projectId/password`
+
+**Request Body**:
+```json
+{
+  "currentPassword": "old-password",
+  "newPassword": "new-secure-password"
+}
+```
+
+Or to remove password protection:
+```json
+{
+  "currentPassword": "old-password",
+  "removePassword": true
+}
+```
+
+**Parameters**:
+- `currentPassword` (string): Required for already-protected workspaces
+- `newPassword` (string, optional): New password (min 8, max 50 chars)
+- `removePassword` (boolean, optional): Set to `true` to remove password protection
+
+**Response** (Success - 200):
+```json
+{
+  "success": true,
+  "message": "Password updated successfully",
+  "passwordProtected": true
+}
+```
+
+**Notes**:
+- On running containers: writes override file, restarts code-server, waits for readiness
+- On stopped containers: writes override file via Docker putArchive (applies on next start)
+
+## Network Proxy & Monitoring
+
+### Get Recorded Domains
+
+Returns all domains recorded by mitmproxy for a workspace using LLM Logging Proxy mode, grouped by category.
+
+**Endpoint**: `GET /api/projects/:projectId/recorded-domains`
+
+**Response** (Success - 200):
+```json
+{
+  "success": true,
+  "projectId": "abc-123",
+  "ipAddress": "172.30.0.5",
+  "domains": {
+    "pypi.org": {"count": 15, "first_seen": "2026-02-14T10:00:00Z", "last_seen": "2026-02-14T11:30:00Z"},
+    "api.anthropic.com": {"count": 3, "first_seen": "2026-02-14T10:05:00Z", "last_seen": "2026-02-14T11:00:00Z"}
+  },
+  "categorized": {
+    "Package Managers": [{"domain": "pypi.org", "count": 15, "first_seen": "...", "last_seen": "..."}],
+    "AI APIs": [{"domain": "api.anthropic.com", "count": 3, "first_seen": "...", "last_seen": "..."}]
+  },
+  "totalDomains": 2
+}
+```
+
+**Categories**: Package Managers, AI APIs, Documentation, Version Control, System, Other
+
+### Get LLM Conversations
+
+See [LLM_CONVERSATION_LOGGING.md](LLM_CONVERSATION_LOGGING.md) for full details.
+
+**Endpoint**: `GET /api/projects/:projectId/llm-conversations`
+
+### Get Squid Proxy Logs
+
+Returns filtered Squid proxy logs for Security Proxy workspaces.
+
+**Endpoint**: `GET /api/projects/:projectId/squid-logs`
+
+See existing documentation above for response format.
+
+## Whitelist Management
+
+### Get Current Whitelist
+
+Returns the current Security Proxy (squid) whitelist by parsing `squid.conf`.
+
+**Endpoint**: `GET /api/whitelist`
+
+**Response** (Success - 200):
+```json
+{
+  "success": true,
+  "domains": [".anthropic.com", ".debian.org", ".github.com", ".pypi.org"],
+  "raw": "# Whitelist ACLs section content..."
+}
+```
+
+### Apply Whitelist
+
+Replaces the Security Proxy whitelist with the provided domains. Merges with base defaults (apt repos, VS Code extensions), normalizes to squid `.domain` format, deduplicates subdomains, writes to squid.conf, and runs `squid -k reconfigure`.
+
+**Endpoint**: `PUT /api/whitelist`
+
+**Request Body**:
+```json
+{
+  "domains": ["pypi.org", "api.anthropic.com", "github.com", "registry.npmjs.org"]
+}
+```
+
+**Response** (Success - 200):
+```json
+{
+  "success": true,
+  "domainCount": 12,
+  "domains": [".anthropic.com", ".debian.org", ".eclipsecontent.org", ".github.com", "..."]
+}
+```
+
+**Notes**:
+- Base domains are always included (apt repos, VS Code extensions) regardless of input
+- Domains are normalized to `.domain` format (squid convention: matches both bare domain and all subdomains)
+- Redundant subdomains are automatically removed (e.g., `.api.anthropic.com` removed when `.anthropic.com` exists)
+- Changes take effect immediately via `squid -k reconfigure`
 
 ## Git Integration
 
