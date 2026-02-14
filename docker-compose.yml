@@ -153,7 +153,6 @@ services:
       --server=8.8.4.4
       --server=1.1.1.1
     networks:
-      xares-aicoder-network:
       xares-internal:
         ipv4_address: ${DNSMASQ_IP:-172.30.0.2}  # Fixed IP for DNS server
     restart: unless-stopped

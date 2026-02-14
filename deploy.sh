@@ -526,10 +526,6 @@ deploy_application() {
     # Generate appropriate nginx configuration
     generate_nginx_config
     
-    # Stop existing containers
-    print_status "Stopping existing containers..."
-    $DOCKER_COMPOSE_CMD down --remove-orphans
-
     # Read enabled features from .env
     local git_server_enabled=$(grep "^ENABLE_GIT_SERVER=" .env | cut -d'=' -f2)
     local proxy_enabled=$(grep "^ENABLE_PROXY=" .env | cut -d'=' -f2)
@@ -544,6 +540,10 @@ deploy_application() {
         profiles="$profiles --profile proxy"
         print_status "Proxy enabled - including Squid service"
     fi
+
+    # Stop existing containers (include profiles so profiled services are also removed)
+    print_status "Stopping existing containers..."
+    $DOCKER_COMPOSE_CMD $profiles down --remove-orphans
 
     # Determine compose files and build flags
     local compose_files=""
