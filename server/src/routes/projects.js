@@ -7,7 +7,18 @@ const router = express.Router();
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group, useProxy } = req.body;
+    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group, proxyMode: rawProxyMode, useProxy } = req.body;
+
+    // Determine proxyMode: support new proxyMode field, with backward compat for old useProxy boolean
+    let proxyMode = rawProxyMode;
+    if (proxyMode === undefined) {
+      if (useProxy === true) {
+        proxyMode = 'logging';
+      } else if (useProxy === false) {
+        proxyMode = 'none';
+      }
+      // If neither is provided, will default in service layer
+    }
     
     if (!projectName) {
       return res.status(400).json({
@@ -80,7 +91,7 @@ router.post('/create', async (req, res) => {
       gitUsername: gitUsername || null,
       gitToken: gitToken || null,
       group: group || null, // Will default to 'Uncategorized' in service
-      useProxy: useProxy !== undefined ? useProxy : (process.env.ENABLE_PROXY === 'true') // Default to global proxy setting
+      proxyMode: proxyMode || 'none'
     });
     
     res.status(201).json({

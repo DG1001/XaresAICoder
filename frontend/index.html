@@ -320,19 +320,29 @@
                                 </div>
                             </div>
 
-                            <div class="form-group checkbox-group" id="proxyGroup" style="display: none;">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="useProxy" name="useProxy">
-                                    <span class="checkmark"></span>
-                                    <span class="checkbox-text">
-                                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                                            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/>
-                                        </svg>
-                                        Use Network Proxy (LLM Logging)
-                                    </span>
+                            <div class="form-group" id="proxyGroup" style="display: none;">
+                                <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 500;">
+                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px; vertical-align: text-bottom;">
+                                        <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/>
+                                    </svg>
+                                    Network Proxy
                                 </label>
-                                <div class="checkbox-description">
-                                    Route network traffic through proxy to enable LLM conversation logging
+                                <div style="display: flex; flex-direction: column; gap: 6px; margin-left: 4px;">
+                                    <label class="checkbox-label" style="cursor: pointer;">
+                                        <input type="radio" name="proxyMode" value="none" checked>
+                                        <span style="margin-left: 4px;">No Proxy</span>
+                                        <span style="color: var(--vscode-text-muted); font-size: 12px; margin-left: 4px;">— Unrestricted internet access</span>
+                                    </label>
+                                    <label class="checkbox-label" style="cursor: pointer;">
+                                        <input type="radio" name="proxyMode" value="security">
+                                        <span style="margin-left: 4px;">Security Proxy</span>
+                                        <span style="color: var(--vscode-text-muted); font-size: 12px; margin-left: 4px;">— Restrict access to whitelisted domains only</span>
+                                    </label>
+                                    <label class="checkbox-label" style="cursor: pointer;">
+                                        <input type="radio" name="proxyMode" value="logging">
+                                        <span style="margin-left: 4px;">LLM Logging Proxy</span>
+                                        <span style="color: var(--vscode-text-muted); font-size: 12px; margin-left: 4px;">— Log all LLM API conversations for documentation</span>
+                                    </label>
                                 </div>
                             </div>
                         </div>

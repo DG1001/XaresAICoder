@@ -90,7 +90,7 @@ class WorkspaceService {
         createGitRepo: options.createGitRepo || false,
         gitRepository: null, // Will be set if Git repo is created
         gitUrl: options.gitUrl || null, // Store Git URL for cloned repositories
-        useProxy: options.useProxy !== undefined ? options.useProxy : (process.env.ENABLE_PROXY === 'true'), // Per-workspace proxy setting (defaults to global setting)
+        proxyMode: options.proxyMode || 'none', // Per-workspace proxy mode: 'none', 'security', or 'logging'
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'creating',
@@ -154,9 +154,9 @@ class WorkspaceService {
         }
       }
       
-      // Get project's useProxy setting
+      // Get project's proxyMode setting
       let project = this.projects.get(projectId);
-      const useProxy = project ? project.useProxy : (process.env.ENABLE_PROXY === 'true');
+      const proxyMode = project ? project.proxyMode : 'none';
 
       // Create Docker container with auth options and Git config
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
@@ -168,7 +168,7 @@ class WorkspaceService {
         gitUrl: options.gitUrl || null,
         gitUsername: options.gitUsername || null,
         gitToken: options.gitToken || null,
-        useProxy: useProxy
+        proxyMode: proxyMode
       });
 
       // Update project with workspace URL, Git info, and running status
@@ -262,7 +262,7 @@ class WorkspaceService {
     }
 
     try {
-      const result = await dockerService.startWorkspace(projectId, project.useProxy);
+      const result = await dockerService.startWorkspace(projectId, project.proxyMode || 'none');
       project.status = result.status || 'running';
       project.lastAccessed = new Date();
 
@@ -388,7 +388,7 @@ class WorkspaceService {
           createdAt: p.createdAt,
           lastAccessed: p.lastAccessed,
           notes: p.notes || '',
-          useProxy: p.useProxy || false
+          proxyMode: p.proxyMode || 'none'
         };
       } catch (error) {
         console.error(`Error getting status for project ${p.projectId}:`, error);
@@ -408,7 +408,7 @@ class WorkspaceService {
           createdAt: p.createdAt,
           lastAccessed: p.lastAccessed,
           notes: p.notes || '',
-          useProxy: p.useProxy || false
+          proxyMode: p.proxyMode || 'none'
         };
       }
     });
@@ -517,10 +517,14 @@ class WorkspaceService {
               ...projectData,
               // Add memoryLimit for existing projects that don't have it (migration)
               memoryLimit: projectData.memoryLimit || '2g',
+              // Migrate useProxy (boolean) to proxyMode (string) for backward compat
+              proxyMode: projectData.proxyMode || (projectData.useProxy === true ? 'logging' : 'none'),
               // Update status from Docker
               status: dockerStatus.status,
               lastAccessed: new Date(projectData.lastAccessed || projectData.createdAt)
             };
+            // Remove old useProxy field if it exists
+            delete project.useProxy;
             
             this.projects.set(projectId, project);
             console.log(`Restored project: ${project.projectName} (${projectId}) - Status: ${project.status}`);

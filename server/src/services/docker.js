@@ -18,7 +18,8 @@ class DockerService {
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
     this.proxyNetwork = 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
-    this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging (using container name for DNS resolution)
+    this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
+    this.squidProxyHost = 'xaresaicoder-squid-proxy:3128'; // Squid proxy container for security whitelist filtering
     // Workspace sudo privileges configuration
     this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
     // Security and isolation configuration
@@ -40,7 +41,9 @@ class DockerService {
       await this.ensureCodeServerImage();
 
       // Setup authentication and Git configuration
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitUsername = null, gitToken = null, useProxy = false } = authOptions;
+      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitUsername = null, gitToken = null, proxyMode = 'none' } = authOptions;
+      const useProxy = proxyMode !== 'none';
+      const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
       let authFlag = 'none'; // Default to no auth
       const envVars = [
         `PROJECT_TYPE=${projectType}`,
@@ -52,12 +55,12 @@ class DockerService {
       // Add proxy environment variables if THIS workspace uses proxy
       if (useProxy) {
         // Uppercase (used by some tools)
-        envVars.push(`HTTP_PROXY=http://${this.proxyHost}`);
-        envVars.push(`HTTPS_PROXY=http://${this.proxyHost}`);
+        envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
+        envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
         envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
         // Lowercase (used by curl and many CLI tools)
-        envVars.push(`http_proxy=http://${this.proxyHost}`);
-        envVars.push(`https_proxy=http://${this.proxyHost}`);
+        envVars.push(`http_proxy=http://${activeProxyHost}`);
+        envVars.push(`https_proxy=http://${activeProxyHost}`);
         envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
         // Tell Node.js to trust the proxy CA certificate
         envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
@@ -203,7 +206,7 @@ class DockerService {
       console.log(`Workspace ${containerName} is ready, now initializing project`);
 
       // Initialize git repository and project structure after container is ready
-      await this.initializeProject(container, projectType, useProxy);
+      await this.initializeProject(container, projectType, proxyMode);
       console.log(`Initialization completed for ${containerName}`);
 
       this.activeContainers.set(projectId, {
@@ -227,7 +230,9 @@ class DockerService {
     }
   }
 
-  async initializeProject(container, projectType, useProxy = false) {
+  async initializeProject(container, projectType, proxyMode = 'none') {
+    const useProxy = proxyMode !== 'none';
+    const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
     console.log(`Starting project initialization for type: ${projectType}`);
     try {
       // Create a marker file to verify the function is running
@@ -249,6 +254,9 @@ class DockerService {
         commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
         commands.push('sudo chmod 440 /etc/sudoers.d/proxy');
 
+        // Parse proxy host and port from activeProxyHost (format: "host:port")
+        const [proxyHostName, proxyPort] = activeProxyHost.split(':');
+
         // Configure Maven to use proxy and official repositories only
         commands.push('mkdir -p ~/.m2');
         commands.push('cat > ~/.m2/settings.xml << "EOF"\n' +
@@ -258,11 +266,11 @@ class DockerService {
           '                              https://maven.apache.org/xsd/settings-1.2.0.xsd">\n' +
           '  <proxies>\n' +
           '    <proxy>\n' +
-          '      <id>squid-proxy</id>\n' +
+          '      <id>workspace-proxy</id>\n' +
           '      <active>true</active>\n' +
           '      <protocol>http</protocol>\n' +
-          '      <host>squid-proxy</host>\n' +
-          '      <port>3128</port>\n' +
+          `      <host>${proxyHostName}</host>\n` +
+          `      <port>${proxyPort}</port>\n` +
           '      <nonProxyHosts>localhost|127.0.0.1|forgejo</nonProxyHosts>\n' +
           '    </proxy>\n' +
           '  </proxies>\n' +
@@ -281,11 +289,11 @@ class DockerService {
         // Configure Gradle to use proxy (gradle.properties)
         commands.push('mkdir -p ~/.gradle');
         commands.push('cat > ~/.gradle/gradle.properties << "EOF"\n' +
-          'systemProp.http.proxyHost=xaresaicoder-mitmproxy-logger\n' +
-          'systemProp.http.proxyPort=8080\n' +
+          `systemProp.http.proxyHost=${proxyHostName}\n` +
+          `systemProp.http.proxyPort=${proxyPort}\n` +
           'systemProp.http.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
-          'systemProp.https.proxyHost=xaresaicoder-mitmproxy-logger\n' +
-          'systemProp.https.proxyPort=8080\n' +
+          `systemProp.https.proxyHost=${proxyHostName}\n` +
+          `systemProp.https.proxyPort=${proxyPort}\n` +
           'systemProp.https.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
           'EOF');
 
@@ -988,8 +996,9 @@ fi`.trim();
     }
   }
 
-  async startWorkspace(projectId, useProxy = false) {
+  async startWorkspace(projectId, proxyMode = 'none') {
     const containerName = `workspace-${projectId}`;
+    const useProxy = proxyMode !== 'none';
 
     try {
       // Try to get container by name from Docker API

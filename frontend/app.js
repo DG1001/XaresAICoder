@@ -211,7 +211,7 @@ class XaresAICoder {
             if (gitRepoGroup) gitRepoGroup.style.display = 'none';
         }
 
-        // Show/hide proxy checkbox based on configuration
+        // Show/hide proxy radio group based on configuration
         const proxyGroup = document.getElementById('proxyGroup');
         if (this.config.enableProxy) {
             if (proxyGroup) proxyGroup.style.display = 'block';
@@ -520,7 +520,7 @@ class XaresAICoder {
         const passwordProtected = formData.get('passwordProtected') === 'on';
         const workspacePassword = formData.get('workspacePassword');
         const createGitRepo = formData.get('createGitRepo') === 'on';
-        const useProxy = formData.get('useProxy') === 'on';
+        const proxyMode = formData.get('proxyMode') || 'none';
 
         const useGitRepository = formData.get('useGitRepository') === 'on';
         const gitUrl = formData.get('gitUrl')?.trim();
@@ -580,9 +580,9 @@ class XaresAICoder {
             requestBody.createGitRepo = true;
         }
 
-        // Add proxy setting if proxy is globally enabled
+        // Add proxy mode if proxy is globally enabled
         if (this.config.enableProxy) {
-            requestBody.useProxy = useProxy;
+            requestBody.proxyMode = proxyMode;
         }
 
         try {
@@ -677,7 +677,7 @@ class XaresAICoder {
             cpuCores: '2',      // Default 2 cores
             gitUrl,
             group: this.selectedGroup || 'Uncategorized',
-            useProxy: false     // Quick clone always uses unrestricted network
+            proxyMode: 'none'   // Quick clone always uses unrestricted network
         };
 
         try {
@@ -937,7 +937,8 @@ class XaresAICoder {
                     <h4>
                         ${this.escapeHtml(project.projectName)}
                         ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
-                        ${project.useProxy ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Using Network Proxy (LLM Logging)"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/></svg>' : ''}
+                        ${project.proxyMode === 'security' ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Security Proxy (Restricted Access)"><path d="M5.338 1.59a61.44 61.44 0 0 0-2.837.856.481.481 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.725 10.725 0 0 0 2.287 2.233c.346.244.652.42.893.533.12.057.218.095.293.118a.55.55 0 0 0 .101.025.615.615 0 0 0 .1-.025c.076-.023.174-.061.294-.118.24-.113.547-.29.893-.533a10.726 10.726 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.775 11.775 0 0 1-2.517 2.453 7.159 7.159 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7.158 7.158 0 0 1-1.048-.625 11.777 11.777 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43 62.456 62.456 0 0 1 5.072.56z"/><path d="M10.854 5.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7.5 7.793l2.646-2.647a.5.5 0 0 1 .708 0z"/></svg>' : ''}
+                        ${project.proxyMode === 'logging' ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="LLM Logging Proxy"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/></svg>' : ''}
                         ${project.gitRepository && project.gitRepository.webUrl ? `<a href="${project.gitRepository.webUrl}" target="_blank" class="git-repo-link" title="View Git Repository: ${project.gitRepository.name}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>` : ''}
                         ${project.status !== 'creating' ? `<button class="notes-btn" onclick="app.openPasswordManageModal('${project.projectId}')" title="Manage Password" aria-label="Manage Password">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -952,9 +953,15 @@ class XaresAICoder {
                             </svg>
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
-                        ${project.useProxy ? `<button class="ai-conv-btn" onclick="app.openAIConversationsModal('${project.projectId}')" title="View AI Conversations" aria-label="AI Conversations">
+                        ${project.proxyMode === 'logging' ? `<button class="ai-conv-btn" onclick="app.openAIConversationsModal('${project.projectId}')" title="View AI Conversations" aria-label="AI Conversations">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path fill-rule="evenodd" d="M2.678 11.894a1 1 0 0 1 .287.801 10.97 10.97 0 0 1-.398 2c1.395-.323 2.247-.697 2.634-.893a1 1 0 0 1 .71-.074A8.06 8.06 0 0 0 8 14c3.996 0 7-2.807 7-6 0-3.192-3.004-6-7-6S1 4.808 1 8c0 1.468.617 2.83 1.678 3.894zm-.493 3.905a21.682 21.682 0 0 1-.713.129c-.2.032-.352-.176-.273-.362.354-.836.674-1.95.77-2.966C.744 11.37 0 9.76 0 8c0-3.866 3.582-7 8-7s8 3.134 8 7-3.582 7-8 7a9.06 9.06 0 0 1-2.347-.306c-.52.263-1.639.742-3.468 1.105zM4 5.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zM4.5 7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/>
+                            </svg>
+                        </button>` : ''}
+                        ${project.proxyMode === 'security' ? `<button class="notes-btn" onclick="app.openLogsModal('${project.projectId}')" title="View Proxy Logs" aria-label="Proxy Logs">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/>
+                                <path d="M3 3h7v1H3V3zm0 2h7v1H3V5zm0 2h5v1H3V7z"/>
                             </svg>
                         </button>` : ''}
                         ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}" style="margin-left: 12px;">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
@@ -2140,8 +2147,8 @@ class XaresAICoder {
                 return;
             }
 
-            if (!project.useProxy) {
-                this.showError('This workspace is not using the proxy');
+            if (!project.proxyMode || project.proxyMode === 'none') {
+                this.showError('This workspace is not using a proxy');
                 return;
             }
 
