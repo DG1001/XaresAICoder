@@ -237,6 +237,73 @@ router.post('/:projectId/stop', async (req, res) => {
   }
 });
 
+// Clone project (create multiple workspaces from a source)
+router.post('/:projectId/clone', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { count, password } = req.body;
+
+    // Validate count
+    if (count === undefined || count === null) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'count is required'
+      });
+    }
+
+    const cloneCount = parseInt(count);
+    if (!Number.isInteger(cloneCount) || cloneCount < 1 || cloneCount > 50) {
+      return res.status(400).json({
+        error: 'Invalid count',
+        message: 'Clone count must be an integer between 1 and 50'
+      });
+    }
+
+    // Validate password if provided
+    if (password) {
+      if (password.length < 8) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be at least 8 characters long'
+        });
+      }
+      if (password.length > 50) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be less than 50 characters'
+        });
+      }
+    }
+
+    // Look up source project for response metadata
+    const sourceProject = await workspaceService.getProject(projectId);
+
+    const clones = await workspaceService.cloneProject(projectId, cloneCount, {
+      password: password || null
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Cloning ${cloneCount} workspace${cloneCount === 1 ? '' : 's'} from "${sourceProject.projectName}"`,
+      sourceProjectId: projectId,
+      sourceProjectName: sourceProject.projectName,
+      clones,
+      totalCount: cloneCount
+    });
+
+  } catch (error) {
+    console.error('Clone project error:', error);
+    let statusCode = 500;
+    if (error.message === 'Source project not found' || error.message === 'Project not found') statusCode = 404;
+    if (error.message.includes('Cannot clone') || error.message.includes('Clone count') || error.message.includes('Cannot create')) statusCode = 400;
+
+    res.status(statusCode).json({
+      error: 'Failed to clone project',
+      message: error.message
+    });
+  }
+});
+
 // Get project notes
 router.get('/:projectId/notes', async (req, res) => {
   try {

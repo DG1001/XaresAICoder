@@ -1259,6 +1259,200 @@ fi`.trim();
     }
   }
 
+  /**
+   * Commit a workspace container to a snapshot image for cloning.
+   * Works on both running and stopped containers.
+   */
+  async commitContainer(projectId) {
+    const containerName = `workspace-${projectId}`;
+    const snapshotRepo = `clone-snapshot-${projectId}`;
+
+    try {
+      const container = this.docker.getContainer(containerName);
+      await container.commit({
+        repo: snapshotRepo,
+        tag: 'latest',
+        comment: `Snapshot for cloning workspace ${projectId}`,
+        pause: true
+      });
+
+      const imageName = `${snapshotRepo}:latest`;
+      console.log(`Created snapshot image: ${imageName} from container ${containerName}`);
+      return imageName;
+    } catch (error) {
+      console.error(`Error committing container ${containerName}:`, error);
+      throw new Error(`Failed to create snapshot: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create a clone container from a committed snapshot image.
+   * Similar to createWorkspaceContainer but uses the snapshot and skips project initialization.
+   */
+  async createCloneContainer(projectId, snapshotImage, options = {}) {
+    try {
+      const containerName = `workspace-${projectId}`;
+      const port = await this.findAvailablePort(8080);
+
+      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, proxyMode = 'none' } = options;
+      const useProxy = proxyMode !== 'none';
+      const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
+      let authFlag = 'none';
+      const envVars = [
+        `PROJECT_TYPE=clone`,
+        `PROJECT_ID=${projectId}`,
+        `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
+        `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
+      ];
+
+      // Proxy environment variables
+      if (useProxy) {
+        envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
+        envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
+        envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
+        envVars.push(`http_proxy=http://${activeProxyHost}`);
+        envVars.push(`https_proxy=http://${activeProxyHost}`);
+        envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
+        envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
+      }
+
+      if (passwordProtected && password) {
+        authFlag = 'password';
+        envVars.push(`PASSWORD=${password}`);
+      }
+
+      // Add Git server env vars (same as createWorkspaceContainer)
+      const gitServerEnabled = process.env.ENABLE_GIT_SERVER === 'true';
+      if (gitServerEnabled) {
+        const protocol = process.env.PROTOCOL || 'http';
+        const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+        const basePort = process.env.BASE_PORT || '80';
+        const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
+        const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
+
+        envVars.push(`GIT_SERVER_ENABLED=true`);
+        envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
+        envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
+        envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
+
+        let externalGitUrl;
+        if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
+          externalGitUrl = `${protocol}://${baseDomain}/git`;
+        } else {
+          externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
+        }
+        envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
+      }
+
+      const memoryBytes = this.parseMemoryLimit(memoryLimit);
+      const cpuShares = this.parseCpuCores(cpuCores);
+
+      const enableGpu = process.env.ENABLE_GPU === 'true';
+      if (enableGpu) {
+        envVars.push('NVIDIA_VISIBLE_DEVICES=all');
+        envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
+      }
+
+      const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
+
+      const container = await this.docker.createContainer({
+        Image: snapshotImage,
+        name: containerName,
+        Env: envVars,
+        ExposedPorts: {
+          '8082/tcp': {},
+          '3000/tcp': {},
+          '5000/tcp': {},
+          '8000/tcp': {},
+          '8080/tcp': {},
+          '4200/tcp': {},
+          '3001/tcp': {},
+          '9000/tcp': {}
+        },
+        HostConfig: {
+          Memory: memoryBytes,
+          CpuShares: cpuShares,
+          NetworkMode: workspaceNetwork,
+          PidMode: '',
+          IpcMode: 'private',
+          PidsLimit: this.securityConfig.pidsLimit,
+          SecurityOpt: [
+            ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
+            'seccomp=unconfined'
+          ],
+          CapDrop: ['ALL'],
+          CapAdd: [
+            'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID',
+            'NET_BIND_SERVICE', 'AUDIT_WRITE'
+          ],
+          Ulimits: [
+            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard },
+            { Name: 'nproc', Soft: this.securityConfig.maxProcessesPerUser, Hard: this.securityConfig.maxProcessesPerUserHard }
+          ],
+          RestartPolicy: { Name: 'unless-stopped' },
+          ...(useProxy && {
+            Dns: [process.env.DNSMASQ_IP || '172.30.0.2']
+          }),
+          ...(enableGpu && {
+            DeviceRequests: [{
+              Driver: '',
+              Count: -1,
+              Capabilities: [['gpu']]
+            }]
+          })
+        },
+        NetworkingConfig: {
+          EndpointsConfig: {
+            [workspaceNetwork]: {
+              Aliases: [containerName]
+            }
+          }
+        },
+        WorkingDir: '/workspace',
+        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
+      });
+
+      await container.start();
+      console.log(`Clone container ${containerName} started`);
+
+      // Wait for code-server to be ready (no project initialization needed — filesystem is cloned)
+      await this.waitForWorkspaceReady(containerName);
+      console.log(`Clone workspace ${containerName} is ready`);
+
+      this.activeContainers.set(projectId, {
+        container,
+        name: containerName,
+        port,
+        createdAt: new Date(),
+        projectType: 'clone'
+      });
+
+      return {
+        projectId,
+        containerName,
+        workspaceUrl: `${this.protocol}://${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
+        status: 'running'
+      };
+
+    } catch (error) {
+      console.error('Error creating clone container:', error);
+      throw new Error(`Failed to create clone: ${error.message}`);
+    }
+  }
+
+  /**
+   * Remove a snapshot image created by commitContainer.
+   */
+  async removeSnapshotImage(imageName) {
+    try {
+      const image = this.docker.getImage(imageName);
+      await image.remove({ force: true });
+      console.log(`Removed snapshot image: ${imageName}`);
+    } catch (error) {
+      console.error(`Failed to remove snapshot image ${imageName}:`, error.message);
+    }
+  }
+
   async stopWorkspaceContainer(projectId) {
     const containerName = `workspace-${projectId}`;
     

@@ -10,6 +10,7 @@ Complete API documentation for XaresAICoder platform.
 - [Container Control](#container-control)
 - [System Endpoints](#system-endpoints)
 - [Password Management](#password-management)
+- [Workspace Cloning](#workspace-cloning)
 - [Network Proxy & Monitoring](#network-proxy--monitoring)
 - [Whitelist Management](#whitelist-management)
 - [Git Integration](#git-integration)
@@ -469,6 +470,66 @@ Or to remove password protection:
 - On running containers: writes override file, restarts code-server, waits for readiness
 - On stopped containers: writes override file via Docker putArchive (applies on next start)
 
+## Workspace Cloning
+
+### Clone Workspace
+
+Creates multiple identical copies of an existing workspace using Docker filesystem snapshots (`docker commit`). Designed for workshop scenarios where a teacher prepares a base workspace and needs to create N copies for students.
+
+**Endpoint**: `POST /api/projects/:projectId/clone`
+
+**Request Body**:
+```json
+{
+  "count": 5,
+  "password": "optional-student-password"
+}
+```
+
+**Parameters**:
+- `count` (integer, required): Number of clones to create (1–50)
+- `password` (string, optional): Password for all cloned workspaces (min 8, max 50 chars)
+
+**Response** (Success - 202):
+```json
+{
+  "success": true,
+  "message": "Cloning 5 workspaces from \"Base Workshop\"",
+  "sourceProjectId": "abc-123",
+  "sourceProjectName": "Base Workshop",
+  "clones": [
+    { "projectId": "clone-id-1", "projectName": "Base Workshop 1", "status": "creating" },
+    { "projectId": "clone-id-2", "projectName": "Base Workshop 2", "status": "creating" },
+    { "projectId": "clone-id-3", "projectName": "Base Workshop 3", "status": "creating" },
+    { "projectId": "clone-id-4", "projectName": "Base Workshop 4", "status": "creating" },
+    { "projectId": "clone-id-5", "projectName": "Base Workshop 5", "status": "creating" }
+  ],
+  "totalCount": 5
+}
+```
+
+**Response** (Error - 400):
+```json
+{
+  "error": "Failed to clone project",
+  "message": "Cannot create 10 clones: only 3 workspace slots remaining (limit: 5)"
+}
+```
+
+**What gets cloned**: The entire container filesystem (installed packages, files, configs, git repos) via `docker commit`, plus metadata (proxyMode, group, memoryLimit, cpuCores, gitUrl).
+
+**Notes**:
+- Returns 202 immediately; clones are created sequentially in the background
+- Source workspace can be running or stopped (paused briefly during snapshot)
+- Each clone is an independent container with its own copy-on-write layer
+- Snapshot image is ephemeral and cleaned up automatically after cloning
+- Clone names follow the pattern `{sourceName} 1`, `{sourceName} 2`, etc.
+- Workspace limit is checked all-or-nothing before any clones are created
+
+**Error Cases**:
+- `404`: Source project not found
+- `400`: Source still creating, invalid count, workspace limit exceeded
+
 ## Network Proxy & Monitoring
 
 ### Get Recorded Domains
@@ -697,7 +758,12 @@ curl -X POST http://localhost/api/projects/abc123def456/stop \
 # 6. Start the workspace again
 curl -X POST http://localhost/api/projects/abc123def456/start
 
-# 7. Delete the project (with password)
+# 7. Clone workspace for a workshop (20 student copies)
+curl -X POST http://localhost/api/projects/abc123def456/clone \
+  -H "Content-Type: application/json" \
+  -d '{"count": 20, "password": "student-pw-123"}'
+
+# 8. Delete the project (with password)
 curl -X DELETE http://localhost/api/projects/abc123def456 \
   -H "Content-Type: application/json" \
   -d '{"password": "secure123!"}'

@@ -203,6 +203,141 @@ class WorkspaceService {
     }
   }
 
+  async cloneProject(projectId, count, options = {}, userId = 'default') {
+    // Look up source project
+    const source = this.projects.get(projectId);
+    if (!source) {
+      throw new Error('Source project not found');
+    }
+    if (source.status === 'creating') {
+      throw new Error('Cannot clone a workspace that is still being created');
+    }
+
+    // Validate count
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
+      throw new Error('Clone count must be an integer between 1 and 50');
+    }
+
+    // Check workspace limit (all-or-nothing)
+    const userProjects = Array.from(this.projects.values())
+      .filter(p => p.userId === userId);
+    const remaining = this.maxWorkspacesPerUser - userProjects.length;
+    if (count > remaining) {
+      throw new Error(
+        `Cannot create ${count} clones: only ${remaining} workspace slot${remaining === 1 ? '' : 's'} remaining (limit: ${this.maxWorkspacesPerUser})`
+      );
+    }
+
+    // Hash password if provided
+    let passwordHash = null;
+    const hasPassword = options.password && options.password.length > 0;
+    if (hasPassword) {
+      passwordHash = await bcrypt.hash(options.password, 10);
+    }
+
+    const clones = [];
+    for (let i = 1; i <= count; i++) {
+      const cloneId = uuidv4();
+      const clone = {
+        projectId: cloneId,
+        projectName: `${source.projectName} ${i}`,
+        projectType: source.projectType,
+        memoryLimit: source.memoryLimit || '2g',
+        cpuCores: source.cpuCores || '2',
+        userId,
+        group: source.group || 'Uncategorized',
+        passwordProtected: hasPassword,
+        passwordHash: passwordHash,
+        createGitRepo: source.createGitRepo || false,
+        gitRepository: null,
+        gitUrl: source.gitUrl || null,
+        proxyMode: source.proxyMode || 'none',
+        createdAt: new Date(),
+        lastAccessed: new Date(),
+        status: 'creating',
+        workspaceUrl: null,
+        clonedFrom: projectId
+      };
+
+      this.projects.set(cloneId, clone);
+      clones.push(clone);
+    }
+
+    // Save all to disk at once
+    await this.saveProjectsToDisk();
+
+    // Kick off sequential container creation (fire-and-forget)
+    this.createClonesSequentially(clones, options);
+
+    // Return immediately
+    return clones.map(c => ({
+      projectId: c.projectId,
+      projectName: c.projectName,
+      status: c.status
+    }));
+  }
+
+  async createClonesSequentially(clones, options) {
+    const sourceProjectId = clones[0].clonedFrom;
+    let snapshotImage;
+
+    // Step 1: Commit the source container to a snapshot image
+    try {
+      snapshotImage = await dockerService.commitContainer(sourceProjectId);
+      console.log(`Created snapshot image: ${snapshotImage} for cloning`);
+    } catch (error) {
+      console.error(`Failed to snapshot source container ${sourceProjectId}:`, error);
+      // Mark all clones as error
+      for (const clone of clones) {
+        const project = this.projects.get(clone.projectId);
+        if (project) {
+          project.status = 'error';
+          project.lastAccessed = new Date();
+        }
+      }
+      await this.saveProjectsToDisk();
+      return;
+    }
+
+    // Step 2: Create each clone from the snapshot
+    try {
+      for (const clone of clones) {
+        try {
+          console.log(`Creating clone container: ${clone.projectName} (${clone.projectId})`);
+          const workspace = await dockerService.createCloneContainer(clone.projectId, snapshotImage, {
+            memoryLimit: clone.memoryLimit,
+            cpuCores: clone.cpuCores,
+            passwordProtected: clone.passwordProtected,
+            password: options.password || null,
+            proxyMode: clone.proxyMode
+          });
+
+          // Update project status
+          const project = this.projects.get(clone.projectId);
+          if (project) {
+            project.status = 'running';
+            project.workspaceUrl = workspace.workspaceUrl;
+            project.lastAccessed = new Date();
+          }
+          await this.saveProjectsToDisk();
+          console.log(`Clone created: ${clone.projectName} → ${workspace.workspaceUrl}`);
+        } catch (error) {
+          console.error(`Failed to create clone ${clone.projectId}:`, error);
+          const project = this.projects.get(clone.projectId);
+          if (project) {
+            project.status = 'error';
+            project.lastAccessed = new Date();
+          }
+          await this.saveProjectsToDisk();
+        }
+      }
+    } finally {
+      // Step 3: Clean up the snapshot image
+      await dockerService.removeSnapshotImage(snapshotImage);
+      console.log(`Cleaned up snapshot image: ${snapshotImage}`);
+    }
+  }
+
   async getProject(projectId) {
     const project = this.projects.get(projectId);
     if (!project) {

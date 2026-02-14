@@ -314,6 +314,52 @@ For VS Code Extensions (Continue, Cline):
 4. **Monitor workspace timeout** - save work before 120 minutes
 5. **Leverage GitHub CLI** - use `gh` commands for repository management
 
+## Cloning Workspaces for Workshops
+
+Teachers can prepare a fully-configured base workspace and then clone it into multiple identical copies for students.
+
+### How to Clone
+
+1. Create and configure a base workspace (install packages, set up files, clone repos, etc.)
+2. On the project card, click the **Clone** button (copy icon)
+3. In the clone modal:
+   - Review the source workspace settings (memory, CPU, proxy mode, group)
+   - Set the **number of clones** (1–50)
+   - Optionally set a **password** for all cloned workspaces
+   - Preview the clone names (`Base Workshop 1`, `Base Workshop 2`, etc.)
+4. Click **Clone** — clones appear immediately as "Creating" and become available as each one finishes
+
+### What Gets Cloned
+
+- The entire container filesystem: installed packages, project files, configs, git repos
+- Workspace metadata: proxy mode, group, memory/CPU limits, git URL reference
+
+### What Does NOT Get Cloned
+
+- Running processes (each clone starts fresh)
+- The source workspace's password (you set a new one or leave clones unprotected)
+
+### Technical Details
+
+- Uses `docker commit` to snapshot the source container's filesystem
+- Each clone is an independent container with its own Docker copy-on-write layer
+- The snapshot image is temporary and cleaned up automatically after all clones are created
+- Source workspace can be running or stopped during cloning (briefly paused for consistency)
+
+### Workshop Workflow Example
+
+```bash
+# 1. Teacher creates and sets up the base workspace via UI
+
+# 2. Clone via API (alternative to UI)
+curl -X POST http://localhost/api/projects/<source-id>/clone \
+  -H "Content-Type: application/json" \
+  -d '{"count": 20, "password": "student2026"}'
+
+# 3. Students receive their individual workspace URLs
+# Each clone has its own independent environment
+```
+
 ## Advanced Usage
 
 ### Custom Extensions

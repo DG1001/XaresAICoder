@@ -106,7 +106,7 @@ server {
 - `src/index.js` - Main Express server
 - `src/routes/` - API endpoint definitions
 - `src/services/docker.js` - Docker integration
-- `src/services/workspace.js` - Workspace management
+- `src/services/workspace.js` - Workspace management (including clone orchestration)
 - `src/services/git.js` - Git server integration
 
 ### 3. Workspaces (code-server)
@@ -290,6 +290,37 @@ sequenceDiagram
     Frontend->>User: Show workspace URL
 ```
 
+### Workspace Cloning Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Server
+    participant Docker
+
+    User->>Frontend: Clone workspace (count=N)
+    Frontend->>Server: POST /api/projects/:id/clone
+    Server->>Server: Validate count & workspace limit
+    Server-->>Frontend: 202 Accepted (clone metadata)
+    Frontend->>User: Show clones as "creating"
+
+    Note over Server,Docker: Background (fire-and-forget)
+    Server->>Docker: docker commit (snapshot source)
+    Docker-->>Server: Snapshot image
+
+    loop For each clone (1..N)
+        Server->>Docker: Create container from snapshot
+        Docker-->>Server: Container running
+        Server->>Server: Update clone status → running
+    end
+
+    Server->>Docker: Remove snapshot image
+    Frontend->>Server: Poll project list
+    Server-->>Frontend: Updated statuses
+    Frontend->>User: Clones ready
+```
+
 ### Request Routing Flow
 
 ```mermaid
@@ -359,6 +390,7 @@ tmpfs:
 - Python Flask: ~15-20 seconds
 - Node.js React: ~20-25 seconds
 - Java Spring Boot: ~30-60 seconds
+- Clone (from snapshot): ~5-10 seconds per clone (no project initialization)
 
 **Resource Usage** (per workspace):
 - Idle: ~300MB RAM, 0.1 CPU

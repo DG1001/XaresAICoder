@@ -363,6 +363,29 @@ class XaresAICoder {
                 this.hidePasswordManageModal();
             }
         });
+
+        // Clone modal handlers
+        const closeCloneModal = document.getElementById('closeCloneModal');
+        const cancelCloneBtn = document.getElementById('cancelCloneBtn');
+        const confirmCloneBtn = document.getElementById('confirmCloneBtn');
+        const generateClonePasswordBtn = document.getElementById('generateClonePasswordBtn');
+
+        closeCloneModal.addEventListener('click', () => this.hideCloneModal());
+        cancelCloneBtn.addEventListener('click', () => this.hideCloneModal());
+        confirmCloneBtn.addEventListener('click', () => this.executeClone());
+        generateClonePasswordBtn.addEventListener('click', () => {
+            document.getElementById('clonePassword').value = this.generateSecurePasswordValue();
+        });
+
+        // Update name preview when count changes
+        document.getElementById('cloneCount').addEventListener('input', () => this.updateCloneNamePreview());
+
+        // Close clone modal on outside click
+        document.getElementById('cloneModal').addEventListener('click', (e) => {
+            if (e.target.id === 'cloneModal') {
+                this.hideCloneModal();
+            }
+        });
     }
 
     handleTabSwitch(e) {
@@ -1211,9 +1234,16 @@ class XaresAICoder {
             `;
         }
 
-        // Only show delete button if not creating
+        // Only show clone and delete buttons if not creating
         if (!isCreating) {
             buttons += `
+                <button class="btn-secondary" onclick="app.openCloneModal('${project.projectId}')" title="Clone this workspace">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25v-7.5z"/>
+                        <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"/>
+                    </svg>
+                    Clone
+                </button>
                 <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', '${this.escapeHtml(project.projectName)}')">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
@@ -2140,6 +2170,128 @@ class XaresAICoder {
         } finally {
             saveBtn.disabled = false;
             saveBtn.textContent = 'Save';
+        }
+    }
+
+    // Clone Modal Methods
+    openCloneModal(projectId) {
+        const project = this.projects.find(p => p.projectId === projectId);
+        if (!project) {
+            this.showError('Project not found');
+            return;
+        }
+
+        this.cloneSourceProjectId = projectId;
+
+        // Populate source name
+        document.getElementById('cloneSourceName').textContent = project.projectName;
+
+        // Build settings summary
+        const proxyLabels = { none: 'No Proxy', security: 'Security Proxy', logging: 'LLM Logging Proxy' };
+        const memoryLabels = { '1g': '1 GB', '2g': '2 GB', '4g': '4 GB', '8g': '8 GB', '16g': '16 GB' };
+        let summary = `<div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">`;
+        summary += `<span style="color: var(--vscode-text-muted);">Type:</span><span>${project.projectType === 'git-clone' ? 'Git Clone' : 'Empty'}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">Memory:</span><span>${memoryLabels[project.memoryLimit] || project.memoryLimit}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">CPU:</span><span>${project.cpuCores} Core${project.cpuCores !== '1' ? 's' : ''}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">Proxy:</span><span>${proxyLabels[project.proxyMode] || 'No Proxy'}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">Group:</span><span>${this.escapeHtml(project.group || 'Uncategorized')}</span>`;
+        if (project.gitUrl) {
+            summary += `<span style="color: var(--vscode-text-muted);">Git URL:</span><span style="word-break: break-all;">${this.escapeHtml(project.gitUrl)}</span>`;
+        }
+        summary += `</div>`;
+        document.getElementById('cloneSettingsSummary').innerHTML = summary;
+
+        // Reset form
+        document.getElementById('cloneCount').value = 5;
+        document.getElementById('clonePassword').value = '';
+        document.getElementById('cloneError').style.display = 'none';
+        document.getElementById('cloneProgress').style.display = 'none';
+        document.getElementById('confirmCloneBtn').disabled = false;
+
+        // Update name preview
+        this.updateCloneNamePreview();
+
+        // Show modal
+        document.getElementById('cloneModal').style.display = 'flex';
+    }
+
+    updateCloneNamePreview() {
+        const project = this.projects.find(p => p.projectId === this.cloneSourceProjectId);
+        if (!project) return;
+
+        const count = parseInt(document.getElementById('cloneCount').value) || 0;
+        const clamped = Math.min(Math.max(count, 1), 50);
+        const names = [];
+        const showMax = Math.min(clamped, 5);
+        for (let i = 1; i <= showMax; i++) {
+            names.push(`${project.projectName} ${i}`);
+        }
+        let preview = names.map(n => `<div>${this.escapeHtml(n)}</div>`).join('');
+        if (clamped > showMax) {
+            preview += `<div style="color: var(--vscode-text-muted);">... and ${clamped - showMax} more</div>`;
+        }
+        document.getElementById('cloneNamePreview').innerHTML = preview;
+    }
+
+    hideCloneModal() {
+        document.getElementById('cloneModal').style.display = 'none';
+        this.cloneSourceProjectId = null;
+    }
+
+    async executeClone() {
+        const projectId = this.cloneSourceProjectId;
+        if (!projectId) return;
+
+        const count = parseInt(document.getElementById('cloneCount').value);
+        const password = document.getElementById('clonePassword').value.trim();
+        const errorEl = document.getElementById('cloneError');
+
+        // Client-side validation
+        if (!Number.isInteger(count) || count < 1 || count > 50) {
+            errorEl.textContent = 'Clone count must be between 1 and 50';
+            errorEl.style.display = 'block';
+            return;
+        }
+        if (password && password.length < 8) {
+            errorEl.textContent = 'Password must be at least 8 characters long';
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        errorEl.style.display = 'none';
+        document.getElementById('cloneProgress').style.display = 'block';
+        document.getElementById('confirmCloneBtn').disabled = true;
+
+        const body = { count };
+        if (password) body.password = password;
+
+        try {
+            const response = await fetch(`${this.apiBase}/projects/${projectId}/clone`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Add clone IDs to creatingProjects for polling
+                if (data.clones) {
+                    data.clones.forEach(c => this.creatingProjects.add(c.projectId));
+                }
+                this.hideCloneModal();
+                this.loadProjects();
+            } else {
+                errorEl.textContent = data.message || 'Failed to clone workspace';
+                errorEl.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error cloning project:', error);
+            errorEl.textContent = 'Failed to clone workspace. Please try again.';
+            errorEl.style.display = 'block';
+        } finally {
+            document.getElementById('cloneProgress').style.display = 'none';
+            document.getElementById('confirmCloneBtn').disabled = false;
         }
     }
 
