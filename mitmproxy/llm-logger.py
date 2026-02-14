@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""
+mitmproxy addon that captures full LLM API conversations
+Logs request/response bodies to per-workspace JSON files
+"""
+
+import json
+import os
+from datetime import datetime
+from mitmproxy import ctx, http
+
+LOG_DIR = "/var/log/mitmproxy/llm_conversations"
+
+LLM_DOMAINS = [
+    'api.openai.com',
+    'api.anthropic.com',
+    'generativelanguage.googleapis.com',
+    'api.google.dev',
+    'api.opencode.ai',
+    'opencode.ai',  # OpenCode free tier uses opencode.ai/zen/v1/
+    'api.huggingface.co',
+    'z.ai',  # z.ai LLM API
+    'api.z.ai'
+]
+
+class LLMConversationLogger:
+    def __init__(self):
+        os.makedirs(LOG_DIR, exist_ok=True)
+
+    def request(self, flow: http.HTTPFlow):
+        """Capture request data"""
+        if not any(domain in flow.request.host for domain in LLM_DOMAINS):
+            return
+
+        client_ip = flow.client_conn.peername[0]
+
+        flow.metadata['llm_log'] = {
+            'client_ip': client_ip,
+            'timestamp': datetime.utcnow().isoformat(),
+            'method': flow.request.method,
+            'url': flow.request.pretty_url,
+            'headers': dict(flow.request.headers),
+            'body': flow.request.text if flow.request.text else None
+        }
+
+    def response(self, flow: http.HTTPFlow):
+        """Capture response and write complete conversation"""
+        if 'llm_log' not in flow.metadata:
+            return
+
+        log_data = flow.metadata['llm_log']
+
+        # Add response
+        log_data['response'] = {
+            'status_code': flow.response.status_code,
+            'headers': dict(flow.response.headers),
+            'body': flow.response.text if flow.response.text else None,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+        # Parse LLM-specific fields
+        try:
+            if log_data['body']:
+                req_json = json.loads(log_data['body'])
+                log_data['parsed_request'] = {
+                    'model': req_json.get('model'),
+                    'messages': req_json.get('messages'),
+                    'prompt': req_json.get('prompt'),
+                    'max_tokens': req_json.get('max_tokens'),
+                    'temperature': req_json.get('temperature')
+                }
+
+            if log_data['response']['body']:
+                resp_body = log_data['response']['body']
+
+                # Check if response is SSE format (Anthropic streaming)
+                if resp_body.startswith('event:') or '\nevent:' in resp_body:
+                    # Parse SSE response
+                    content_blocks = []
+                    usage_data = None
+                    model_name = None
+                    message_id = None
+
+                    for line in resp_body.split('\n'):
+                        if line.startswith('data: '):
+                            try:
+                                event_data = json.loads(line[6:])  # Remove 'data: ' prefix
+
+                                # Extract model and ID from message_start
+                                if event_data.get('type') == 'message_start':
+                                    msg = event_data.get('message', {})
+                                    model_name = msg.get('model')
+                                    message_id = msg.get('id')
+                                    usage_data = msg.get('usage')
+
+                                # Collect content_block_delta events
+                                elif event_data.get('type') == 'content_block_delta':
+                                    delta = event_data.get('delta', {})
+                                    if delta.get('type') == 'text_delta':
+                                        content_blocks.append({
+                                            'type': 'text',
+                                            'text': delta.get('text', '')
+                                        })
+                            except json.JSONDecodeError:
+                                pass
+
+                    # Combine text content
+                    combined_content = []
+                    if content_blocks:
+                        combined_text = ''.join(block.get('text', '') for block in content_blocks if block.get('type') == 'text')
+                        if combined_text:
+                            combined_content.append({'type': 'text', 'text': combined_text})
+
+                    log_data['parsed_response'] = {
+                        'id': message_id,
+                        'model': model_name,
+                        'content': combined_content,
+                        'usage': usage_data
+                    }
+                else:
+                    # Regular JSON response (OpenAI, OpenCode, etc.)
+                    resp_json = json.loads(resp_body)
+                    log_data['parsed_response'] = {
+                        'id': resp_json.get('id'),
+                        'model': resp_json.get('model'),
+                        'choices': resp_json.get('choices'),
+                        'content': resp_json.get('content'),
+                        'usage': resp_json.get('usage')
+                    }
+        except json.JSONDecodeError:
+            ctx.log.warn(f"Failed to parse JSON for {log_data['url']}")
+
+        # Skip logging if either request or response body is empty
+        # (streaming chunks, health checks, or incomplete conversations)
+        if not log_data.get('body') or not log_data['response'].get('body'):
+            ctx.log.debug(f"Skipping incomplete conversation: {log_data['url']}")
+            return
+
+        # Skip logging if no model is present in the request
+        # (filters out internal events, telemetry, non-LLM API calls)
+        if not log_data.get('parsed_request', {}).get('model'):
+            ctx.log.debug(f"Skipping non-LLM request (no model): {log_data['url']}")
+            return
+
+        # Write to per-workspace directory
+        client_ip = log_data['client_ip']
+        workspace_dir = os.path.join(LOG_DIR, client_ip)
+        os.makedirs(workspace_dir, exist_ok=True)
+
+        timestamp = log_data['timestamp'].replace(':', '-').replace('.', '-')
+        filename = f"{timestamp}.json"
+
+        with open(os.path.join(workspace_dir, filename), 'w') as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
+
+        ctx.log.info(f"Logged LLM conversation: {client_ip} -> {log_data['url']}")
+
+addons = [LLMConversationLogger()]

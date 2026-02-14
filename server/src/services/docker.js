@@ -18,7 +18,7 @@ class DockerService {
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
     this.proxyNetwork = 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
-    this.proxyHost = 'squid-proxy:3128'; // Squid proxy container
+    this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging (using container name for DNS resolution)
     // Workspace sudo privileges configuration
     this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
     // Security and isolation configuration
@@ -59,6 +59,8 @@ class DockerService {
         envVars.push(`http_proxy=http://${this.proxyHost}`);
         envVars.push(`https_proxy=http://${this.proxyHost}`);
         envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
+        // Tell Node.js to trust the proxy CA certificate
+        envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
       }
 
       if (passwordProtected && password) {
@@ -279,13 +281,16 @@ class DockerService {
         // Configure Gradle to use proxy (gradle.properties)
         commands.push('mkdir -p ~/.gradle');
         commands.push('cat > ~/.gradle/gradle.properties << "EOF"\n' +
-          'systemProp.http.proxyHost=squid-proxy\n' +
-          'systemProp.http.proxyPort=3128\n' +
+          'systemProp.http.proxyHost=xaresaicoder-mitmproxy-logger\n' +
+          'systemProp.http.proxyPort=8080\n' +
           'systemProp.http.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
-          'systemProp.https.proxyHost=squid-proxy\n' +
-          'systemProp.https.proxyPort=3128\n' +
+          'systemProp.https.proxyHost=xaresaicoder-mitmproxy-logger\n' +
+          'systemProp.https.proxyPort=8080\n' +
           'systemProp.https.nonProxyHosts=localhost|127.0.0.1|forgejo\n' +
           'EOF');
+
+        // Configure npm to trust proxy CA certificate (speeds up package installs)
+        commands.push('npm config set cafile /usr/local/share/ca-certificates/squid-ca.crt');
 
         // Configure Gradle to use official repositories only (init.gradle)
         commands.push('cat > ~/.gradle/init.gradle << "EOF"\n' +
@@ -724,6 +729,174 @@ fi`.trim();
     }
   }
 
+  /**
+   * Get projectId from container IP address (reverse lookup)
+   * Used for mapping LLM conversation logs to projects
+   */
+  async getProjectIdFromIP(ipAddress) {
+    try {
+      const containers = await this.docker.listContainers({ all: true });
+
+      for (const container of containers) {
+        const containerName = container.Names[0]?.replace(/^\//, '');
+        if (!containerName?.startsWith('workspace-')) continue;
+
+        const projectIdMatch = containerName.match(/^workspace-(.+)$/);
+        if (!projectIdMatch) continue;
+
+        const projectId = projectIdMatch[1];
+        const containerIP = await this.getWorkspaceIPAddress(projectId);
+
+        if (containerIP === ipAddress) {
+          return projectId;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error mapping IP ${ipAddress} to projectId:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get LLM conversations for workspace by IP address
+   * Reads JSON conversation logs from mitmproxy logger
+   */
+  async getLLMConversationsForWorkspace(ipAddress, limit = 100, offset = 0, filters = {}) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) {
+        console.error('mitmproxy container not found');
+        return [];
+      }
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+
+      // List JSON files in workspace directory, sorted by timestamp
+      const exec = await container.exec({
+        Cmd: ['bash', '-c',
+          `find /var/log/mitmproxy/llm_conversations/${ipAddress} -name "*.json" -type f 2>/dev/null | sort -r | head -n ${limit + offset} | tail -n ${limit}`
+        ],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      const stream = await exec.start();
+      const output = await this.streamToString(stream);
+      const files = output.trim().split('\n').filter(f => f);
+
+      // Read and parse each file
+      const conversations = [];
+      for (const file of files) {
+        const readExec = await container.exec({
+          Cmd: ['cat', file],
+          AttachStdout: true,
+          AttachStderr: true
+        });
+
+        const readStream = await readExec.start();
+        const content = await this.streamToString(readStream);
+
+        try {
+          const conversation = JSON.parse(content);
+
+          // Apply filters if provided
+          if (filters.model && conversation.parsed_request?.model !== filters.model) {
+            continue;
+          }
+          if (filters.dateFrom && conversation.timestamp < filters.dateFrom) {
+            continue;
+          }
+          if (filters.dateTo && conversation.timestamp > filters.dateTo) {
+            continue;
+          }
+
+          conversations.push(conversation);
+        } catch (parseError) {
+          console.error(`Failed to parse ${file}:`, parseError);
+        }
+      }
+
+      return conversations;
+
+    } catch (error) {
+      console.error('Error reading LLM conversations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Delete all LLM conversations for a workspace
+   */
+  async deleteAllLLMConversations(ipAddress) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) {
+        throw new Error('mitmproxy container not found');
+      }
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+
+      // Delete the entire workspace directory
+      const exec = await container.exec({
+        Cmd: ['rm', '-rf', `/var/log/mitmproxy/llm_conversations/${ipAddress}`],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      await exec.start();
+
+      console.log(`Deleted all LLM conversations for IP ${ipAddress}`);
+
+    } catch (error) {
+      console.error('Error deleting all LLM conversations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a specific LLM conversation file
+   */
+  async deleteLLMConversation(ipAddress, timestamp) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) {
+        throw new Error('mitmproxy container not found');
+      }
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+
+      // Delete the specific conversation file
+      const filename = `${timestamp}.json`;
+      const exec = await container.exec({
+        Cmd: ['rm', '-f', `/var/log/mitmproxy/llm_conversations/${ipAddress}/${filename}`],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+
+      await exec.start();
+
+      console.log(`Deleted LLM conversation ${filename} for IP ${ipAddress}`);
+
+    } catch (error) {
+      console.error('Error deleting LLM conversation:', error);
+      throw error;
+    }
+  }
+
   // Helper method to convert Docker exec stream to string
   async streamToString(stream) {
     return new Promise((resolve, reject) => {
@@ -862,6 +1035,113 @@ fi`.trim();
       }
       console.error(`Error starting workspace ${projectId}:`, error);
       throw new Error(`Failed to start workspace: ${error.message}`);
+    }
+  }
+
+  // Create a minimal tar archive containing a single file (for putArchive API)
+  createTarWithFile(filename, content) {
+    const contentBuffer = Buffer.from(content, 'utf-8');
+    const fileSize = contentBuffer.length;
+
+    // Tar header is 512 bytes
+    const header = Buffer.alloc(512, 0);
+
+    // File name (first 100 bytes)
+    header.write(filename, 0, Math.min(filename.length, 100), 'utf-8');
+
+    // File mode: 0644
+    header.write('0000644\0', 100, 8, 'utf-8');
+
+    // Owner UID: 1000 (coder user)
+    header.write('0001750\0', 108, 8, 'utf-8');
+
+    // Group GID: 1000 (coder group)
+    header.write('0001750\0', 116, 8, 'utf-8');
+
+    // File size in octal
+    header.write(fileSize.toString(8).padStart(11, '0') + '\0', 124, 12, 'utf-8');
+
+    // Modification time
+    const mtime = Math.floor(Date.now() / 1000);
+    header.write(mtime.toString(8).padStart(11, '0') + '\0', 136, 12, 'utf-8');
+
+    // Initialize checksum field with spaces (required for checksum calculation)
+    header.write('        ', 148, 8, 'utf-8');
+
+    // Type flag: '0' = regular file
+    header.write('0', 156, 1, 'utf-8');
+
+    // Calculate checksum (sum of all bytes in header, treating checksum field as spaces)
+    let checksum = 0;
+    for (let i = 0; i < 512; i++) {
+      checksum += header[i];
+    }
+    header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 8, 'utf-8');
+
+    // Pad content to 512-byte boundary
+    const paddingSize = (512 - (fileSize % 512)) % 512;
+    const contentPadding = Buffer.alloc(paddingSize, 0);
+
+    // End-of-archive marker (two 512-byte blocks of zeros)
+    const endMarker = Buffer.alloc(1024, 0);
+
+    return Buffer.concat([header, contentBuffer, contentPadding, endMarker]);
+  }
+
+  // Update workspace password by writing a persistent auth override file
+  // If password is null, removes password protection; otherwise sets/updates it
+  async updateWorkspacePassword(projectId, password) {
+    const containerName = `workspace-${projectId}`;
+
+    // Build the auth override file content
+    let overrideContent;
+    if (password) {
+      const escapedPassword = password.replace(/'/g, "'\\''");
+      overrideContent = `AUTH_FLAG=password\nexport PASSWORD='${escapedPassword}'\n`;
+    } else {
+      overrideContent = `AUTH_FLAG=none\nunset PASSWORD\n`;
+    }
+
+    try {
+      const container = this.docker.getContainer(containerName);
+      const containerInfo = await container.inspect();
+
+      if (containerInfo.State.Running) {
+        // Running container: write file via exec, then stop+start
+        const writeCmd = `cat > /home/coder/.code-server-auth << 'AUTHEOF'\n${overrideContent}AUTHEOF`;
+        const exec = await container.exec({
+          Cmd: ['bash', '-c', writeCmd],
+          AttachStdout: true,
+          AttachStderr: true
+        });
+        const stream = await exec.start();
+        await this.streamToString(stream);
+
+        // Stop and start the container (entrypoint will read the override file)
+        await container.stop({ t: 10 });
+        await container.start();
+
+        // Wait for code-server to become ready
+        await this.waitForWorkspaceReady(containerName, 15000);
+
+        console.log(`Password updated for running container ${containerName}`);
+        return { success: true, message: 'Password updated successfully' };
+      } else {
+        // Stopped container: write file via putArchive API
+        const tarBuffer = this.createTarWithFile('.code-server-auth', overrideContent);
+        await container.putArchive(tarBuffer, { path: '/home/coder' });
+
+        console.log(`Password override written to stopped container ${containerName}`);
+        return { success: true, message: 'Password updated (will apply on next start)' };
+      }
+
+    } catch (error) {
+      if (error.statusCode === 404) {
+        console.log(`Container ${containerName} not found, password will apply on next creation`);
+        return { success: true, message: 'Container not found, password stored for next start' };
+      }
+      console.error(`Error updating password for workspace ${projectId}:`, error);
+      throw new Error(`Failed to update workspace password: ${error.message}`);
     }
   }
 

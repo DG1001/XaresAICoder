@@ -622,6 +622,56 @@ class WorkspaceService {
 
     return { success: true, group: groupName };
   }
+
+  // Update workspace password (set, change, or remove)
+  async updatePassword(projectId, { currentPassword, newPassword, removePassword }) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    // If workspace is currently protected, verify current password
+    if (project.passwordProtected) {
+      if (!currentPassword) {
+        throw new Error('Current password is required for protected workspaces');
+      }
+      const passwordMatch = await bcrypt.compare(currentPassword, project.passwordHash);
+      if (!passwordMatch) {
+        throw new Error('Invalid current password');
+      }
+    }
+
+    if (removePassword) {
+      // Remove password protection
+      project.passwordProtected = false;
+      project.passwordHash = null;
+
+      // Update running container
+      await dockerService.updateWorkspacePassword(projectId, null);
+    } else if (newPassword) {
+      // Validate new password
+      if (newPassword.length < 8) {
+        throw new Error('Password must be at least 8 characters long');
+      }
+      if (newPassword.length > 50) {
+        throw new Error('Password must be less than 50 characters');
+      }
+
+      // Set/update password
+      project.passwordProtected = true;
+      project.passwordHash = await bcrypt.hash(newPassword, 10);
+
+      // Update running container
+      await dockerService.updateWorkspacePassword(projectId, newPassword);
+    } else {
+      throw new Error('Either newPassword or removePassword must be provided');
+    }
+
+    project.lastAccessed = new Date();
+    await this.saveProjectsToDisk();
+
+    return { success: true, passwordProtected: project.passwordProtected };
+  }
 }
 
 module.exports = new WorkspaceService();

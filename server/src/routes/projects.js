@@ -308,6 +308,62 @@ router.put('/:projectId/group', async (req, res) => {
   }
 });
 
+// Update workspace password
+router.put('/:projectId/password', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { currentPassword, newPassword, removePassword } = req.body;
+
+    // Validate new password if provided
+    if (newPassword) {
+      if (newPassword.length < 8) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be at least 8 characters long'
+        });
+      }
+      if (newPassword.length > 50) {
+        return res.status(400).json({
+          error: 'Invalid password',
+          message: 'Password must be less than 50 characters'
+        });
+      }
+    }
+
+    if (!newPassword && !removePassword) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Either newPassword or removePassword must be provided'
+      });
+    }
+
+    const result = await workspaceService.updatePassword(projectId, {
+      currentPassword,
+      newPassword,
+      removePassword: !!removePassword
+    });
+
+    res.json({
+      success: true,
+      message: removePassword ? 'Password protection removed' : 'Password updated successfully',
+      passwordProtected: result.passwordProtected
+    });
+
+  } catch (error) {
+    console.error('Update password error:', error);
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.message === 'Invalid current password') statusCode = 401;
+    if (error.message === 'Current password is required for protected workspaces') statusCode = 401;
+    if (error.message.includes('Password must be')) statusCode = 400;
+
+    res.status(statusCode).json({
+      error: 'Failed to update password',
+      message: error.message
+    });
+  }
+});
+
 // Get disk usage for a project
 router.get('/:projectId/disk-usage', async (req, res) => {
   try {
@@ -358,6 +414,151 @@ router.get('/:projectId/squid-logs', async (req, res) => {
     const statusCode = error.message === 'Project not found' ? 404 : 500;
     res.status(statusCode).json({
       error: 'Failed to get squid logs',
+      message: error.message
+    });
+  }
+});
+
+// Get LLM conversations for a project
+router.get('/:projectId/llm-conversations', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const {
+      limit = 100,
+      offset = 0,
+      model,
+      dateFrom,
+      dateTo
+    } = req.query;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found or not using proxy'
+      });
+    }
+
+    const conversations = await dockerService.getLLMConversationsForWorkspace(
+      ipAddress,
+      parseInt(limit),
+      parseInt(offset),
+      { model, dateFrom, dateTo }
+    );
+
+    res.json({
+      success: true,
+      projectId,
+      ipAddress,
+      conversations,
+      count: conversations.length
+    });
+
+  } catch (error) {
+    console.error('Get LLM conversations error:', error);
+    res.status(500).json({
+      error: 'Failed to get LLM conversations',
+      message: error.message
+    });
+  }
+});
+
+// Generate documentation from LLM conversations
+router.post('/:projectId/generate-documentation', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { format = 'markdown', type = 'clean' } = req.body;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found'
+      });
+    }
+
+    const conversations = await dockerService.getLLMConversationsForWorkspace(
+      ipAddress,
+      10000  // Get all
+    );
+
+    const { generateDocumentationFromConversations } = require('../services/documentation');
+    const documentation = generateDocumentationFromConversations(conversations, format, type);
+
+    res.json({
+      success: true,
+      projectId,
+      format,
+      type,
+      documentation,
+      conversationCount: conversations.length
+    });
+
+  } catch (error) {
+    console.error('Generate documentation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate documentation',
+      message: error.message
+    });
+  }
+});
+
+// Delete all LLM conversations for a project
+router.delete('/:projectId/llm-conversations', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found'
+      });
+    }
+
+    await dockerService.deleteAllLLMConversations(ipAddress);
+
+    res.json({
+      success: true,
+      message: 'All conversations deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete all conversations error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete conversations',
+      message: error.message
+    });
+  }
+});
+
+// Delete a specific LLM conversation
+router.delete('/:projectId/llm-conversations/:timestamp', async (req, res) => {
+  try {
+    const { projectId, timestamp } = req.params;
+
+    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found'
+      });
+    }
+
+    await dockerService.deleteLLMConversation(ipAddress, timestamp);
+
+    res.json({
+      success: true,
+      message: 'Conversation deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete conversation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete conversation',
       message: error.message
     });
   }

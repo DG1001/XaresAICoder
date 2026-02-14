@@ -322,17 +322,17 @@
 
                             <div class="form-group checkbox-group" id="proxyGroup" style="display: none;">
                                 <label class="checkbox-label">
-                                    <input type="checkbox" id="useProxy" name="useProxy" checked>
+                                    <input type="checkbox" id="useProxy" name="useProxy">
                                     <span class="checkmark"></span>
                                     <span class="checkbox-text">
                                         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                             <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/>
                                         </svg>
-                                        Use Network Proxy (Restricted Access)
+                                        Use Network Proxy (LLM Logging)
                                     </span>
                                 </label>
                                 <div class="checkbox-description">
-                                    Route all network traffic through Squid proxy with whitelisted domains only (recommended for security)
+                                    Route network traffic through proxy to enable LLM conversation logging
                                 </div>
                             </div>
                         </div>
@@ -705,6 +705,79 @@
         </div>
     </div>
 
+    <!-- Password Management Modal -->
+    <div id="passwordManageModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 8px; vertical-align: text-bottom;">
+                        <path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/>
+                    </svg>
+                    Manage Password
+                </h3>
+                <button class="modal-close" id="closePasswordManageModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="passwordManageProjectName" style="margin-bottom: 16px; color: var(--vscode-text-muted);"></p>
+
+                <div id="currentPasswordSection" style="display: none;">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label for="currentPasswordInput" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500;">Current Password</label>
+                        <input type="password" id="currentPasswordInput" placeholder="Enter current password" style="width: 100%; padding: 8px 12px; border: 1px solid var(--vscode-input-border); border-radius: 4px; background: var(--vscode-input-bg); color: var(--vscode-text); font-size: 13px; box-sizing: border-box;">
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 500;">Action</label>
+                    <div style="display: flex; gap: 12px;">
+                        <label class="checkbox-label" style="cursor: pointer;">
+                            <input type="radio" name="passwordAction" value="set" id="passwordActionSet" checked>
+                            <span style="margin-left: 4px;">Set / Change Password</span>
+                        </label>
+                        <label class="checkbox-label" style="cursor: pointer;">
+                            <input type="radio" name="passwordAction" value="remove" id="passwordActionRemove">
+                            <span style="margin-left: 4px;">Remove Password</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="newPasswordSection">
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <label for="newPasswordInput" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500;">New Password</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="password" id="newPasswordInput" placeholder="Enter new password (min 8 characters)" style="flex: 1; padding: 8px 12px; border: 1px solid var(--vscode-input-border); border-radius: 4px; background: var(--vscode-input-bg); color: var(--vscode-text); font-size: 13px;">
+                            <button type="button" class="btn-icon" id="toggleNewPasswordVisibility" title="Show Password">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" id="eyeIconShow">
+                                    <path d="M8 3.5C4.136 3.5 1.093 6.757.67 7.243a1 1 0 0 0 0 1.514C1.093 9.243 4.136 12.5 8 12.5s6.907-3.257 7.33-3.743a1 1 0 0 0 0-1.514C14.907 6.757 11.864 3.5 8 3.5ZM8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z"/>
+                                    <circle cx="8" cy="8" r="1.5"/>
+                                </svg>
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" id="eyeIconHide" style="display: none;">
+                                    <path d="M2.354 1.646a.5.5 0 1 0-.708.708l12 12a.5.5 0 0 0 .708-.708l-12-12Z"/>
+                                    <path d="M8 3.5c-1.457 0-2.79.428-3.933 1.063l1.065 1.065A5.61 5.61 0 0 1 8 5c2.83 0 5.2 2.17 5.906 3-.29.34-.9.983-1.725 1.606l1.042 1.042C14.498 9.63 15.356 8.482 15.33 8.757a1 1 0 0 0 0-1.514C14.907 6.757 11.864 3.5 8 3.5Z"/>
+                                    <path d="M5.071 6.485A3 3 0 0 0 9.515 10.93L5.07 6.485ZM10.929 9.515A3 3 0 0 0 6.485 5.07l4.444 4.444ZM.67 7.243C1.093 6.757 2.502 5.37 4.181 4.595L5.246 5.66C3.58 6.42 2.17 7.83 1.906 8c.29.34.9.983 1.725 1.606L2.777 10.648C1.502 9.63.644 8.482.67 8.757a1 1 0 0 1 0-1.514Z"/>
+                                </svg>
+                            </button>
+                            <button type="button" class="btn-icon" id="generateManagePasswordBtn" title="Generate Password">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <div style="font-size: 12px; color: var(--vscode-text-muted); margin-top: 4px;">
+                            Minimum 8 characters. Use the generate button for a secure random password.
+                        </div>
+                    </div>
+                </div>
+
+                <div id="passwordManageError" style="color: var(--vscode-error); font-size: 12px; margin-top: 8px; display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="savePasswordBtn">Save</button>
+                <button class="btn-secondary" id="cancelPasswordManageBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Project Notes Modal -->
     <div id="notesModal" class="modal" style="display: none;">
         <div class="modal-content notes-modal-content">
@@ -719,6 +792,7 @@
                 <button class="modal-close" id="closeNotesModal">&times;</button>
             </div>
             <div class="modal-body">
+                <div style="font-size: 0.8em; color: #888; font-family: monospace; margin-bottom: 8px;">ID: <span id="notesWorkspaceId" style="user-select: all;"></span></div>
                 <div class="notes-editor">
                     <textarea id="notesTextarea" placeholder="Add your notes about this project here...&#10;&#10;You can use this to track:&#10;• Current progress and status&#10;• Important decisions and changes&#10;• Development notes and reminders&#10;• Any other project-specific information"></textarea>
                     <div class="notes-info">
