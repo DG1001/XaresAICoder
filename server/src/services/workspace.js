@@ -300,6 +300,9 @@ class WorkspaceService {
     }
 
     // Step 2: Create each clone from the snapshot
+    const sourceProject = this.projects.get(sourceProjectId);
+    const sourceGitRepo = sourceProject && sourceProject.gitRepository ? sourceProject.gitRepository : null;
+
     try {
       for (const clone of clones) {
         try {
@@ -319,6 +322,37 @@ class WorkspaceService {
             project.workspaceUrl = workspace.workspaceUrl;
             project.lastAccessed = new Date();
           }
+
+          // Set up a dedicated branch for this clone (if source has a Forgejo repo)
+          if (sourceGitRepo && gitService.isGitServerAvailable()) {
+            try {
+              const sanitizedName = gitService.validateRepositoryName(clone.projectName);
+              const branchName = `clone/${sanitizedName}`;
+              console.log(`Setting up branch '${branchName}' for clone ${clone.projectName}`);
+
+              const branchOk = await dockerService.setupCloneBranch(clone.projectId, branchName);
+
+              if (branchOk && project) {
+                // Copy source gitRepository metadata to clone, adding branch info
+                project.gitRepository = {
+                  ...sourceGitRepo,
+                  branch: branchName,
+                  webUrl: sourceGitRepo.webUrl + '/src/branch/' + encodeURIComponent(branchName)
+                };
+                console.log(`Branch '${branchName}' created for clone ${clone.projectName}`);
+              } else if (project) {
+                // Branch setup failed — clone still works, just shares main
+                console.warn(`Branch setup failed for clone ${clone.projectName}, sharing main branch`);
+                project.gitRepository = { ...sourceGitRepo };
+              }
+            } catch (gitError) {
+              console.warn(`Branch setup failed for clone ${clone.projectName}, continuing without own branch:`, gitError.message);
+              if (project) {
+                project.gitRepository = { ...sourceGitRepo };
+              }
+            }
+          }
+
           await this.saveProjectsToDisk();
           console.log(`Clone created: ${clone.projectName} → ${workspace.workspaceUrl}`);
         } catch (error) {

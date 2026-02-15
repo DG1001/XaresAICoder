@@ -1481,6 +1481,32 @@ fi`.trim();
   }
 
   /**
+   * Create a new branch in a clone workspace and push it to origin.
+   * The clone already has the source's git remote (credentials baked into snapshot).
+   * Non-throwing: returns false on error so clone still works without its own branch.
+   */
+  async setupCloneBranch(projectId, branchName) {
+    const containerName = `workspace-${projectId}`;
+    try {
+      const container = this.docker.getContainer(containerName);
+      const safeBranch = branchName.replace(/'/g, "'\\''");
+      const exec = await container.exec({
+        Cmd: ['bash', '-c', `cd /workspace && git checkout -b '${safeBranch}' && git push -u origin '${safeBranch}' 2>&1`],
+        AttachStdout: true,
+        AttachStderr: true,
+        Env: ['HOME=/home/coder', 'USER=coder']
+      });
+      const stream = await exec.start();
+      const output = await this.streamToString(stream);
+      console.log(`Setup clone branch '${branchName}' for ${containerName}: ${output.trim()}`);
+      return true;
+    } catch (error) {
+      console.warn(`Failed to setup clone branch for ${containerName}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
    * Remove a snapshot image created by commitContainer.
    */
   async removeSnapshotImage(imageName) {

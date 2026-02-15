@@ -525,6 +525,7 @@ Creates multiple identical copies of an existing workspace using Docker filesyst
 - Snapshot image is ephemeral and cleaned up automatically after cloning
 - Clone names follow the pattern `{sourceName} 1`, `{sourceName} 2`, etc.
 - Workspace limit is checked all-or-nothing before any clones are created
+- **Git branches**: If the source has a Forgejo repo, each clone gets its own branch (`clone/<sanitized-name>`) pushed to the shared repo. Students work on their branch and can create PRs to `main` via Forgejo's web UI. If branch creation fails, the clone still works on `main`.
 
 **Error Cases**:
 - `404`: Source project not found

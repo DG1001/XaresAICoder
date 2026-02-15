@@ -312,6 +312,11 @@ sequenceDiagram
     loop For each clone (1..N)
         Server->>Docker: Create container from snapshot
         Docker-->>Server: Container running
+        opt Source has Forgejo repo
+            Server->>Docker: git checkout -b clone/<name> && git push
+            Docker-->>Server: Branch created
+            Server->>Server: Set clone gitRepository with branch
+        end
         Server->>Server: Update clone status → running
     end
 
