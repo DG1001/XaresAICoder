@@ -17,7 +17,7 @@ class DockerService {
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
-    this.proxyNetwork = 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
+    this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder-pro_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
     this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
     this.squidProxyHost = 'xaresaicoder-squid-proxy:3128'; // Squid proxy container for security whitelist filtering
     // Workspace sudo privileges configuration
@@ -168,8 +168,7 @@ class DockerService {
           ],
           // Resource limits to prevent abuse
           Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard },
-            { Name: 'nproc', Soft: this.securityConfig.maxProcessesPerUser, Hard: this.securityConfig.maxProcessesPerUserHard }
+            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
           ],
           RestartPolicy: {
             Name: 'unless-stopped'
@@ -728,7 +727,7 @@ fi`.trim();
 
       // Get IP from xares-internal network (proxy network)
       const networks = inspectData.NetworkSettings.Networks;
-      const internalNetwork = networks['xaresaicoder_xares-internal'];
+      const internalNetwork = networks[this.proxyNetwork];
 
       return internalNetwork ? internalNetwork.IPAddress : null;
     } catch (error) {
@@ -1386,8 +1385,7 @@ fi`.trim();
             'NET_BIND_SERVICE', 'AUDIT_WRITE'
           ],
           Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard },
-            { Name: 'nproc', Soft: this.securityConfig.maxProcessesPerUser, Hard: this.securityConfig.maxProcessesPerUserHard }
+            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
           ],
           RestartPolicy: { Name: 'unless-stopped' },
           ...(useProxy && {

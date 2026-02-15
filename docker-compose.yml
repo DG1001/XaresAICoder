@@ -13,8 +13,9 @@ services:
     depends_on:
       - server
     networks:
-      - xares-aicoder-network  # External access and server communication
-      - xares-internal         # Workspace access when proxy is enabled
+      xares-aicoder-network:  # External access and server communication
+      xares-internal:          # Workspace access when proxy is enabled
+        ipv4_address: 172.30.0.4
     restart: unless-stopped
 
   server:
@@ -100,8 +101,9 @@ services:
     ports:
       - "3128:3128"  # HTTP proxy port (for debugging/monitoring)
     networks:
-      - xares-aicoder-network  # Internet access
-      - xares-internal         # Workspace-facing network
+      xares-aicoder-network:  # Internet access
+      xares-internal:          # Workspace-facing network
+        ipv4_address: 172.30.0.3
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "timeout", "2", "bash", "-c", "</dev/tcp/localhost/3128"]
@@ -130,8 +132,9 @@ services:
       --set ssl_insecure=true
       -s /scripts/llm-logger.py"
     networks:
-      - xares-internal
-      - xares-aicoder-network
+      xares-internal:
+        ipv4_address: 172.30.0.5
+      xares-aicoder-network:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -sf http://localhost:8080 || exit 1"]

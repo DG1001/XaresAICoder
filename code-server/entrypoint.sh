@@ -1,6 +1,12 @@
 #!/bin/bash
 echo "Starting XaresAICoder code-server..."
 
+# Update CA certificates if squid proxy cert is present (for HTTPS interception proxy support)
+# Runs as root via sudo since the entrypoint executes as the coder user
+if [ -f /usr/local/share/ca-certificates/squid-ca.crt ] && grep -q "BEGIN CERTIFICATE" /usr/local/share/ca-certificates/squid-ca.crt 2>/dev/null; then
+    sudo update-ca-certificates --fresh > /dev/null 2>&1
+fi
+
 # Check and install missing extensions
 /usr/local/bin/check-extensions.sh
 

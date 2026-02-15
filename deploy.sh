@@ -813,6 +813,15 @@ generate_proxy_cert() {
         cp ./squid/certs/squid-ca-cert.crt ./code-server/squid-ca-cert.crt
         print_success "CA certificate ready for code-server image build"
     fi
+
+    # Generate mitmproxy-compatible CA from squid CA (combined cert+key PEM)
+    # mitmproxy expects mitmproxy-ca.pem in its confdir; without it, it auto-generates a different CA
+    if [ -f "./squid/certs/squid-ca-cert.pem" ] && [ -f "./squid/certs/squid-ca-key.pem" ]; then
+        print_status "Generating mitmproxy-compatible CA from squid CA..."
+        cat ./squid/certs/squid-ca-key.pem ./squid/certs/squid-ca-cert.pem > ./squid/certs/mitmproxy-ca.pem
+        cp ./squid/certs/squid-ca-cert.pem ./squid/certs/mitmproxy-ca-cert.pem
+        print_success "mitmproxy CA generated from squid CA"
+    fi
 }
 
 # Function to show usage
