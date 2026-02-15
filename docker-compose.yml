@@ -44,6 +44,7 @@ services:
       - CONTAINER_MAX_PROCS=${CONTAINER_MAX_PROCS:-512}
       - CONTAINER_MAX_PROCS_HARD=${CONTAINER_MAX_PROCS_HARD:-1024}
       - WORKSPACE_SUDO_ENABLED=${WORKSPACE_SUDO_ENABLED:-false}
+      - PROXY_NETWORK=${PROXY_NETWORK:-xaresaicoder_xares-internal}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
