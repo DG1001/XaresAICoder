@@ -56,6 +56,12 @@ class LLMConversationLogger:
             domain = flow.request.host
             now = datetime.utcnow().isoformat()
 
+            # Detect external deletion — if in-memory data exists but file was removed, reset
+            if client_ip in self.domain_tracker:
+                filepath = os.path.join(DOMAINS_DIR, f"{client_ip}.json")
+                if not os.path.exists(filepath):
+                    del self.domain_tracker[client_ip]
+
             if client_ip not in self.domain_tracker:
                 self.domain_tracker[client_ip] = {}
 

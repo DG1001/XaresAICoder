@@ -208,6 +208,14 @@ class DockerService {
       await this.initializeProject(container, projectType, proxyMode);
       console.log(`Initialization completed for ${containerName}`);
 
+      // Clear any stale domain data from a previous workspace at this IP
+      if (useProxy) {
+        try {
+          const ip = await this.getWorkspaceIPAddress(projectId);
+          if (ip) await this.clearRecordedDomains(ip);
+        } catch (e) { /* non-fatal */ }
+      }
+
       this.activeContainers.set(projectId, {
         container,
         name: containerName,
@@ -976,6 +984,32 @@ fi`.trim();
   }
 
   /**
+   * Clear recorded domain data for a workspace IP
+   */
+  async clearRecordedDomains(ipAddress) {
+    try {
+      const containers = await this.docker.listContainers();
+      const mitmproxyContainer = containers.find(c =>
+        c.Names.some(name => name.includes('mitmproxy-logger'))
+      );
+
+      if (!mitmproxyContainer) return;
+
+      const container = this.docker.getContainer(mitmproxyContainer.Id);
+      const exec = await container.exec({
+        Cmd: ['rm', '-f', `/var/log/mitmproxy/domains/${ipAddress}.json`],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+      await exec.start();
+
+      console.log(`Cleared recorded domains for IP ${ipAddress}`);
+    } catch (error) {
+      console.error('Error clearing recorded domains:', error);
+    }
+  }
+
+  /**
    * Delete a specific LLM conversation file
    */
   async deleteLLMConversation(ipAddress, timestamp) {
@@ -1416,6 +1450,14 @@ fi`.trim();
       // Wait for code-server to be ready (no project initialization needed — filesystem is cloned)
       await this.waitForWorkspaceReady(containerName);
       console.log(`Clone workspace ${containerName} is ready`);
+
+      // Clear any stale domain data from a previous workspace at this IP
+      if (useProxy) {
+        try {
+          const ip = await this.getWorkspaceIPAddress(projectId);
+          if (ip) await this.clearRecordedDomains(ip);
+        } catch (e) { /* non-fatal */ }
+      }
 
       this.activeContainers.set(projectId, {
         container,
