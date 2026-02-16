@@ -80,6 +80,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Create placeholder proxy certificate
+        run: touch ./code-server/squid-ca-cert.crt
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
