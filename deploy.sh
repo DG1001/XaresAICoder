@@ -684,22 +684,28 @@ show_deployment_info() {
     echo
 }
 
-# Function to detect GitHub repository owner
+# Global variable set by detect_registry_owner() as a side effect
+DETECTED_REPO_NAME=""
+
+# Function to detect GitHub repository owner (also sets DETECTED_REPO_NAME)
 detect_registry_owner() {
     local owner=""
-    
+
     # Try to detect from git remote
     if command_exists git && git rev-parse --git-dir >/dev/null 2>&1; then
         local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
         if [[ $remote_url =~ github\.com[:/]([^/]+)/([^/]+) ]]; then
             owner="${BASH_REMATCH[1]}"
+            DETECTED_REPO_NAME="${BASH_REMATCH[2]}"
+            DETECTED_REPO_NAME="${DETECTED_REPO_NAME%.git}"
             # Convert to lowercase for consistency with GitHub Container Registry
             owner=$(echo "$owner" | tr '[:upper:]' '[:lower:]')
             # Use stderr for status messages to avoid mixing with return value
             print_status "Auto-detected GitHub owner: $owner" >&2
+            print_status "Auto-detected repository: $DETECTED_REPO_NAME" >&2
         fi
     fi
-    
+
     # If we couldn't detect, ask user
     if [ -z "$owner" ]; then
         print_warning "Could not auto-detect GitHub repository owner" >&2
@@ -709,7 +715,7 @@ detect_registry_owner() {
             exit 1
         fi
     fi
-    
+
     echo "$owner"
 }
 
@@ -717,13 +723,15 @@ detect_registry_owner() {
 setup_registry_images() {
     local registry_owner="$1"
     local tag="${2:-latest}"
-    
+    local repo_name="${3:-xaresaicoder}"
+
     print_status "Configuring pre-built images from GitHub Container Registry..."
-    
+
     # Set image environment variables (registry names are always lowercase)
     local registry_owner_lower=$(echo "$registry_owner" | tr '[:upper:]' '[:lower:]')
-    export SERVER_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-server:${tag}"
-    export CODESERVER_IMAGE="ghcr.io/${registry_owner_lower}/xaresaicoder-codeserver:${tag}"
+    local repo_lower=$(echo "$repo_name" | tr '[:upper:]' '[:lower:]')
+    export SERVER_IMAGE="ghcr.io/${registry_owner_lower}/${repo_lower}-server:${tag}"
+    export CODESERVER_IMAGE="ghcr.io/${registry_owner_lower}/${repo_lower}-codeserver:${tag}"
     
     print_status "Server image: $SERVER_IMAGE"
     print_status "Code-server image: $CODESERVER_IMAGE"
@@ -929,7 +937,16 @@ main() {
         if [ -z "$registry_owner" ]; then
             registry_owner=$(detect_registry_owner)
         fi
-        setup_registry_images "$registry_owner" "$registry_tag"
+        # Detect repo name from git if not already detected (e.g. when --registry-owner was used)
+        if [ -z "$DETECTED_REPO_NAME" ] && command_exists git && git rev-parse --git-dir >/dev/null 2>&1; then
+            local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+            if [[ $remote_url =~ github\.com[:/]([^/]+)/([^/]+) ]]; then
+                DETECTED_REPO_NAME="${BASH_REMATCH[2]}"
+                DETECTED_REPO_NAME="${DETECTED_REPO_NAME%.git}"
+            fi
+        fi
+        local repo_name="${DETECTED_REPO_NAME:-xaresaicoder}"
+        setup_registry_images "$registry_owner" "$registry_tag" "$repo_name"
     fi
 
     # Generate proxy CA certificate if proxy is enabled
