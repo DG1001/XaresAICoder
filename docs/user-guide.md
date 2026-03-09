@@ -360,6 +360,49 @@ curl -X POST http://localhost/api/projects/<source-id>/clone \
 # Each clone has its own independent environment
 ```
 
+## Workshop Landing Page
+
+After cloning workspaces for a workshop, use the built-in landing page to distribute them to participants automatically.
+
+### How It Works
+
+1. Participants scan a QR code or open `http://<server>/workshop/`
+2. They enter their **name** and **email address**
+3. The system assigns the next free running workspace from the configured group
+4. The workspace URL is shown immediately with a copy button and a direct link
+
+Each email address can only be registered once — returning participants see their existing workspace instead of getting a new one.
+
+### Setup (Admin)
+
+1. Configure `.env`:
+   ```
+   WORKSHOP_GROUP=JavaLand        # projectName prefix of workshop workspaces
+   WORKSHOP_ADMIN_PASSWORD=...    # password for the admin page
+   ```
+2. Restart the server container: `docker-compose up -d --build server`
+3. Clone your base workspace into N copies (see section above) — the landing page picks them up automatically
+
+### Admin Page
+
+Open `http://<server>/workshop/admin.html` to:
+
+- See all active claims (name, email, assigned workspace, timestamp)
+- **Release** a workspace — moves the claim to the history log and makes the workspace available again
+- View the **release history** (collapsible, newest first)
+- **Export CSV** of all active claims for email distribution
+
+The history is never deleted — released claims are preserved in `/app/workspaces/workshop-claims-history.json`.
+
+### API Summary
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /api/workshop/status` | — | Available / total / claimed counts |
+| `POST /api/workshop/claim` | — | Claim a workspace `{ name, email }` |
+| `GET /api/workshop/claims?password=` | ✅ | All claims + history (admin) |
+| `POST /api/workshop/claims/:id/release?password=` | ✅ | Release a claim to history |
+
 ## Advanced Usage
 
 ### Custom Extensions
