@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const projectsRouter = require('./routes/projects');
 const workspaceRouter = require('./routes/workspace');
+const workshopRouter = require('./routes/workshop');
 
 const app = express();
 const PORT = 3000;
@@ -78,6 +79,7 @@ app.put('/api/whitelist', async (req, res) => {
 // Routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/workspace', workspaceRouter);
+app.use('/api/workshop', workshopRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

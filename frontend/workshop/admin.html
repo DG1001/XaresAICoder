@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workshop Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    /* Login overlay */
+    #login-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      position: fixed;
+      inset: 0;
+      background: #0f1117;
+      z-index: 100;
+    }
+
+    .login-card {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .login-card h2 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+    .login-card p  { color: #94a3b8; font-size: 0.88rem; margin-bottom: 1.5rem; }
+
+    .login-error {
+      background: rgba(248,113,113,0.1);
+      border: 1px solid rgba(248,113,113,0.4);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.88rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      color: #f8fafc;
+      font-size: 1rem;
+      outline: none;
+      margin-bottom: 1rem;
+      transition: border-color 0.15s;
+    }
+
+    input[type="password"]:focus { border-color: #7c3aed; }
+
+    .btn-primary {
+      width: 100%;
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #6d28d9; }
+
+    /* Admin UI */
+    #admin-ui { display: none; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 0.75rem; }
+    .logo-text { font-size: 1rem; color: #a78bfa; font-weight: 600; }
+    h1 { font-size: 1.5rem; font-weight: 700; }
+    .header-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+    .btn-sm {
+      padding: 0.5rem 1rem;
+      border-radius: 7px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+    }
+    .btn-sm:hover { opacity: 0.8; }
+    .btn-outline { background: transparent; border: 1px solid #4b5563; color: #e2e8f0; }
+    .btn-green   { background: #065f46; color: #6ee7b7; border: 1px solid #047857; }
+
+    .stats {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .stat-box {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 1rem 1.5rem;
+      min-width: 120px;
+    }
+    .stat-value { font-size: 2rem; font-weight: 700; color: #f8fafc; line-height: 1; }
+    .stat-label { font-size: 0.8rem; color: #6b7280; margin-top: 0.25rem; }
+
+    /* Tables */
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .table-wrap {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+
+    th {
+      background: #111827;
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid #2d3748;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #1f2937;
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .ws-link {
+      color: #a78bfa;
+      text-decoration: none;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.82rem;
+    }
+    .ws-link:hover { text-decoration: underline; }
+
+    .ts { color: #6b7280; font-size: 0.82rem; }
+
+    .empty { text-align: center; padding: 2.5rem; color: #4b5563; }
+
+    /* Release button */
+    .btn-release {
+      padding: 0.3rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #7f1d1d;
+      background: rgba(127,29,29,0.2);
+      color: #fca5a5;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-release:hover { background: rgba(127,29,29,0.45); }
+    .btn-release:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* History section toggle */
+    .history-toggle {
+      cursor: pointer;
+      user-select: none;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .history-toggle:hover { color: #e2e8f0; }
+    .chevron { transition: transform 0.2s; display: inline-block; }
+    .chevron.open { transform: rotate(90deg); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-gray { background: #374151; color: #9ca3af; }
+
+    #refresh-btn.spinning { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-overlay">
+  <div class="login-card">
+    <h2>Workshop Admin</h2>
+    <p>Bitte Passwort eingeben</p>
+    <div class="login-error" id="login-error">Falsches Passwort.</div>
+    <form id="login-form">
+      <input type="password" id="pw-input" placeholder="Passwort" autofocus>
+      <button type="submit" class="btn-primary">Anmelden</button>
+    </form>
+  </div>
+</div>
+
+<!-- Admin UI -->
+<div id="admin-ui">
+  <header>
+    <div class="header-left">
+      <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="#7c3aed"/>
+        <path d="M8 12l8-4 8 4v8l-8 4-8-4v-8z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M16 8v16M8 12l8 4 8-4" stroke="#fff" stroke-width="1.5"/>
+      </svg>
+      <span class="logo-text">XaresAICoder</span>
+      <h1>Workshop Admin</h1>
+    </div>
+    <div class="header-actions">
+      <button class="btn-sm btn-outline" id="refresh-btn" onclick="loadData()">↻ Aktualisieren</button>
+      <button class="btn-sm btn-green" onclick="exportCSV()">CSV exportieren</button>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat-box">
+      <div class="stat-value" id="stat-total">–</div>
+      <div class="stat-label">Workspaces gesamt</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value" id="stat-claimed">–</div>
+      <div class="stat-label">Vergeben</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value" id="stat-available">–</div>
+      <div class="stat-label">Noch frei</div>
+    </div>
+  </div>
+
+  <!-- Active claims -->
+  <div class="section-title">Aktive Zuordnungen</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>E-Mail</th>
+          <th>Workspace</th>
+          <th>URL</th>
+          <th>Registriert</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="claims-tbody">
+        <tr><td colspan="7" class="empty">Lade Daten…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- History -->
+  <div class="history-toggle" id="history-toggle" onclick="toggleHistory()">
+    <span class="chevron" id="history-chevron">▶</span>
+    Verlauf (freigegebene Zuordnungen)
+    <span class="badge badge-gray" id="history-count">0</span>
+  </div>
+  <div id="history-section" style="display:none;">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>E-Mail</th>
+            <th>Workspace</th>
+            <th>URL</th>
+            <th>Registriert</th>
+            <th>Freigegeben</th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody">
+          <tr><td colspan="7" class="empty">Keine Einträge.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm dialog (native but themed via confirm()) -->
+<script>
+  let adminPassword = '';
+  let claimsData  = [];
+  let historyData = [];
+
+  // --- Login ---
+  document.getElementById('login-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const pw = document.getElementById('pw-input').value;
+    const ok = await checkPassword(pw);
+    if (ok) {
+      adminPassword = pw;
+      sessionStorage.setItem('workshopAdminPw', pw);
+      document.getElementById('login-overlay').style.display = 'none';
+      document.getElementById('admin-ui').style.display = 'block';
+      loadData();
+      loadStatus();
+    } else {
+      document.getElementById('login-error').style.display = 'block';
+    }
+  });
+
+  async function checkPassword(pw) {
+    try {
+      const res = await fetch('/api/workshop/claims?password=' + encodeURIComponent(pw));
+      return res.status !== 401;
+    } catch { return false; }
+  }
+
+  // --- Data loading ---
+  async function loadData() {
+    const btn = document.getElementById('refresh-btn');
+    btn.classList.add('spinning');
+    try {
+      const res = await fetch('/api/workshop/claims?password=' + encodeURIComponent(adminPassword));
+      if (res.status === 401) { location.reload(); return; }
+      const data = await res.json();
+      claimsData  = data.claims  || [];
+      historyData = data.history || [];
+      renderClaims(claimsData);
+      renderHistory(historyData);
+      document.getElementById('history-count').textContent = historyData.length;
+    } catch (e) {
+      document.getElementById('claims-tbody').innerHTML =
+        '<tr><td colspan="7" class="empty">Fehler beim Laden.</td></tr>';
+    } finally {
+      btn.classList.remove('spinning');
+    }
+  }
+
+  async function loadStatus() {
+    try {
+      const res = await fetch('/api/workshop/status');
+      const d   = await res.json();
+      document.getElementById('stat-total').textContent     = d.total;
+      document.getElementById('stat-claimed').textContent   = d.claimed;
+      document.getElementById('stat-available').textContent = d.available;
+    } catch {}
+  }
+
+  // --- Render ---
+  function renderClaims(list) {
+    const tbody = document.getElementById('claims-tbody');
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Noch keine Registrierungen.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map((c, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${esc(c.name)}</td>
+        <td>${esc(c.email)}</td>
+        <td>${esc(c.projectName)}</td>
+        <td><a class="ws-link" href="${esc(c.workspaceUrl)}" target="_blank">${esc(c.workspaceUrl)}</a></td>
+        <td class="ts">${formatDate(c.claimedAt)}</td>
+        <td>
+          <button class="btn-release" onclick="releaseWorkspace('${esc(c.projectId)}', '${esc(c.name)}', '${esc(c.projectName)}')">
+            Freigeben
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderHistory(list) {
+    const tbody = document.getElementById('history-tbody');
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Keine freigegebenen Zuordnungen.</td></tr>';
+      return;
+    }
+    // newest first
+    const sorted = [...list].reverse();
+    tbody.innerHTML = sorted.map((c, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${esc(c.name)}</td>
+        <td>${esc(c.email)}</td>
+        <td>${esc(c.projectName)}</td>
+        <td><a class="ws-link" href="${esc(c.workspaceUrl)}" target="_blank">${esc(c.workspaceUrl)}</a></td>
+        <td class="ts">${formatDate(c.claimedAt)}</td>
+        <td class="ts">${formatDate(c.releasedAt)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // --- Release ---
+  async function releaseWorkspace(projectId, name, projectName) {
+    if (!confirm(`Workspace "${projectName}" von "${name}" freigeben?\n\nDie Zuordnung wird in den Verlauf verschoben.`)) return;
+
+    const btn = document.querySelector(`button[onclick*="${projectId}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+    try {
+      const res = await fetch(
+        `/api/workshop/claims/${encodeURIComponent(projectId)}/release?password=${encodeURIComponent(adminPassword)}`,
+        { method: 'POST' }
+      );
+      if (res.status === 401) { location.reload(); return; }
+      if (!res.ok) {
+        const d = await res.json();
+        alert('Fehler: ' + (d.error || 'Unbekannt'));
+        if (btn) { btn.disabled = false; btn.textContent = 'Freigeben'; }
+        return;
+      }
+      loadData();
+      loadStatus();
+    } catch (e) {
+      alert('Verbindungsfehler.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Freigeben'; }
+    }
+  }
+
+  // --- History toggle ---
+  function toggleHistory() {
+    const section = document.getElementById('history-section');
+    const chevron = document.getElementById('history-chevron');
+    const visible = section.style.display !== 'none';
+    section.style.display = visible ? 'none' : 'block';
+    chevron.classList.toggle('open', !visible);
+  }
+
+  // --- CSV export ---
+  function exportCSV() {
+    if (!claimsData.length) return;
+    const header = 'Name,E-Mail,Workspace,URL,Registriert';
+    const rows = claimsData.map(c =>
+      [c.name, c.email, c.projectName, c.workspaceUrl, c.claimedAt]
+        .map(v => '"' + String(v || '').replace(/"/g, '""') + '"').join(',')
+    );
+    downloadCSV([header, ...rows].join('\r\n'), 'workshop-claims.csv');
+  }
+
+  function downloadCSV(content, filename) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // --- Helpers ---
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '–';
+    try { return new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }); }
+    catch { return iso; }
+  }
+
+  // --- Auto-restore session ---
+  const saved = sessionStorage.getItem('workshopAdminPw');
+  if (saved) {
+    checkPassword(saved).then(ok => {
+      if (ok) {
+        adminPassword = saved;
+        document.getElementById('login-overlay').style.display = 'none';
+        document.getElementById('admin-ui').style.display = 'block';
+        loadData();
+        loadStatus();
+      }
+    });
+  }
+</script>
+</body>
+</html>

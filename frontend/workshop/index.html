@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workshop – Workspace erhalten</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .card {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .logo svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .logo-text {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #a78bfa;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 0.4rem;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .availability {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #0d1117;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      margin-bottom: 1.75rem;
+      font-size: 0.88rem;
+      color: #94a3b8;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+      flex-shrink: 0;
+    }
+
+    .dot.none { background: #f87171; }
+
+    .availability strong {
+      color: #f8fafc;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #cbd5e1;
+      margin-bottom: 0.35rem;
+    }
+
+    input {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      color: #f8fafc;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.15s;
+      margin-bottom: 1.1rem;
+    }
+
+    input:focus { border-color: #7c3aed; }
+    input.error { border-color: #f87171; }
+
+    .field-error {
+      font-size: 0.8rem;
+      color: #f87171;
+      margin-top: -0.8rem;
+      margin-bottom: 0.9rem;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    button[type="submit"]:hover:not(:disabled) { background: #6d28d9; }
+    button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .alert {
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+      display: none;
+    }
+
+    .alert.error {
+      background: rgba(248,113,113,0.1);
+      border: 1px solid rgba(248,113,113,0.4);
+      color: #fca5a5;
+    }
+
+    .alert.success {
+      background: rgba(74,222,128,0.08);
+      border: 1px solid rgba(74,222,128,0.3);
+      color: #86efac;
+    }
+
+    /* Result section */
+    #result { display: none; }
+
+    .workspace-box {
+      background: #0d1117;
+      border: 1px solid #4ade80;
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin: 1.25rem 0 1rem;
+      text-align: center;
+    }
+
+    .workspace-label {
+      font-size: 0.8rem;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.5rem;
+    }
+
+    .workspace-name {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #a78bfa;
+      margin-bottom: 0.5rem;
+    }
+
+    .workspace-url {
+      font-size: 0.95rem;
+      color: #4ade80;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      word-break: break-all;
+    }
+
+    .result-actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .btn-action {
+      flex: 1;
+      padding: 0.7rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+    }
+
+    .btn-action:hover { opacity: 0.85; }
+
+    .btn-copy {
+      background: #2d3748;
+      color: #e2e8f0;
+    }
+
+    .btn-open {
+      background: #7c3aed;
+      color: #fff;
+    }
+
+    .result-hint {
+      font-size: 0.82rem;
+      color: #6b7280;
+      text-align: center;
+      margin-top: 0.75rem;
+    }
+
+    /* Already registered hint */
+    .already-link {
+      font-size: 0.82rem;
+      color: #a78bfa;
+      text-decoration: underline;
+      cursor: pointer;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="32" height="32" rx="8" fill="#7c3aed"/>
+        <path d="M8 12l8-4 8 4v8l-8 4-8-4v-8z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M16 8v16M8 12l8 4 8-4" stroke="#fff" stroke-width="1.5"/>
+      </svg>
+      <span class="logo-text">XaresAICoder</span>
+    </div>
+
+    <h1>Workshop</h1>
+    <p class="subtitle">Gib deinen Namen und deine E-Mail ein, um deinen persönlichen Workspace zu erhalten.</p>
+
+    <div class="availability" id="availability">
+      <span class="dot" id="avail-dot"></span>
+      <span id="avail-text">Lade Verfügbarkeit…</span>
+    </div>
+
+    <div class="alert error" id="alert-error"></div>
+
+    <form id="claim-form">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" placeholder="Max Mustermann" autocomplete="name" required>
+
+      <label for="email">E-Mail-Adresse</label>
+      <input type="email" id="email" name="email" placeholder="max@beispiel.de" autocomplete="email" required>
+
+      <button type="submit" id="submit-btn">Workspace erhalten</button>
+    </form>
+
+    <div id="result">
+      <div class="workspace-box">
+        <div class="workspace-label">Dein Workspace</div>
+        <div class="workspace-name" id="result-project-name"></div>
+        <div class="workspace-url" id="result-url"></div>
+      </div>
+      <div class="result-actions">
+        <button class="btn-action btn-copy" id="btn-copy">URL kopieren</button>
+        <button class="btn-action btn-open" id="btn-open">Workspace öffnen</button>
+      </div>
+      <p class="result-hint">Speichere diese URL – sie gehört dir für den gesamten Workshop.</p>
+    </div>
+  </div>
+
+  <script>
+    let workspaceUrl = '';
+
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/workshop/status');
+        const data = await res.json();
+        const dot = document.getElementById('avail-dot');
+        const text = document.getElementById('avail-text');
+        if (data.available > 0) {
+          dot.className = 'dot';
+          text.innerHTML = '<strong>' + data.available + '</strong> von ' + data.total + ' Workspaces noch verfügbar';
+        } else {
+          dot.className = 'dot none';
+          text.innerHTML = 'Keine Workspaces mehr verfügbar';
+          document.getElementById('submit-btn').disabled = true;
+        }
+      } catch (e) {
+        document.getElementById('avail-text').textContent = 'Status nicht abrufbar';
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('alert-error');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function clearError() {
+      const el = document.getElementById('alert-error');
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+
+    document.getElementById('claim-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      clearError();
+
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const btn = document.getElementById('submit-btn');
+
+      if (!name) { showError('Bitte gib deinen Namen ein.'); return; }
+      if (!email) { showError('Bitte gib deine E-Mail-Adresse ein.'); return; }
+
+      btn.disabled = true;
+      btn.textContent = 'Wird zugewiesen…';
+
+      try {
+        const res = await fetch('/api/workshop/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email })
+        });
+
+        const data = await res.json();
+
+        if (res.status === 409) {
+          // Already registered
+          workspaceUrl = data.workspaceUrl;
+          document.getElementById('result-project-name').textContent = data.projectName || 'Dein Workspace';
+          document.getElementById('result-url').textContent = data.workspaceUrl;
+          document.getElementById('claim-form').style.display = 'none';
+          document.getElementById('result').style.display = 'block';
+          clearError();
+          return;
+        }
+
+        if (!res.ok) {
+          showError(data.error || 'Ein unbekannter Fehler ist aufgetreten.');
+          btn.disabled = false;
+          btn.textContent = 'Workspace erhalten';
+          return;
+        }
+
+        // Success
+        workspaceUrl = data.workspaceUrl;
+        document.getElementById('result-project-name').textContent = data.projectName;
+        document.getElementById('result-url').textContent = data.workspaceUrl;
+        document.getElementById('claim-form').style.display = 'none';
+        document.getElementById('result').style.display = 'block';
+        loadStatus();
+
+      } catch (err) {
+        showError('Verbindungsfehler. Bitte prüfe deine Internetverbindung und versuche es erneut.');
+        btn.disabled = false;
+        btn.textContent = 'Workspace erhalten';
+      }
+    });
+
+    document.getElementById('btn-copy').addEventListener('click', function() {
+      if (!workspaceUrl) return;
+      navigator.clipboard.writeText(workspaceUrl).then(() => {
+        this.textContent = 'Kopiert!';
+        setTimeout(() => { this.textContent = 'URL kopieren'; }, 2000);
+      }).catch(() => {
+        // Fallback for browsers without clipboard API
+        const ta = document.createElement('textarea');
+        ta.value = workspaceUrl;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        this.textContent = 'Kopiert!';
+        setTimeout(() => { this.textContent = 'URL kopieren'; }, 2000);
+      });
+    });
+
+    document.getElementById('btn-open').addEventListener('click', function() {
+      if (workspaceUrl) window.open(workspaceUrl, '_blank');
+    });
+
+    loadStatus();
+  </script>
+</body>
+</html>
