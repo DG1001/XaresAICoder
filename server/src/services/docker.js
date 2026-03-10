@@ -1299,21 +1299,46 @@ fi`.trim();
   async commitContainer(projectId) {
     const containerName = `workspace-${projectId}`;
     const snapshotRepo = `clone-snapshot-${projectId}`;
+    const imageName = `${snapshotRepo}:latest`;
 
+    const container = this.docker.getContainer(containerName);
+
+    // Try docker commit first (faster, preserves layer history)
     try {
-      const container = this.docker.getContainer(containerName);
       await container.commit({
         repo: snapshotRepo,
         tag: 'latest',
         comment: `Snapshot for cloning workspace ${projectId}`,
         pause: true
       });
-
-      const imageName = `${snapshotRepo}:latest`;
       console.log(`Created snapshot image: ${imageName} from container ${containerName}`);
       return imageName;
+    } catch (commitError) {
+      // commit can fail when the parent image layers are no longer present
+      // (e.g. after the base image was rebuilt). Fall back to export → import,
+      // which captures the live container filesystem as a flat image.
+      console.warn(`docker commit failed for ${containerName}, trying export/import fallback: ${commitError.message}`);
+    }
+
+    try {
+      const tarStream = await new Promise((resolve, reject) => {
+        container.export((err, stream) => {
+          if (err) reject(err);
+          else resolve(stream);
+        });
+      });
+      await new Promise((resolve, reject) => {
+        this.docker.importImage(tarStream, { repo: snapshotRepo, tag: 'latest' }, (err, stream) => {
+          if (err) return reject(err);
+          stream.resume();
+          stream.on('end', resolve);
+          stream.on('error', reject);
+        });
+      });
+      console.log(`Created snapshot image via export/import: ${imageName} from container ${containerName}`);
+      return imageName;
     } catch (error) {
-      console.error(`Error committing container ${containerName}:`, error);
+      console.error(`Error creating snapshot from container ${containerName}:`, error);
       throw new Error(`Failed to create snapshot: ${error.message}`);
     }
   }
