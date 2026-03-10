@@ -1321,13 +1321,6 @@ fi`.trim();
     }
 
     try {
-      // Preserve USER and ENTRYPOINT from the source container so the
-      // flat import image behaves identically to the original.
-      const info = await container.inspect();
-      const changes = [];
-      if (info.Config.User)       changes.push(`USER ${info.Config.User}`);
-      if (info.Config.Entrypoint) changes.push(`ENTRYPOINT ${JSON.stringify(info.Config.Entrypoint)}`);
-
       const tarStream = await new Promise((resolve, reject) => {
         container.export((err, stream) => {
           if (err) reject(err);
@@ -1335,7 +1328,7 @@ fi`.trim();
         });
       });
       await new Promise((resolve, reject) => {
-        this.docker.importImage(tarStream, { repo: snapshotRepo, tag: 'latest', changes }, (err, stream) => {
+        this.docker.importImage(tarStream, { repo: snapshotRepo, tag: 'latest' }, (err, stream) => {
           if (err) return reject(err);
           stream.resume();
           stream.on('end', resolve);
@@ -1472,6 +1465,7 @@ fi`.trim();
             }
           }
         },
+        User: 'coder',
         WorkingDir: '/workspace',
         Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
       });
