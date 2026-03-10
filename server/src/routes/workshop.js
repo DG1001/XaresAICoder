@@ -86,7 +86,7 @@ function getWorkshopGroup() {
 function isWorkshopProject(project) {
   const group = getWorkshopGroup();
   if (!group) return false;
-  return (project.projectName || project.name || '').startsWith(group);
+  return new RegExp('^' + group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\d+').test(project.projectName || project.name || '');
 }
 
 async function getWorkshopProjects() {
