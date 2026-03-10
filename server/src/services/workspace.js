@@ -235,12 +235,23 @@ class WorkspaceService {
       passwordHash = await bcrypt.hash(options.password, 10);
     }
 
+    // Collect all existing project names to avoid duplicates
+    const usedNames = new Set(
+      Array.from(this.projects.values()).map(p => p.projectName)
+    );
+
+    let cloneNum = 0;
     const clones = [];
-    for (let i = 1; i <= count; i++) {
+    for (let i = 0; i < count; i++) {
+      // Find next free number
+      do { cloneNum++; } while (usedNames.has(`${source.projectName} ${cloneNum}`));
+      const projectName = `${source.projectName} ${cloneNum}`;
+      usedNames.add(projectName); // Reserve for next iteration
+
       const cloneId = uuidv4();
       const clone = {
         projectId: cloneId,
-        projectName: `${source.projectName} ${i}`,
+        projectName,
         projectType: source.projectType,
         memoryLimit: source.memoryLimit || '2g',
         cpuCores: source.cpuCores || '2',
