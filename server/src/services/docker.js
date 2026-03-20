@@ -1235,12 +1235,20 @@ fi`.trim();
     return Buffer.concat([header, contentBuffer, contentPadding, endMarker]);
   }
 
-  // Update workspace password by writing a persistent auth override file
-  // If password is null, removes password protection; otherwise sets/updates it
+  // Update workspace password by updating the code-server config.yaml and the auth override file.
+  // If password is null, removes password protection; otherwise sets/updates it.
   async updateWorkspacePassword(projectId, password) {
     const containerName = `workspace-${projectId}`;
+    const configPath = '/home/coder/.config/code-server/config.yaml';
 
-    // Build the auth override file content
+    // Build new code-server config.yaml content
+    // Password is single-quoted in YAML; internal single quotes are escaped by doubling ('')
+    const yamlPassword = password ? password.replace(/'/g, "''") : '';
+    const configContent = password
+      ? `bind-addr: 0.0.0.0:8082\nauth: password\npassword: '${yamlPassword}'\ncert: false\ndisable-telemetry: true\ndisable-update-check: true\n`
+      : `bind-addr: 0.0.0.0:8082\nauth: none\ncert: false\ndisable-telemetry: true\ndisable-update-check: true\n`;
+
+    // Build the entrypoint auth override file content (secondary mechanism)
     let overrideContent;
     if (password) {
       const escapedPassword = password.replace(/'/g, "'\\''");
@@ -1254,8 +1262,12 @@ fi`.trim();
       const containerInfo = await container.inspect();
 
       if (containerInfo.State.Running) {
-        // Running container: write file via exec, then stop+start
-        const writeCmd = `cat > /home/coder/.code-server-auth << 'AUTHEOF'\n${overrideContent}AUTHEOF`;
+        // Running container: update config.yaml and auth override file via exec, then stop+start
+        const b64Config = Buffer.from(configContent).toString('base64');
+        const writeCmd = [
+          `echo '${b64Config}' | base64 -d > ${configPath}`,
+          `cat > /home/coder/.code-server-auth << 'AUTHEOF'\n${overrideContent}AUTHEOF`
+        ].join(' && ');
         const exec = await container.exec({
           Cmd: ['bash', '-c', writeCmd],
           AttachStdout: true,
@@ -1264,7 +1276,7 @@ fi`.trim();
         const stream = await exec.start();
         await this.streamToString(stream);
 
-        // Stop and start the container (entrypoint will read the override file)
+        // Stop and start the container so the new config takes effect
         await container.stop({ t: 10 });
         await container.start();
 
@@ -1274,11 +1286,14 @@ fi`.trim();
         console.log(`Password updated for running container ${containerName}`);
         return { success: true, message: 'Password updated successfully' };
       } else {
-        // Stopped container: write file via putArchive API
-        const tarBuffer = this.createTarWithFile('.code-server-auth', overrideContent);
-        await container.putArchive(tarBuffer, { path: '/home/coder' });
+        // Stopped container: write config.yaml and auth override file via putArchive
+        const configTar = this.createTarWithFile('config.yaml', configContent);
+        await container.putArchive(configTar, { path: '/home/coder/.config/code-server' });
 
-        console.log(`Password override written to stopped container ${containerName}`);
+        const authTar = this.createTarWithFile('.code-server-auth', overrideContent);
+        await container.putArchive(authTar, { path: '/home/coder' });
+
+        console.log(`Password config written to stopped container ${containerName}`);
         return { success: true, message: 'Password updated (will apply on next start)' };
       }
 
