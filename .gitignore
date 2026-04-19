@@ -37,6 +37,7 @@ CLAUDE.md
 prompt.md
 docs/DEPLOYMENT_SENSEM.md
 
+
 # SSL/TLS Certificates and Keys (generated, not committed)
 squid/certs/*.pem
 squid/certs/*.crt

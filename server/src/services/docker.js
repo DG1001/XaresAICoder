@@ -18,18 +18,18 @@ class DockerService {
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
-    this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder-pro_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
+    this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
     this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
     this.squidProxyHost = 'xaresaicoder-squid-proxy:3128'; // Squid proxy container for security whitelist filtering
     // Workspace sudo privileges configuration
     this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
     // Security and isolation configuration
     this.securityConfig = {
-      pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 512,
+      pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 2048,
       maxFileDescriptors: parseInt(process.env.CONTAINER_MAX_FDS) || 4096,
       maxFileDescriptorsHard: parseInt(process.env.CONTAINER_MAX_FDS_HARD) || 8192,
-      maxProcessesPerUser: parseInt(process.env.CONTAINER_MAX_PROCS) || 512,
-      maxProcessesPerUserHard: parseInt(process.env.CONTAINER_MAX_PROCS_HARD) || 1024
+      maxProcessesPerUser: parseInt(process.env.CONTAINER_MAX_PROCS) || 2048,
+      maxProcessesPerUserHard: parseInt(process.env.CONTAINER_MAX_PROCS_HARD) || 4096
     };
   }
 
@@ -169,7 +169,8 @@ class DockerService {
           ],
           // Resource limits to prevent abuse
           Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
+            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard },
+            { Name: 'nproc', Soft: this.securityConfig.maxProcessesPerUser, Hard: this.securityConfig.maxProcessesPerUserHard }
           ],
           RestartPolicy: {
             Name: 'unless-stopped'
