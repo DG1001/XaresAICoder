@@ -48,8 +48,9 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     chmod +x /usr/local/bin/uv
 
 # Install AI coding tools
-# Install Aider AI pair programming tool
-RUN pip3 install --break-system-packages aider-chat
+# Install Aider AI pair programming tool (isolated via uv to avoid dependency conflicts)
+RUN uv tool install aider-chat && \
+    ln -sf /root/.local/bin/aider /usr/local/bin/aider
 
 # Install Node.js AI tools (first install most tools, then OpenAI Codex separately)
 RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest @charmland/crush
