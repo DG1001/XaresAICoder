@@ -1,5 +1,6 @@
 const Docker = require('dockerode');
 const { v4: uuidv4 } = require('uuid');
+const dns = require('dns').promises;
 
 class DockerService {
   constructor() {
@@ -223,6 +224,9 @@ class DockerService {
         createdAt: new Date(),
         projectType
       });
+
+      // Wait for DNS to propagate so nginx can resolve the container name
+      await this.waitForDnsReady(containerName);
 
       return {
         projectId,
@@ -493,6 +497,21 @@ fi`.trim();
     }
 
     console.warn(`Workspace ${containerName} not ready after ${maxWaitTime}ms, proceeding anyway`);
+    return false;
+  }
+
+  async waitForDnsReady(containerName, maxWaitTime = 10000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        await dns.lookup(containerName);
+        console.log(`DNS resolved for ${containerName}`);
+        return true;
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    console.warn(`DNS for ${containerName} not ready after ${maxWaitTime}ms, proceeding anyway`);
     return false;
   }
 
@@ -1159,7 +1178,7 @@ fi`.trim();
       }
 
       await container.start();
-      
+
       // Update our in-memory cache
       this.activeContainers.set(projectId, {
         container: container,
@@ -1167,12 +1186,14 @@ fi`.trim();
         createdAt: new Date(containerInfo.Created),
         projectType: this.extractProjectTypeFromEnv(containerInfo.Config.Env)
       });
-      
+
       // Wait for workspace to be ready after starting
       await this.waitForWorkspaceReady(containerName);
-      
-      return { 
-        success: true, 
+      // Wait for DNS to propagate so nginx can resolve the container name
+      await this.waitForDnsReady(containerName);
+
+      return {
+        success: true,
         message: 'Workspace started successfully',
         status: 'running'
       };
