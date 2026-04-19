@@ -22,7 +22,7 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 - **CPU Cores Selection** - Allocate 1-8 CPU cores per workspace
 - **Resource Limits** - Configurable concurrent workspace limits and per-workspace resource caps
 - **GPU Acceleration Support** - Automatic GPU passthrough for ML/AI workloads
-- **Per-Workspace Network Proxy** - Individual proxy control with Squid whitelist filtering and real-time logs
+- **Dual Proxy Modes** - Per-workspace **LLM Logging Proxy** (mitmproxy, records all traffic and captures AI conversations) or **Security Proxy** (Squid, whitelist-only access control)
 - **Subdomain Port Forwarding** (e.g., `projectid-5000.localhost`)
 - **Real-time Container Management** with start/stop controls
 - **Optional Password Protection** for workspace security
@@ -37,10 +37,10 @@ Pre-configured workspace with multiple AI coding assistants:
 - **Claude Code** - Anthropic's agentic tool for deep codebase understanding
 - **Qwen Code** - AI workflow automation and code exploration
 - **OpenAI Codex CLI** - OpenAI's terminal-based coding assistant
+- **Crush** - Multi-model AI with in-session model switching and LSP integration
 
 ### 🔧 **Development Ready**
-- **Multiple Project Templates**: Python Flask, Node.js React, Java Spring Boot, Empty Project
-- **Git Repository Cloning** - Clone any HTTP/HTTPS Git repository directly into workspaces
+- **Empty Project** or **Git Clone** - Start fresh or clone any HTTP/HTTPS Git repository directly into workspaces
 - **Private Repository Support** - Secure authentication with username and access tokens
 - **Persistent Git Credentials** - Seamless push/pull operations after cloning
 - **Integrated Git Server** (optional) - Self-hosted Forgejo with GitHub Actions compatibility
@@ -57,34 +57,21 @@ Pre-configured workspace with multiple AI coding assistants:
 
 ## 🆕 Recent Updates
 
-### Per-Workspace Network Proxy & Logs Viewer (Latest)
-- ✅ **Per-Workspace Proxy Control** - Choose proxy settings individually for each workspace
-- ✅ **Real-time Logs Viewer** - Monitor workspace network activity with filtered Squid logs
-- ✅ **Auto-Refresh Logs** - Live monitoring with 3-second auto-refresh or manual refresh
-- ✅ **Network Activity Icons** - Visual indicators for proxy-enabled workspaces
-- ✅ **Backward Compatible** - Existing workspaces inherit global proxy settings
-- ✅ **Dynamic Container Discovery** - Automatic squid container detection by name pattern
+### Workshop Support (Latest)
+- ✅ **Workspace Cloning** - Clone a base workspace into N identical copies for workshops
+- ✅ **Workshop Landing Page** - Participant self-registration with automatic workspace assignment
+- ✅ **Admin Overview** - Manage claims, release workspaces, export CSV
+- ✅ **Per-Clone Git Branches** - Each clone gets its own branch in the shared Forgejo repo
 
-### Project Organization & Grouping
-- ✅ **Smart Project Groups** - Organize projects into custom groups with sidebar navigation
-- ✅ **Drag & Drop Management** - Intuitive file manager-style project organization
-- ✅ **Visual Group Management** - Create, rename, and delete groups with one-click actions
-- ✅ **Instant Project Filtering** - Click groups to filter projects, group badges for quick access
-- ✅ **Seamless UX** - No form dropdowns - pure drag & drop workflow
-- ✅ **Consistent Naming** - Projects default to "Uncategorized" with automatic migration
+### Dual Proxy Modes
+- ✅ **LLM Logging Proxy** - mitmproxy records all traffic and captures AI API conversations
+- ✅ **Security Proxy** - Squid whitelist-only filtering for assessments
+- ✅ **Domain Recording & Whitelist Generation** - Teacher records domains, applies as student whitelist
+- ✅ **LLM Conversation Export** - View, export, and generate documentation from captured conversations
 
-### Git Repository Cloning
-- ✅ **Clone Any Repository** - Support for HTTP/HTTPS Git URLs from GitHub, GitLab, and other providers
-- ✅ **Private Repository Authentication** - Secure username + access token authentication
-- ✅ **Persistent Credentials** - Embedded credentials in remote URL for seamless push/pull operations
-- ✅ **Smart Form Logic** - Automatic disabling of conflicting options during workspace creation
-- ✅ **Clean Project Display** - Git repositories show with repository name and icon in project list
-
-### User Experience Improvements
-- ✅ **Streamlined Welcome Message** - Simplified .bashrc with `info` command for detailed help
-- ✅ **AI Tool Management** - New `update_ai_agents` command to update all AI tools
-- ✅ **Cleaner Python Environment** - Removed aggressive linting (flake8/pylint) by default
-- ✅ **Enhanced Git Status** - `info` command shows current Git repository status and branch
+### Password Management
+- ✅ **Set/Update/Remove Passwords** - Full lifecycle via UI and API
+- ✅ **Works on Running & Stopped Containers** - Seamless config updates
 
 ## 🚀 Quick Start
 
@@ -119,17 +106,12 @@ After deployment completes, open your browser to:
 
 ### Create Your First Project
 
-#### From Template
+#### Empty Project
 1. Enter a project name
-2. Select your preferred project type:
-   - **Empty Project**: Clean slate with just README and git initialization
-   - **Python Flask**: Full-stack web applications with Flask framework
-   - **Node.js React**: Modern web applications with React 18 and Vite
-   - **Java Spring Boot**: Enterprise applications with Spring Boot 3.1
-3. Choose memory allocation (1GB, 2GB default, 4GB, 8GB, or 16GB RAM) and CPU cores (1-8)
-4. **Optional**: Check "Password Protect Workspace" for secure access
-5. **Optional**: Check "Create Git Repository" to automatically set up Git
-6. Click "Create Workspace"
+2. Choose memory allocation (1GB, 2GB default, 4GB, 8GB, or 16GB RAM) and CPU cores (1-8)
+3. **Optional**: Check "Password Protect Workspace" for secure access
+4. **Optional**: Check "Create Git Repository" to automatically set up Git
+5. Click "Create Workspace"
 
 #### From Git Repository
 1. Enter a project name
@@ -185,9 +167,11 @@ For detailed information, see our comprehensive documentation:
 
 - **[Installation Guide](docs/INSTALLATION.md)** - Complete installation options and configuration
 - **[Architecture Overview](docs/ARCHITECTURE.md)** - Technical architecture and components  
-- **[Project Templates](docs/PROJECT_TEMPLATES.md)** - Detailed template information and customization
 - **[AI Development Tools](docs/AI_TOOLS.md)** - Complete guide to integrated AI assistants
 - **[API Reference](docs/API.md)** - API endpoints and usage examples
+- **[Proxy Architecture](docs/PROXY_ARCHITECTURE.md)** - Dual proxy modes and whitelist management
+- **[LLM Conversation Logging](docs/LLM_CONVERSATION_LOGGING.md)** - AI conversation capture and documentation
+- **[User Guide](docs/user-guide.md)** - End-to-end usage guide including workshops
 - **[Security Features](docs/SECURITY.md)** - Security features and best practices
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[Development Guide](docs/DEVELOPMENT.md)** - Contributing and development setup
@@ -242,10 +226,12 @@ VS Code automatically detects ports and provides one-click browser access.
 
 ## 🔐 Security
 
-- **Optional Password Protection**: Secure individual workspaces with passwords
+- **Optional Password Protection**: Secure individual workspaces with passwords (set, update, remove)
 - **Container Isolation**: Each workspace runs in isolated Docker containers
-- **Resource Limits**: CPU and memory limits prevent resource exhaustion
+- **Resource Limits**: CPU, memory, PID, and file descriptor limits prevent resource exhaustion
 - **Network Isolation**: Workspaces can't access each other
+- **Security Proxy Mode**: Restrict workspace internet access to whitelisted domains only
+- **LLM Logging Proxy Mode**: Record all AI API traffic for audit and compliance
 
 ## ⚙️ Resource Limits
 
@@ -343,14 +329,14 @@ Features:
 ## 🚧 Current Status
 
 ### ✅ **Production Ready**
-- Professional VS Code interface with AI tools
-- Multiple project templates with best practices
+- Professional VS Code interface with 9 integrated AI tools
 - Container management with real-time monitoring
-- Optional password protection and Git integration
+- Dual proxy modes (LLM Logging & Security Proxy)
+- Workshop support with workspace cloning and participant self-registration
+- Password management, Git integration, and project organization
 
 ### 🔮 **Future Enhancements**
 - Multi-user authentication system
-- Additional language templates (Go, Rust, PHP)
 - Cloud deployment pipeline
 - Team collaboration features
 

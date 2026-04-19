@@ -11,8 +11,11 @@ Complete API documentation for XaresAICoder platform.
 - [System Endpoints](#system-endpoints)
 - [Password Management](#password-management)
 - [Workspace Cloning](#workspace-cloning)
+- [Project Notes](#project-notes)
+- [Project Metadata](#project-metadata)
 - [Network Proxy & Monitoring](#network-proxy--monitoring)
 - [Whitelist Management](#whitelist-management)
+- [Workshop](#workshop)
 - [Git Integration](#git-integration)
 - [Error Handling](#error-handling)
 - [Rate Limiting](#rate-limiting)
@@ -255,6 +258,124 @@ Stops a running workspace container gracefully.
   "success": true,
   "message": "Workspace stopped successfully",
   "projectId": "abc123def456"
+}
+```
+
+### List Groups
+
+Returns all distinct group names used across projects.
+
+**Endpoint**: `GET /api/projects/groups`
+
+**Response**:
+```json
+{
+  "success": true,
+  "groups": ["workshop-2026", "team-alpha"]
+}
+```
+
+### Get Disk Usage
+
+Returns disk usage statistics for a specific workspace container.
+
+**Endpoint**: `GET /api/projects/:projectId/disk-usage`
+
+**Response**:
+```json
+{
+  "success": true,
+  "diskUsage": {
+    "bytes": 1234567890,
+    "totalBytes": 9876543210,
+    "readable": "1.1 GB",
+    "totalReadable": "9.2 GB"
+  }
+}
+```
+
+## Project Notes
+
+### Get Project Notes
+
+Retrieves notes for a specific project.
+
+**Endpoint**: `GET /api/projects/:projectId/notes`
+
+**Response**:
+```json
+{
+  "success": true,
+  "notes": "Student should complete exercises 1-3."
+}
+```
+
+### Update Project Notes
+
+Updates notes for a specific project.
+
+**Endpoint**: `PUT /api/projects/:projectId/notes`
+
+**Request Body**:
+```json
+{
+  "notes": "Updated instructions for this workspace."
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Notes updated successfully"
+}
+```
+
+**Notes**: Maximum note length is 10KB.
+
+## Project Metadata
+
+### Rename Project
+
+Updates the display name of a project.
+
+**Endpoint**: `PUT /api/projects/:projectId/name`
+
+**Request Body**:
+```json
+{
+  "name": "New Project Name"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Project name updated successfully"
+}
+```
+
+**Notes**: Name must be 1–100 characters.
+
+### Update Project Group
+
+Assigns or changes the group of a project.
+
+**Endpoint**: `PUT /api/projects/:projectId/group`
+
+**Request Body**:
+```json
+{
+  "group": "workshop-2026"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Project group updated successfully"
 }
 ```
 
@@ -617,6 +738,166 @@ Replaces the Security Proxy whitelist with the provided domains. Merges with bas
 - Domains are normalized to `.domain` format (squid convention: matches both bare domain and all subdomains)
 - Redundant subdomains are automatically removed (e.g., `.api.anthropic.com` removed when `.anthropic.com` exists)
 - Changes take effect immediately via `squid -k reconfigure`
+
+### Generate Documentation from LLM Conversations
+
+Generates markdown documentation from captured LLM conversations for a workspace.
+
+**Endpoint**: `POST /api/projects/:projectId/generate-documentation`
+
+**Request Body**:
+```json
+{
+  "format": "markdown",
+  "type": "clean"
+}
+```
+
+**Parameters**:
+- `format` (string, optional): Output format — `markdown` (default)
+- `type` (string, optional): Documentation type — `clean` (default), `detailed`
+
+**Response**:
+```json
+{
+  "success": true,
+  "projectId": "abc-123",
+  "format": "markdown",
+  "type": "clean",
+  "documentation": "# AI Session Documentation\n...",
+  "conversationCount": 42
+}
+```
+
+### Delete All LLM Conversations
+
+Deletes all captured LLM conversations for a workspace.
+
+**Endpoint**: `DELETE /api/projects/:projectId/llm-conversations`
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "All conversations deleted successfully"
+}
+```
+
+### Delete Specific LLM Conversation
+
+Deletes a single LLM conversation by timestamp.
+
+**Endpoint**: `DELETE /api/projects/:projectId/llm-conversations/:timestamp`
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Conversation deleted successfully"
+}
+```
+
+## Workshop
+
+Workshop endpoints support participant self-registration and admin management for workshop scenarios.
+
+### Get Workshop Status (Public)
+
+Returns available/total/claimed workspace counts for the current workshop group.
+
+**Endpoint**: `GET /api/workshop/status`
+
+**Response**:
+```json
+{
+  "available": 15,
+  "total": 20,
+  "claimed": 5
+}
+```
+
+**Notes**: Workshop group is determined by the `WORKSHOP_GROUP` environment variable.
+
+### Claim Workspace (Public)
+
+Assigns the next free workspace to a participant.
+
+**Endpoint**: `POST /api/workshop/claim`
+
+**Request Body**:
+```json
+{
+  "name": "Max Mustermann",
+  "email": "max@example.com"
+}
+```
+
+**Response** (Success - 200):
+```json
+{
+  "workspaceUrl": "http://workshop-1.localhost/",
+  "projectName": "Workshop 1"
+}
+```
+
+**Response** (Duplicate - 409):
+```json
+{
+  "error": "Diese E-Mail-Adresse ist bereits registriert.",
+  "workspaceUrl": "http://workshop-1.localhost/",
+  "projectName": "Workshop 1"
+}
+```
+
+**Response** (No workspaces available - 503):
+```json
+{
+  "error": "Leider sind keine Workspaces mehr verfügbar. Bitte wenden Sie sich an den Workshop-Leiter."
+}
+```
+
+### List Claims (Admin)
+
+Returns all active claims and release history. Requires admin password.
+
+**Endpoint**: `GET /api/workshop/claims?password=<WORKSHOP_ADMIN_PASSWORD>`
+
+**Response**:
+```json
+{
+  "claims": [
+    {
+      "projectId": "abc-123",
+      "name": "Max Mustermann",
+      "email": "max@example.com",
+      "projectName": "Workshop 1",
+      "workspaceUrl": "http://workshop-1.localhost/",
+      "claimedAt": "2026-04-19T10:00:00.000Z"
+    }
+  ],
+  "history": []
+}
+```
+
+### Release Claim (Admin)
+
+Releases a claimed workspace back to the pool. Requires admin password.
+
+**Endpoint**: `POST /api/workshop/claims/:projectId/release?password=<WORKSHOP_ADMIN_PASSWORD>`
+
+**Response**:
+```json
+{
+  "success": true,
+  "released": {
+    "name": "Max Mustermann",
+    "email": "max@example.com",
+    "projectName": "Workshop 1",
+    "workspaceUrl": "http://workshop-1.localhost/",
+    "claimedAt": "2026-04-19T10:00:00.000Z"
+  }
+}
+```
 
 ## Git Integration
 

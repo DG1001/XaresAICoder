@@ -797,7 +797,7 @@ rm -rf ~/.vscode-server/extensions/continue.continue*
 #### Aider Problems
 ```bash
 # Update aider
-pip install --upgrade aider-chat
+uv tool install --force aider-chat
 
 # Clear aider cache
 rm -rf ~/.aider
