@@ -168,9 +168,11 @@ class DockerService {
             'AUDIT_WRITE'      // Write to audit logs (suppresses sudo audit warnings)
           ],
           // Resource limits to prevent abuse
+          // Note: nproc (RLIMIT_NPROC) is NOT used here because it counts threads per-UID
+          // system-wide across ALL containers sharing UID 1000, causing cross-container
+          // interference. Per-container process isolation is handled by PidsLimit (cgroup).
           Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard },
-            { Name: 'nproc', Soft: this.securityConfig.maxProcessesPerUser, Hard: this.securityConfig.maxProcessesPerUserHard }
+            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
           ],
           RestartPolicy: {
             Name: 'unless-stopped'
