@@ -461,8 +461,14 @@ After deployment, use these commands:
 docker compose logs        # or docker-compose logs
 docker compose logs server # specific service
 
-# Restart services
+# Restart services (keeps existing image — does NOT apply code changes)
 docker compose restart     # or docker-compose restart
+
+# Apply code changes: rebuild image AND recreate container
+docker compose build server && docker compose up -d server
+# ⚠️  'restart' alone is NOT enough after code changes — it reuses the old image
+# Always use 'up -d' after a build to recreate the container with the new image.
+# The deploy script (./deploy.sh) handles this correctly automatically.
 
 # Update deployment  
 git pull

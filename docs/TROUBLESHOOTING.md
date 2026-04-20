@@ -275,7 +275,28 @@ docker start workspace-PROJECT_ID
    # Then create new workspace through UI
    ```
 
-2. **Resource Constraints**:
+2. **Container crash-loops with "resource temporarily unavailable"**:
+
+   This happens when multiple workspace containers share UID 1000 and the combined
+   thread count exceeds the `nproc` ulimit. `RLIMIT_NPROC` counts threads **per-UID
+   system-wide** — not per container. With 14+ running workspaces this easily exceeds
+   a limit of 2048.
+
+   ```bash
+   # Check total thread count for UID 1000
+   ps -eLf | awk '$1 == "workshop"' | wc -l
+
+   # Verify the container has no nproc ulimit (should only show nofile)
+   docker inspect workspace-PROJECT_ID --format '{{json .HostConfig.Ulimits}}'
+   ```
+
+   If the container was created with an nproc ulimit, remove it and recreate via UI:
+   ```bash
+   docker rm -f workspace-PROJECT_ID
+   # Then recreate via UI
+   ```
+
+3. **Resource Constraints**:
    ```bash
    # Check available resources
    docker system df
