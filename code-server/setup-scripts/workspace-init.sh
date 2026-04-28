@@ -822,6 +822,8 @@ All AI tools are pre-installed and ready to use:
 - `gemini` - Google's AI for code generation
 - `claude` - Anthropic's agentic coding tool
 - `qwen-code` - AI workflow automation and code exploration
+- `codex` - OpenAI Codex CLI (terminal-based ChatGPT)
+- `crush` - Multi-model AI agent with in-session model switching
 
 ### VS Code Extensions (install from marketplace)
 - **Continue** - AI code completion and chat (`continue.continue`)
