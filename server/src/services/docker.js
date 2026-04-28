@@ -249,14 +249,6 @@ class DockerService {
     const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
     console.log(`Starting project initialization for type: ${projectType}`);
     try {
-      // Create a marker file to verify the function is running
-      const markerExec = await container.exec({
-        Cmd: ['bash', '-c', 'echo "Initialization started" > /workspace/INIT_MARKER.txt'],
-        AttachStdout: true,
-        AttachStderr: true
-      });
-      await markerExec.start();
-
       const commands = [
         'git init',
         'git config user.name "XaresAICoder User"',

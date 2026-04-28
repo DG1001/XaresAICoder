@@ -792,7 +792,7 @@ setup_empty_project() {
     cd /workspace
     
     # Create a comprehensive README file
-    cat > README.md << 'README_EOF'
+    cat > README_coder.md << 'README_EOF'
 # My XaresAICoder Project
 
 Welcome to your new development workspace! This is a clean slate for you to build whatever you want.
@@ -1009,14 +1009,14 @@ EXTENSIONS_EOF
     echo "✅ Empty project created successfully!"
     echo ""
     echo "🎯 Your workspace includes:"
-    echo "   • README.md with comprehensive getting started guide"
+    echo "   • README_coder.md with comprehensive getting started guide"
     echo "   • .gitignore with common patterns for multiple languages"
     echo "   • VS Code settings optimized for development"
     echo "   • Port forwarding configured for common frameworks"
     echo "   • Extension recommendations for enhanced productivity"
     echo ""
     echo "🚀 Next steps:"
-    echo "   1. Read the README.md for detailed instructions"
+    echo "   1. Read the README_coder.md for detailed instructions"
     echo "   2. Choose your technology stack and start coding"
     echo "   3. Use 'setup_ai_tools' to explore available AI assistance"
     echo "   4. Install recommended VS Code extensions for better development experience"
