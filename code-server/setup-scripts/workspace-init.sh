@@ -134,7 +134,7 @@ if [ -d ".git" ]; then
 fi
 echo ""
 echo "🔄 Update Commands:"
-echo "  • update_aider (pip3)"
+echo "  • sudo update_aider (uv)"
 echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex (npm)"
 echo "  • sudo update_crush, update_opencode (downloads and installs latest version)"
 echo ""
@@ -161,7 +161,8 @@ chmod +x /usr/local/bin/info
 cat > /usr/local/bin/update_aider << 'UPDATE_AIDER_EOF'
 #!/bin/bash
 echo "🔄 Updating Aider AI pair programming tool..."
-pip3 install --upgrade --break-system-packages aider-chat
+echo "💡 Note: Run with sudo if you get permission errors"
+UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool upgrade aider-chat
 echo "✅ Aider updated successfully!"
 UPDATE_AIDER_EOF
 chmod +x /usr/local/bin/update_aider
