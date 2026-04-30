@@ -84,8 +84,15 @@ build_code_server_image() {
         exit 1
     fi
     
+    # Ensure squid CA placeholder exists so the Dockerfile COPY succeeds on clean checkouts
+    # (the real cert is written by generate_proxy_cert when --enable-proxy is used)
+    if [ ! -f "./code-server/squid-ca-cert.crt" ]; then
+        print_status "Creating empty Squid CA placeholder for code-server build context..."
+        : > ./code-server/squid-ca-cert.crt
+    fi
+
     cd code-server
-    
+
     # Check if image already exists
     if docker images | grep -q "xares-aicoder-codeserver.*latest"; then
         print_warning "xares-aicoder-codeserver:latest already exists"
