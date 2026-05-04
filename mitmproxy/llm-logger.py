@@ -19,6 +19,7 @@ LLM_DOMAINS = [
     'api.anthropic.com',
     'generativelanguage.googleapis.com',
     'api.google.dev',
+    'cloudcode-pa.googleapis.com',  # Gemini CLI uses this (Code Assist backend)
     'api.opencode.ai',
     'opencode.ai',  # OpenCode free tier uses opencode.ai/zen/v1/
     'api.huggingface.co',
