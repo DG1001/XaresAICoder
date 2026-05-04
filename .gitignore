@@ -37,6 +37,9 @@ CLAUDE.md
 prompt.md
 docs/DEPLOYMENT_SENSEM.md
 
+# Local workshop prep (not committed)
+.workshop/
+
 
 # SSL/TLS Certificates and Keys (generated, not committed)
 squid/certs/*.pem
