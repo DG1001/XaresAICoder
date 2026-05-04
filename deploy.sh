@@ -34,6 +34,15 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Cross-platform sed -i wrapper (GNU-sed on Linux, BSD-sed on macOS)
+# BSD-sed requires an explicit backup suffix after -i (empty '' = no backup);
+# GNU-sed treats anything after -i as the script unless given a suffix.
+if sed --version 2>/dev/null | grep -q GNU; then
+    sed_inplace() { command sed -i "$@"; }
+else
+    sed_inplace() { command sed -i '' "$@"; }
+fi
+
 # Function to detect and set Docker Compose command
 setup_docker_compose_cmd() {
     if command_exists docker && docker compose version >/dev/null 2>&1; then
@@ -171,14 +180,14 @@ setup_environment() {
     if [ "$enable_git_server" = true ]; then
         print_status "Enabling Git server configuration..."
         if grep -q "^ENABLE_GIT_SERVER=" .env; then
-            sed -i 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=true/' .env
+            sed_inplace 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=true/' .env
         else
             echo "ENABLE_GIT_SERVER=true" >> .env
         fi
     else
         print_status "Disabling Git server configuration..."
         if grep -q "^ENABLE_GIT_SERVER=" .env; then
-            sed -i 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=false/' .env
+            sed_inplace 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=false/' .env
         else
             echo "ENABLE_GIT_SERVER=false" >> .env
         fi
@@ -188,7 +197,7 @@ setup_environment() {
     if [ "$enable_proxy" = true ]; then
         print_status "Enabling proxy configuration..."
         if grep -q "^ENABLE_PROXY=" .env; then
-            sed -i 's/^ENABLE_PROXY=.*/ENABLE_PROXY=true/' .env
+            sed_inplace 's/^ENABLE_PROXY=.*/ENABLE_PROXY=true/' .env
         else
             echo "ENABLE_PROXY=true" >> .env
         fi
@@ -203,7 +212,7 @@ setup_environment() {
         if [ $? -eq 0 ] && [ "$suggested_subnet" != "$current_subnet" ]; then
             print_warning "Using alternative subnet: $suggested_subnet"
             if grep -q "^INTERNAL_NETWORK_SUBNET=" .env; then
-                sed -i "s|^INTERNAL_NETWORK_SUBNET=.*|INTERNAL_NETWORK_SUBNET=$suggested_subnet|" .env
+                sed_inplace "s|^INTERNAL_NETWORK_SUBNET=.*|INTERNAL_NETWORK_SUBNET=$suggested_subnet|" .env
             else
                 echo "INTERNAL_NETWORK_SUBNET=$suggested_subnet" >> .env
             fi
@@ -211,7 +220,7 @@ setup_environment() {
             # Update DNSMASQ_IP based on new subnet
             local new_dnsmasq_ip=$(echo "$suggested_subnet" | sed 's|0\.0/16|0.2|')
             if grep -q "^DNSMASQ_IP=" .env; then
-                sed -i "s|^DNSMASQ_IP=.*|DNSMASQ_IP=$new_dnsmasq_ip|" .env
+                sed_inplace "s|^DNSMASQ_IP=.*|DNSMASQ_IP=$new_dnsmasq_ip|" .env
             else
                 echo "DNSMASQ_IP=$new_dnsmasq_ip" >> .env
             fi
@@ -220,7 +229,7 @@ setup_environment() {
         fi
     else
         if grep -q "^ENABLE_PROXY=" .env; then
-            sed -i 's/^ENABLE_PROXY=.*/ENABLE_PROXY=false/' .env
+            sed_inplace 's/^ENABLE_PROXY=.*/ENABLE_PROXY=false/' .env
         else
             echo "ENABLE_PROXY=false" >> .env
         fi
@@ -487,8 +496,8 @@ EOF
     cp frontend/sw.js.template frontend/sw.js
     
     # Replace placeholders
-    sed -i "s/{{CACHE_VERSION}}/$safe_version/g" frontend/sw.js
-    sed -i "s|{{STATIC_ASSETS_EXTRA}}|  '/version.js',\\n|g" frontend/sw.js
+    sed_inplace "s/{{CACHE_VERSION}}/$safe_version/g" frontend/sw.js
+    sed_inplace "s|{{STATIC_ASSETS_EXTRA}}|  '/version.js',\\n|g" frontend/sw.js
     
     print_success "Frontend version build completed: $version"
 }
@@ -508,12 +517,12 @@ generate_nginx_config() {
     if [ "$git_server_enabled" = "true" ]; then
         print_status "Including Git server configuration in nginx"
         # Replace placeholder with Git server configuration
-        sed -i '/# GIT_SERVER_PLACEHOLDER/r nginx-git.conf.template' build/nginx.conf.template
-        sed -i '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
+        sed_inplace '/# GIT_SERVER_PLACEHOLDER/r nginx-git.conf.template' build/nginx.conf.template
+        sed_inplace '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
     else
         print_status "Excluding Git server configuration from nginx"
         # Remove placeholder line
-        sed -i '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
+        sed_inplace '/# GIT_SERVER_PLACEHOLDER/d' build/nginx.conf.template
     fi
     
     print_status "Nginx configuration generated at build/nginx.conf.template"
@@ -783,19 +792,19 @@ setup_registry_images() {
     if [ -f ".env" ]; then
         # Add or update registry image settings
         if grep -q "^USE_REGISTRY_IMAGES=" .env; then
-            sed -i 's/^USE_REGISTRY_IMAGES=.*/USE_REGISTRY_IMAGES=true/' .env
+            sed_inplace 's/^USE_REGISTRY_IMAGES=.*/USE_REGISTRY_IMAGES=true/' .env
         else
             echo "USE_REGISTRY_IMAGES=true" >> .env
         fi
         
         if grep -q "^SERVER_IMAGE=" .env; then
-            sed -i "s|^SERVER_IMAGE=.*|SERVER_IMAGE=$SERVER_IMAGE|" .env
+            sed_inplace "s|^SERVER_IMAGE=.*|SERVER_IMAGE=$SERVER_IMAGE|" .env
         else
             echo "SERVER_IMAGE=$SERVER_IMAGE" >> .env
         fi
         
         if grep -q "^CODESERVER_IMAGE=" .env; then
-            sed -i "s|^CODESERVER_IMAGE=.*|CODESERVER_IMAGE=$CODESERVER_IMAGE|" .env
+            sed_inplace "s|^CODESERVER_IMAGE=.*|CODESERVER_IMAGE=$CODESERVER_IMAGE|" .env
         else
             echo "CODESERVER_IMAGE=$CODESERVER_IMAGE" >> .env
         fi
