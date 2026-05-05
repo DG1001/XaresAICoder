@@ -1,6 +1,10 @@
 # Increase server names hash bucket size for long UUIDs
 server_names_hash_bucket_size 128;
 
+# Allow larger request bodies (audio uploads, file transfers, etc.)
+# Applies to all server blocks: frontend, API, and workspace subdomains
+client_max_body_size 50M;
+
 # Enable DNS resolver for dynamic container resolution
 resolver 127.0.0.11 valid=30s;
 
