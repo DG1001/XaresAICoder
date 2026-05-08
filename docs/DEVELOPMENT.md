@@ -485,9 +485,9 @@ docker run --rm -it \
   xares-aicoder-codeserver:latest \
   bash -c "cd /tmp && /home/coder/setup-scripts/workspace-init.sh test python-flask"
 
-# Test AI tools setup
+# Test AI tools listing
 docker run --rm -it xares-aicoder-codeserver:latest \
-  bash -c "setup_ai_tools"
+  bash -lc "info"
 ```
 
 ### Test Project Templates

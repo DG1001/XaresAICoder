@@ -862,12 +862,12 @@ grep ENABLE_GIT_SERVER .env
 
 **Solutions**:
 
-1. **Reinstall Tools**:
+1. **Reinstall Tools** (sudo required):
    ```bash
-   # Use built-in setup commands
-   setup_aider
-   setup_opencode
-   setup_gemini
+   sudo update_aider
+   update_opencode
+   sudo update_gemini
+   # See `info` for the full list of update commands
    ```
 
 2. **Check PATH**:

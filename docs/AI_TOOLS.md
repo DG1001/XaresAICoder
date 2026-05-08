@@ -115,14 +115,6 @@ code --install-extension saoudrizwan.claude-dev
 - ✅ **Context Management** - Maintains conversation context
 - ✅ **File Operations** - Read, write, and analyze files
 
-#### Quick Setup
-```bash
-# Use the built-in setup command
-setup_opencode
-
-# Follow the interactive setup
-```
-
 #### Manual Setup
 ```bash
 # Install OpenCode SST
@@ -171,9 +163,6 @@ opencode
 
 #### Setup
 ```bash
-# Use the built-in setup command
-setup_aider
-
 # Set your API key (choose one)
 export OPENAI_API_KEY=your_key_here
 export ANTHROPIC_API_KEY=your_key_here
@@ -228,9 +217,6 @@ I'll add comprehensive error handling to your database connection function.
 
 #### Setup
 ```bash
-# Use the built-in setup command
-setup_gemini
-
 # Get API key from Google AI Studio
 # https://makersuite.google.com/app/apikey
 
@@ -266,10 +252,8 @@ gemini "Why is this function not working?" --file problematic_code.py
 
 #### Setup
 ```bash
-# Use the built-in setup command
-setup_claude
-
 # Requires Claude Pro/Max subscription or API billing
+export ANTHROPIC_API_KEY=your_key_here
 ```
 
 #### Usage
@@ -299,10 +283,7 @@ claude
 
 #### Setup
 ```bash
-# Use the built-in setup command
-setup_qwen
-
-# Authenticate with Qwen OAuth (2,000 daily free requests)
+# Authenticate with DashScope/OpenRouter API key (free Qwen OAuth tier discontinued April 2026)
 # Or configure OpenAI-compatible API
 ```
 
@@ -333,9 +314,6 @@ qwen-code
 
 #### Setup (Container Environment)
 ```bash
-# Use the built-in setup command
-setup_codex
-
 # For containerized environments, authentication requires special steps:
 # 1. On your LOCAL machine: codex login
 # 2. Copy the auth.json file to container:
@@ -408,12 +386,6 @@ policy = "untrusted"
 - ✅ **Configuration Files** - Project-specific and global settings support
 
 #### Setup
-
-##### Quick Setup
-```bash
-# Use the built-in setup command
-setup_crush
-```
 
 ##### Manual Setup
 ```bash
@@ -530,12 +502,6 @@ crush --yolo
 
 #### Setup
 
-##### Quick Setup
-```bash
-# Use the built-in setup command
-setup_pi
-```
-
 ##### Manual Setup
 ```bash
 # Pi is pre-installed via npm
@@ -588,14 +554,13 @@ Pi was designed to be a thin harness — minimal opinions, broad provider suppor
 
 ## Setup Guide
 
-### Quick Setup for All Tools
+### Quick Reference
 
 ```bash
-# Run this command in your workspace terminal
-setup_ai_tools
+# Run this in your workspace terminal to see all installed AI tools,
+# their binary names, required env vars, and docs links:
+info
 ```
-
-This command provides setup instructions for all available AI tools.
 
 ### Individual Tool Setup
 
@@ -812,9 +777,9 @@ opencode auth login
 which aider
 which opencode
 
-# Reinstall if needed
-setup_aider
-setup_opencode
+# Reinstall if needed (sudo required)
+sudo update_aider
+update_opencode
 ```
 
 #### VS Code Extension Issues

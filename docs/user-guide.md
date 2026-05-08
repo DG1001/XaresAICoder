@@ -26,15 +26,14 @@ Your workspace comes pre-configured with:
 
 XaresAICoder provides multiple AI coding assistants. Here's how to get started with each:
 
-#### Quick Setup for All Tools
+#### Quick Reference
 ```bash
-setup_ai_tools  # Shows setup instructions for all available AI tools
+info  # Lists all pre-installed AI tools with binary, env vars, and docs links
 ```
 
 #### OpenCode SST - Multi-model AI Assistant
 Best for project analysis and collaborative development:
 ```bash
-setup_opencode      # Quick setup
 opencode auth login # Authenticate
 opencode            # Start interactive session
 # Then type: /init  # Initialize project analysis
@@ -44,7 +43,6 @@ opencode            # Start interactive session
 Best for interactive coding with direct file editing:
 ```bash
 export OPENAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, GEMINI_API_KEY
-setup_aider
 aider  # Start pair programming session
 ```
 
@@ -52,37 +50,44 @@ aider  # Start pair programming session
 Best for code generation and debugging:
 ```bash
 export GEMINI_API_KEY=your_key_here  # Get from https://makersuite.google.com/app/apikey
-setup_gemini
 gemini  # Start interactive session
 ```
 
 #### Claude Code - Anthropic's Agentic Tool
 Best for deep codebase understanding and advanced workflows:
 ```bash
-setup_claude
+export ANTHROPIC_API_KEY=your_key_here  # Or sign in to Claude Pro/Max
 claude  # Start agentic coding session
 ```
 
 #### Qwen Code - AI Workflow Automation
 Best for comprehensive code analysis and workflow automation:
 ```bash
-setup_qwen
+export DASHSCOPE_API_KEY=your_key_here  # Free Qwen OAuth tier was discontinued April 2026 — use DashScope, OpenRouter, or a paid Qwen Coding Plan
 qwen  # Start interactive session
 ```
 
 #### OpenAI Codex CLI - Terminal-Based Coding Assistant
 Best for terminal-based ChatGPT integration with MCP support:
 ```bash
-setup_codex
+# On host: codex login, then copy ~/.codex/auth.json into the workspace container
 codex  # Start interactive coding session
 ```
 
 #### Crush - Multi-Model AI Coding Agent
 Best for multi-model flexibility and session-based workflows:
 ```bash
-setup_crush
+export ANTHROPIC_API_KEY=your_key_here  # or OPENAI/GEMINI/GROQ/OPENROUTER
 crush  # Start interactive session
 crush --session feature-name  # Named session management
+```
+
+#### Pi - Minimal Multi-Provider Coding Harness
+Best for provider-agnostic terminal coding with 15+ providers:
+```bash
+export ANTHROPIC_API_KEY=your_key_here  # or OPENAI/GEMINI/GROQ/MISTRAL/...
+pi  # Start interactive session
+pi -p "your question"  # One-shot print mode
 ```
 
 ## AI Coding Tools Usage
@@ -264,17 +269,15 @@ For OpenCode SST:
 
 For Aider:
 - Set your API key: `export OPENAI_API_KEY=your_key` (or ANTHROPIC_API_KEY, GEMINI_API_KEY)
-- Run setup: `setup_aider`
 - Check installation: `which aider`
 
 For Gemini CLI:
 - Set your API key: `export GEMINI_API_KEY=your_key`
 - Get API key from: https://makersuite.google.com/app/apikey
-- Run setup: `setup_gemini`
 
 For Claude Code:
 - Requires Claude Pro/Max subscription or API billing
-- Run setup: `setup_claude`
+- Set `ANTHROPIC_API_KEY` or sign in interactively
 - Follow authentication prompts
 
 For VS Code Extensions (Continue, Cline):
@@ -304,7 +307,7 @@ For VS Code Extensions (Continue, Cline):
 2. **VS Code**: Use the built-in help and documentation
 3. **Flask**: Refer to the official Flask documentation
 4. **Platform issues**: Check the error messages in the browser console
-5. **Setup issues**: Run `setup_ai_tools` for tool-specific guidance
+5. **Setup issues**: Run `info` to see binary names, required env vars, and docs links per tool
 
 ### Performance Tips
 

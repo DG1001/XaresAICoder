@@ -1101,6 +1101,18 @@ body {
     border: 1px solid var(--vscode-border);
 }
 
+.tool-link {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--vscode-text-accent);
+    text-decoration: none;
+}
+
+.tool-link:hover {
+    text-decoration: underline;
+}
+
 /* Quick Setup */
 .quick-setup {
     background: var(--vscode-sidebar-bg);
