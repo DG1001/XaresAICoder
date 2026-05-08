@@ -516,6 +516,76 @@ crush --yolo
 # Configure approved tools in .crush.json
 ```
 
+### Pi - Minimal Multi-Provider Coding Harness
+
+**Best for**: Provider-agnostic terminal coding, fast iteration, scripting agent workflows
+
+#### Features
+- ✅ **15+ Providers** - Anthropic, OpenAI, Google, Azure, Bedrock, Mistral, Groq, Cerebras, xAI, HuggingFace, and more
+- ✅ **OAuth & API Keys** - Choose authentication per provider
+- ✅ **In-Session Model Switching** - `/model` or `Ctrl+L` to swap models without losing context
+- ✅ **Multiple Modes** - Interactive, print (`-p`), JSON, RPC, and SDK
+- ✅ **Minimal Surface Area** - "Adapts to your workflow, not the other way around"
+- ✅ **Fast Execution** - Lightweight harness with low per-task overhead
+
+#### Setup
+
+##### Quick Setup
+```bash
+# Use the built-in setup command
+setup_pi
+```
+
+##### Manual Setup
+```bash
+# Pi is pre-installed via npm
+
+# Set your preferred API key (one or more)
+export ANTHROPIC_API_KEY=your_key_here
+export OPENAI_API_KEY=your_key_here
+export GEMINI_API_KEY=your_key_here
+export GROQ_API_KEY=your_key_here
+
+# Or use OAuth (provider-dependent)
+pi auth login
+```
+
+#### Usage
+```bash
+# Start interactive session
+pi
+
+# One-shot print mode (good for scripts)
+pi -p "Explain what main.py does"
+
+# JSON output mode (for piping into tools)
+pi --json -p "List the public functions in src/api.js"
+
+# Switch models mid-session
+/model claude-3-5-sonnet
+/model gpt-4
+```
+
+#### Example Session
+```bash
+$ pi
+Pi v1.x — minimal coding harness
+Provider: anthropic | Model: claude-3-5-sonnet
+
+> Refactor utils.py to use type hints
+
+[Pi reads file, proposes diff, asks to apply]
+
+> /model gpt-4
+Switched to: openai/gpt-4
+
+> Now add tests for the refactored code
+[Pi continues with full conversation context preserved]
+```
+
+#### Why Pi
+Pi was designed to be a thin harness — minimal opinions, broad provider support. Useful when you want to switch models often, embed agent calls in scripts (print/JSON modes), or just prefer a lightweight CLI over feature-heavy alternatives.
+
 ## Setup Guide
 
 ### Quick Setup for All Tools
@@ -572,6 +642,7 @@ which claude
 which qwen-code
 which codex
 which crush
+which pi
 
 # Test API connections
 opencode auth status
@@ -580,20 +651,21 @@ gemini --help
 qwen-code --version
 codex --version
 crush --version
+pi --version
 ```
 
 ## Tool Comparison
 
 ### Use Case Matrix
 
-| Task | Continue | Cline | OpenCode | Aider | Gemini | Claude Code | Qwen Code | Codex CLI | Crush |
-|------|----------|-------|----------|-------|--------|-------------|-----------|-----------|-------|
-| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐⭐ |
-| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
-| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ |
-| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ❌ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ |
-| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ |
-| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |
+| Task | Continue | Cline | OpenCode | Aider | Gemini | Claude Code | Qwen Code | Codex CLI | Crush | Pi |
+|------|----------|-------|----------|-------|--------|-------------|-----------|-----------|-------|----|
+| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ❌ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐ |
+| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |
 
 ### Model Support
 
@@ -608,6 +680,7 @@ crush --version
 | **Qwen Code** | ✅ | ❌ | ❌ | ✅ (Qwen) |
 | **Codex CLI** | ✅ | ❌ | ❌ | ❌ |
 | **Crush** | ✅ | ✅ | ✅ | ❌ |
+| **Pi** | ✅ | ✅ | ✅ | ✅ |
 
 ## Best Practices
 

@@ -106,10 +106,11 @@ echo "  • Claude Code - Anthropic's AI coding tool (pre-installed)"
 echo "  • Qwen Code - AI workflow automation tool (pre-installed)"
 echo "  • OpenAI Codex - OpenAI's coding assistant (pre-installed)"
 echo "  • Crush - Multi-model AI coding agent (pre-installed)"
+echo "  • Pi - Minimal multi-provider coding harness (pre-installed)"
 echo ""
 echo "⚡ Setup Commands:"
 echo "  • setup_ai_tools - See all AI tool setup instructions"
-echo "  • setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen, setup_codex, setup_crush"
+echo "  • setup_opencode, setup_aider, setup_gemini, setup_claude, setup_qwen, setup_codex, setup_crush, setup_pi"
 echo ""
 echo "📁 Current Directory: $(pwd)"
 if [ -d ".git" ]; then
@@ -135,7 +136,7 @@ fi
 echo ""
 echo "🔄 Update Commands:"
 echo "  • sudo update_aider (uv)"
-echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex (npm)"
+echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex, sudo update_pi (npm)"
 echo "  • sudo update_crush, update_opencode (downloads and installs latest version)"
 echo ""
 # Show Git commands only if Git server is enabled
@@ -206,6 +207,16 @@ npm install -g @openai/codex --force
 echo "✅ OpenAI Codex CLI updated successfully!"
 UPDATE_CODEX_EOF
 chmod +x /usr/local/bin/update_codex
+
+# Update Pi (requires sudo)
+cat > /usr/local/bin/update_pi << 'UPDATE_PI_EOF'
+#!/bin/bash
+echo "🔄 Updating Pi coding agent..."
+echo "💡 Note: Run with sudo if you get permission errors"
+npm update -g @earendil-works/pi-coding-agent
+echo "✅ Pi updated successfully!"
+UPDATE_PI_EOF
+chmod +x /usr/local/bin/update_pi
 
 # Update Crush (requires sudo)
 cat > /usr/local/bin/update_crush << 'UPDATE_CRUSH_EOF'
@@ -719,6 +730,35 @@ setup_crush() {
     echo "   - Docs: https://github.com/charmbracelet/crush#readme"
 }
 
+# Setup Pi
+setup_pi() {
+    echo "🤖 Setting up Pi (Earendil)..."
+    echo ""
+    echo "Pi is already installed!"
+    echo ""
+    echo "To get started:"
+    echo "1. Run: pi"
+    echo "2. Authenticate with your provider of choice (15+ supported):"
+    echo "   • ANTHROPIC_API_KEY for Anthropic Claude"
+    echo "   • OPENAI_API_KEY for OpenAI"
+    echo "   • GEMINI_API_KEY for Google Gemini"
+    echo "   • GROQ_API_KEY for Groq"
+    echo "   • MISTRAL_API_KEY, XAI_API_KEY, and more"
+    echo "   • Or OAuth via 'pi auth login' (provider-dependent)"
+    echo "3. Quick query: pi -p \"your question\""
+    echo ""
+    echo "💡 Features:"
+    echo "   - Minimal terminal harness — adapts to your workflow"
+    echo "   - 15+ providers, hundreds of models"
+    echo "   - In-session model switching (/model or Ctrl+L)"
+    echo "   - Modes: interactive, print, JSON, RPC, SDK"
+    echo ""
+    echo "📚 Learn more:"
+    echo "   - Website: https://pi.dev/"
+    echo "   - Docs: https://pi.dev/docs/latest"
+    echo "   - GitHub: https://github.com/earendil-works/pi"
+}
+
 # Setup all AI tools
 setup_ai_tools() {
     echo "🚀 XaresAICoder AI Tools Setup"
@@ -766,6 +806,12 @@ setup_ai_tools() {
     echo "7️⃣  Crush"
     setup_crush
     echo ""
+    echo "----------------------------------------"
+    echo ""
+
+    echo "8️⃣  Pi"
+    setup_pi
+    echo ""
     echo "=============================="
     echo ""
     echo "✅ All AI tools are ready!"
@@ -778,6 +824,7 @@ setup_ai_tools() {
     echo "   • Qwen Code: AI workflow automation and code exploration"
     echo "   • OpenAI Codex: OpenAI's terminal-based coding assistant"
     echo "   • Crush: Multi-model AI with session management and LSP integration"
+    echo "   • Pi: Minimal multi-provider harness, fast and provider-agnostic"
     echo ""
     echo "🔌 VS Code Extensions (install from marketplace):"
     echo "   • Continue: AI code completion and chat"
@@ -1025,7 +1072,7 @@ EXTENSIONS_EOF
 }
 
 # Export all functions
-export -f setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_qwen setup_codex setup_crush setup_ai_tools
+export -f setup_empty_project setup_opencode setup_aider setup_gemini setup_claude setup_qwen setup_codex setup_crush setup_pi setup_ai_tools
 EOF
 
 echo "Workspace initialization setup completed."

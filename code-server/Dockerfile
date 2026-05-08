@@ -57,7 +57,7 @@ RUN mkdir -p "$UV_TOOL_DIR" && \
     chmod -R a+rX "$UV_TOOL_DIR"
 
 # Install Node.js AI tools (first install most tools, then OpenAI Codex separately)
-RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest @charmland/crush
+RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest @charmland/crush @earendil-works/pi-coding-agent
 
 # Install OpenAI Codex with environment variables to use system ripgrep
 ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg
