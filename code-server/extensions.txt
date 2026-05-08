@@ -5,3 +5,4 @@ ms-vscode.vscode-typescript-next
 esbenp.prettier-vscode
 redhat.vscode-yaml
 redhat.vscode-xml
+continue.continue@1.2.22

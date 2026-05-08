@@ -10,9 +10,10 @@ MISSING_EXTENSIONS=()
 CRITICAL_EXTENSIONS=("ms-python.python")
 
 # Function to check if extension is installed by listing extensions
+# Strips any "@<version>" pin so 'continue.continue@1.2.22' matches the
+# 'continue.continue' that --list-extensions reports without the version.
 is_extension_installed() {
-    local extension=$1
-    # Check if we're already running as coder user
+    local extension="${1%%@*}"
     if [ "$(whoami)" = "coder" ]; then
         code-server --list-extensions 2>/dev/null | grep -q "^${extension}$"
     else
