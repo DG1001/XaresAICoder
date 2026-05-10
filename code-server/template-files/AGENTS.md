@@ -2,6 +2,10 @@
 
 Configure apps to work with XaresAICoder's proxy architecture.
 
+## Where You Are
+
+You're running inside a XaresAICoder workspace — an isolated Docker container with code-server, exposed to the user via an nginx subdomain proxy. **No Docker-in-Docker**: you cannot run `docker`, `docker-compose`, or anything that needs its own daemon. Run apps directly on the host (python, node, go, etc.) and reach them through the proxy URL pattern below.
+
 ## Hard Rule
 
 **Bind to `0.0.0.0`**, never `localhost` or `127.0.0.1` — loopback binds are unreachable through the proxy.
