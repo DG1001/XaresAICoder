@@ -52,9 +52,10 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
 # Use system-wide tool dir so the non-root `coder` user can execute the wrapper
 ENV UV_TOOL_DIR=/opt/uv-tools
 ENV UV_TOOL_BIN_DIR=/usr/local/bin
-RUN mkdir -p "$UV_TOOL_DIR" && \
-    uv tool install aider-chat --with audioop-lts && \
-    chmod -R a+rX "$UV_TOOL_DIR"
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+RUN mkdir -p "$UV_TOOL_DIR" "$UV_PYTHON_INSTALL_DIR" && \
+    uv tool install --python 3.12 aider-chat && \
+    chmod -R a+rX "$UV_TOOL_DIR" "$UV_PYTHON_INSTALL_DIR"
 
 # Install Node.js AI tools (first install most tools, then OpenAI Codex separately)
 RUN npm install -g @google/gemini-cli @anthropic-ai/claude-code @qwen-code/qwen-code@latest @charmland/crush @earendil-works/pi-coding-agent
