@@ -47,7 +47,7 @@ server {
     # NOTE: This MUST come before the general workspace pattern to match first
     server {
         listen 80;
-        server_name ~^(?<workspace_id>[a-f0-9\-]+)-(?<app_port>[0-9]+)\.${BASE_DOMAIN}$;
+        server_name "~^(?<workspace_id>[a-f0-9\-]+)-(?<app_port>[0-9]{1,5})\.${BASE_DOMAIN}$";
 
         location / {
             set $upstream workspace-$workspace_id:$app_port;
