@@ -317,6 +317,24 @@ class XaresAICoder {
             }
         });
 
+        // Aliases modal handlers
+        const aliasesModal = document.getElementById('aliasesModal');
+        if (aliasesModal) {
+            document.getElementById('closeAliasesModal').addEventListener('click', () => this.hideAliasesModal());
+            document.getElementById('closeAliasesModalBtn').addEventListener('click', () => this.hideAliasesModal());
+            document.getElementById('addAliasBtn').addEventListener('click', () => this.addAlias());
+            document.getElementById('aliasAuthToggle').addEventListener('change', (e) => {
+                document.getElementById('aliasAuthFields').style.display = e.target.checked ? 'grid' : 'none';
+            });
+            document.getElementById('aliasPortSelect').addEventListener('change', (e) => {
+                document.getElementById('aliasPortCustom').style.display = e.target.value === '__custom__' ? 'block' : 'none';
+            });
+            document.getElementById('aliasSubdomainInput').addEventListener('input', () => this.updateAliasPreview());
+            aliasesModal.addEventListener('click', (e) => {
+                if (e.target.id === 'aliasesModal') this.hideAliasesModal();
+            });
+        }
+
         // Rename modal handlers
         document.getElementById('closeRenameModal').addEventListener('click', () => this.hideRenameModal());
         document.getElementById('cancelRenameBtn').addEventListener('click', () => this.hideRenameModal());
@@ -996,6 +1014,12 @@ class XaresAICoder {
                             </svg>
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
+                        ${project.status !== 'creating' ? `<button class="notes-btn" onclick="app.openAliasesModal('${project.projectId}')" title="Manage Subdomain Aliases" aria-label="Subdomain Aliases">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9c-.086 0-.17.01-.25.031A2 2 0 0 1 7 10.5H4a2 2 0 1 1 0-4h1.535c.218-.376.495-.714.82-1z"/>
+                                <path d="M9 5.5a3 3 0 0 0-2.83 4h1.098A2 2 0 0 1 9 6.5h3a2 2 0 1 1 0 4h-1.535a4.02 4.02 0 0 1-.82 1H12a3 3 0 1 0 0-6H9z"/>
+                            </svg>${project.aliases && project.aliases.length ? `<span class="alias-count">${project.aliases.length}</span>` : ''}
+                        </button>` : ''}
                         ${project.proxyMode === 'logging' ? `<button class="ai-conv-btn" onclick="app.openAIConversationsModal('${project.projectId}')" title="View AI Conversations" aria-label="AI Conversations">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path fill-rule="evenodd" d="M2.678 11.894a1 1 0 0 1 .287.801 10.97 10.97 0 0 1-.398 2c1.395-.323 2.247-.697 2.634-.893a1 1 0 0 1 .71-.074A8.06 8.06 0 0 0 8 14c3.996 0 7-2.807 7-6 0-3.192-3.004-6-7-6S1 4.808 1 8c0 1.468.617 2.83 1.678 3.894zm-.493 3.905a21.682 21.682 0 0 1-.713.129c-.2.032-.352-.176-.273-.362.354-.836.674-1.95.77-2.966C.744 11.37 0 9.76 0 8c0-3.866 3.582-7 8-7s8 3.134 8 7-3.582 7-8 7a9.06 9.06 0 0 1-2.347-.306c-.52.263-1.639.742-3.468 1.105zM4 5.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zM4.5 7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/>
@@ -2059,6 +2083,219 @@ class XaresAICoder {
         if (currentLength > maxLength) {
             charCount.classList.add('error');
         }
+    }
+
+    // ---- Subdomain Aliases Modal ----
+
+    async openAliasesModal(projectId) {
+        const project = this.projects.find(p => p.projectId === projectId);
+        if (!project) {
+            this.showError('Project not found');
+            return;
+        }
+        this.currentAliasesProjectId = projectId;
+
+        document.getElementById('aliasesModalTitle').textContent = `Subdomain Aliases — ${project.projectName}`;
+        document.getElementById('aliasesWorkspaceId').textContent = projectId;
+        document.getElementById('aliasError').style.display = 'none';
+        document.getElementById('aliasError').textContent = '';
+        document.getElementById('aliasSubdomainInput').value = '';
+        document.getElementById('aliasPortCustom').value = '';
+        document.getElementById('aliasAuthUser').value = '';
+        document.getElementById('aliasAuthPass').value = '';
+        document.getElementById('aliasAuthToggle').checked = false;
+        document.getElementById('aliasAuthFields').style.display = 'none';
+        document.getElementById('aliasPortCustom').style.display = 'none';
+        document.getElementById('aliasSubdomainPreview').textContent = '';
+
+        document.getElementById('aliasesModal').style.display = 'flex';
+
+        await Promise.all([
+            this.refreshAliasesList(),
+            this.refreshAliasPortOptions()
+        ]);
+    }
+
+    hideAliasesModal() {
+        document.getElementById('aliasesModal').style.display = 'none';
+        this.currentAliasesProjectId = null;
+    }
+
+    aliasSubdomainBase() {
+        const cfg = this.config || {};
+        const protocol = cfg.protocol || 'http';
+        const baseDomain = cfg.baseDomain || 'localhost';
+        const basePort = cfg.basePort || '80';
+        const portSuffix = (basePort === '80' || basePort === '443') ? '' : `:${basePort}`;
+        return { protocol, baseDomain, portSuffix };
+    }
+
+    aliasUrl(subdomain) {
+        const { protocol, baseDomain, portSuffix } = this.aliasSubdomainBase();
+        return `${protocol}://${subdomain}.${baseDomain}${portSuffix}/`;
+    }
+
+    updateAliasPreview() {
+        const raw = document.getElementById('aliasSubdomainInput').value.trim().toLowerCase();
+        const preview = document.getElementById('aliasSubdomainPreview');
+        if (!raw) {
+            preview.textContent = '';
+            return;
+        }
+        const valid = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(raw);
+        const { baseDomain, portSuffix } = this.aliasSubdomainBase();
+        preview.textContent = valid
+            ? `→ ${raw}.${baseDomain}${portSuffix}`
+            : 'Invalid: 3-32 chars, start with letter, lowercase a-z 0-9 and hyphens, no trailing hyphen';
+        preview.style.color = valid ? 'var(--vscode-text-muted)' : 'var(--vscode-error)';
+    }
+
+    async refreshAliasesList() {
+        const container = document.getElementById('aliasesList');
+        const projectId = this.currentAliasesProjectId;
+        if (!projectId) return;
+
+        container.innerHTML = '<div style="color: var(--vscode-text-muted); font-size: 12px;">Loading…</div>';
+        try {
+            const res = await fetch(`${this.apiBase}/projects/${projectId}/aliases`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load aliases');
+
+            const list = data.aliases || [];
+            if (list.length === 0) {
+                container.innerHTML = '<div style="color: var(--vscode-text-muted); font-size: 12px; padding: 6px 0;">No aliases yet.</div>';
+            } else {
+                container.innerHTML = `
+                    <table style="width:100%; border-collapse: collapse; font-size: 13px;">
+                        <thead><tr style="text-align:left; color: var(--vscode-text-muted); border-bottom: 1px solid var(--vscode-border);">
+                            <th style="padding:6px 4px;">Subdomain</th><th>Port</th><th>Auth</th><th>URL</th><th></th>
+                        </tr></thead>
+                        <tbody>
+                            ${list.map(a => `
+                                <tr style="border-bottom: 1px solid var(--vscode-border);">
+                                    <td style="padding:6px 4px; font-family: monospace;">${this.escapeHtml(a.subdomain)}</td>
+                                    <td>${a.port}</td>
+                                    <td>${a.authProtected ? '🔒 ' + this.escapeHtml(a.authUsername || '') : '—'}</td>
+                                    <td><a href="${a.url}" target="_blank" rel="noopener" style="color: var(--vscode-accent);">${this.escapeHtml(a.url)}</a></td>
+                                    <td style="text-align:right;">
+                                        <button class="btn-icon" onclick="app.deleteAlias('${this.escapeHtml(a.subdomain)}')" title="Delete alias">✕</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>`;
+            }
+        } catch (err) {
+            container.innerHTML = `<div style="color: var(--vscode-error); font-size: 12px;">${this.escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    async refreshAliasPortOptions() {
+        const select = document.getElementById('aliasPortSelect');
+        const projectId = this.currentAliasesProjectId;
+        if (!projectId) return;
+
+        select.innerHTML = '<option value="">Loading…</option>';
+        try {
+            const res = await fetch(`${this.apiBase}/projects/${projectId}/ports`);
+            const data = await res.json();
+            const ports = (data && data.success) ? (data.ports || []) : [];
+
+            const options = ['<option value="">— Select port —</option>'];
+            for (const p of ports) options.push(`<option value="${p}">${p}</option>`);
+            options.push('<option value="__custom__">Custom…</option>');
+            select.innerHTML = options.join('');
+        } catch (err) {
+            select.innerHTML = '<option value="__custom__">Custom…</option>';
+        }
+    }
+
+    async addAlias() {
+        const projectId = this.currentAliasesProjectId;
+        if (!projectId) return;
+
+        const subdomain = document.getElementById('aliasSubdomainInput').value.trim().toLowerCase();
+        const portSelect = document.getElementById('aliasPortSelect').value;
+        const portCustom = document.getElementById('aliasPortCustom').value;
+        const authToggle = document.getElementById('aliasAuthToggle').checked;
+        const authUsername = document.getElementById('aliasAuthUser').value.trim();
+        const authPassword = document.getElementById('aliasAuthPass').value;
+
+        const errorEl = document.getElementById('aliasError');
+        errorEl.style.display = 'none';
+
+        const port = portSelect === '__custom__' ? parseInt(portCustom, 10) : parseInt(portSelect, 10);
+        if (!subdomain) return this._showAliasError('Subdomain is required');
+        if (!port) return this._showAliasError('Port is required');
+
+        const body = { subdomain, port, authProtected: authToggle };
+        if (authToggle) {
+            body.authUsername = authUsername;
+            body.authPassword = authPassword;
+        }
+
+        const btn = document.getElementById('addAliasBtn');
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.textContent = 'Adding…';
+        try {
+            const res = await fetch(`${this.apiBase}/projects/${projectId}/aliases`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to add alias');
+
+            document.getElementById('aliasSubdomainInput').value = '';
+            document.getElementById('aliasPortCustom').value = '';
+            document.getElementById('aliasAuthUser').value = '';
+            document.getElementById('aliasAuthPass').value = '';
+            document.getElementById('aliasAuthToggle').checked = false;
+            document.getElementById('aliasAuthFields').style.display = 'none';
+            document.getElementById('aliasSubdomainPreview').textContent = '';
+
+            // Update local project state so card counter refreshes immediately
+            const project = this.projects.find(p => p.projectId === projectId);
+            if (project) {
+                if (!Array.isArray(project.aliases)) project.aliases = [];
+                project.aliases.push({ subdomain: data.alias.subdomain, port: data.alias.port, authProtected: data.alias.authProtected });
+                this.renderProjects();
+            }
+
+            await this.refreshAliasesList();
+        } catch (err) {
+            this._showAliasError(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = orig;
+        }
+    }
+
+    async deleteAlias(subdomain) {
+        const projectId = this.currentAliasesProjectId;
+        if (!projectId) return;
+        if (!confirm(`Delete alias "${subdomain}"?`)) return;
+        try {
+            const res = await fetch(`${this.apiBase}/projects/${projectId}/aliases/${encodeURIComponent(subdomain)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to delete alias');
+
+            const project = this.projects.find(p => p.projectId === projectId);
+            if (project && Array.isArray(project.aliases)) {
+                project.aliases = project.aliases.filter(a => a.subdomain !== subdomain);
+                this.renderProjects();
+            }
+            await this.refreshAliasesList();
+        } catch (err) {
+            this._showAliasError(err.message);
+        }
+    }
+
+    _showAliasError(msg) {
+        const el = document.getElementById('aliasError');
+        el.textContent = msg;
+        el.style.display = 'block';
     }
 
     // Rename Project Modal Methods

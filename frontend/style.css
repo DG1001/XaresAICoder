@@ -1785,6 +1785,20 @@ code {
     transform: translate(2px, -2px);
 }
 
+.alias-count {
+    display: inline-block;
+    margin-left: 4px;
+    min-width: 14px;
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 14px;
+    text-align: center;
+    background: var(--vscode-text-accent, #007acc);
+    color: white;
+    border-radius: 7px;
+    vertical-align: text-top;
+}
+
 /* Notes Modal Styles */
 .notes-modal-content {
     max-width: 700px;

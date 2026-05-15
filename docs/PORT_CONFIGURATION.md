@@ -8,6 +8,7 @@ Complete guide to understanding and configuring XaresAICoder's port and domain s
 - [Deployment Scenarios](#deployment-scenarios)
 - [Architecture Diagrams](#architecture-diagrams)
 - [Common Misconfigurations](#common-misconfigurations)
+- [Custom Subdomain Aliases](#custom-subdomain-aliases)
 - [Troubleshooting](#troubleshooting)
 
 ## Configuration Variables
@@ -215,6 +216,45 @@ BASE_PORT=443     # ❌ Wrong port for URL generation
 **Problem**: XaresAICoder tries to generate HTTPS URLs internally
 
 **Solution**: Use `PROTOCOL=http` and `BASE_PORT=80` - let external nginx handle HTTPS
+
+## Custom Subdomain Aliases
+
+By default, every workspace port is reachable as `<projectId>-<port>.<BASE_DOMAIN>` — long, opaque, hard to share. The Aliases UI on each project card lets you map a readable subdomain (e.g. `myapp.<BASE_DOMAIN>`) to any port in the workspace.
+
+### URL shapes side-by-side
+
+| Purpose | URL |
+|---------|-----|
+| Code-server (IDE) | `<protocol>://<projectId>.<BASE_DOMAIN>[:BASE_PORT]/` |
+| Default port URL | `<protocol>://<projectId>-<port>.<BASE_DOMAIN>[:BASE_PORT]/` |
+| Custom alias | `<protocol>://<alias>.<BASE_DOMAIN>[:BASE_PORT]/` |
+| Anything else | `HTTP 404 "Unknown subdomain..."` (catch-all) |
+
+`:BASE_PORT` is omitted when `BASE_PORT` is `80` (HTTP) or `443` (HTTPS) — same rule as for code-server URLs.
+
+### Routing precedence in nginx
+
+Aliases are rendered as **exact-match** `server_name` entries in `/etc/nginx/dynamic/aliases.conf` (auto-generated). nginx prefers exact matches over regex, so `<alias>.domain` wins over `<uuid>.domain` and `<uuid>-<port>.domain` automatically. The catch-all (`server_name _; default_server`) only fires when nothing else matches.
+
+### Wildcard DNS / TLS
+
+To use aliases in production you need DNS resolution for arbitrary subdomains of `BASE_DOMAIN`:
+
+- **Local dev (`BASE_DOMAIN=localhost`)**: nothing to do — all `*.localhost` resolves to `127.0.0.1` on most systems.
+- **Internal LAN**: configure your DNS server (or `dnsmasq`) with a wildcard A record `*.coder.company.com → <server-ip>`.
+- **Public domain + HTTPS**: provision a **wildcard TLS certificate** (e.g. Let's Encrypt DNS-01) for `*.coder.example.com`. Without it, browsers will warn on aliases even though plain HTTP works.
+
+### Reserved names
+
+These subdomains are rejected to avoid collisions with existing routes:
+
+`www, api, admin, git, forgejo, code-server, workshop, mitm, proxy, squid, nginx, dashboard, config, localhost`
+
+Also blocked: anything that looks like a UUID-prefixed workspace URL (the validation regex enforces 3-32 lowercase chars starting with a letter).
+
+### Optional Basic Auth
+
+Each alias can carry a per-alias Basic Auth username/password (stored as `{SHA}<base64>` in `/etc/nginx/dynamic/auth/<projectId>__<sub>.htpasswd`). Recommended whenever the alias is reachable from the public internet — short names like `myapp.example.com` are far easier to guess than a UUID.
 
 ## Troubleshooting
 

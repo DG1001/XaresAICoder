@@ -253,6 +253,22 @@ location ~* ^/(?<workspace>[a-zA-Z0-9-]+)\.(?<domain>[^/]+)/ {
 }
 ```
 
+### Custom Subdomain Aliases — Security Considerations
+
+The Aliases feature lets users map readable subdomains (e.g. `myapp.<domain>`) to workspace ports. This trades obscurity for usability and has two relevant security properties:
+
+**Catch-all 404 for unknown hosts** — A `listen 80 default_server; server_name _; return 404;` block is installed so that any Host header which doesn't match a defined server (frontend, workspace UUID, workspace port subdomain, registered alias) gets a clean `HTTP 404 "Unknown subdomain..."`. This prevents:
+- Scanners hitting the password-protected frontend on random `*.<domain>` Host headers
+- A deleted alias silently falling back to the platform UI instead of indicating "this alias no longer exists"
+- Confusion when a user mistypes the port in a workspace subdomain
+
+**Per-alias Basic Auth** — Each alias can carry an `auth_basic` block with an htpasswd file at `/etc/nginx/dynamic/auth/<projectId>__<sub>.htpasswd`. **Strongly recommended for public-facing deployments**: a short, sprechende Subdomain like `myapp.example.com` is far easier to enumerate than a workspace UUID. Treat the alias as "shareable URL" only when the protected resource is intentionally public, or behind Basic Auth, or behind your organization's outer access layer.
+
+- Passwords are hashed as `{SHA}<base64-sha1>` (universally supported by stock nginx). bcrypt is intentionally not used because the alpine-based nginx image doesn't guarantee bcrypt support; SHA1 with htpasswd is the safe baseline.
+- The htpasswd file is written with mode `0644` so the nginx worker (running as `nginx` user) can read it. The file contains only the salted hash, never the plaintext password.
+- Reserved subdomain names (`www`, `api`, `admin`, `git`, `forgejo`, `workshop`, …) are rejected at the API layer to prevent shadowing of system routes.
+- Aliases are **not** copied when cloning workspaces (would break global uniqueness).
+
 ### Port Security
 
 **Port Allocation**:

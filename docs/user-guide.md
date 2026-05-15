@@ -190,6 +190,23 @@ Install from marketplace: `saoudrizwan.claude-dev`
 - Maximum 5 workspaces per user
 - Files are preserved when workspaces restart
 
+### Sharing Apps with a Custom Subdomain (Aliases)
+
+Each running app inside your workspace is reachable at a long URL like `http://<uuid>-8000.<domain>/`. If you want a short, readable URL for sharing or demoing, use the **Aliases** button on the project card (the chain-link icon next to Notes).
+
+1. Click the **Aliases** icon on a running workspace's card.
+2. The form auto-fills a dropdown of **listening ports** the workspace currently has open (e.g. `3000`, `8000`). Pick one, or choose *Custom…* and type any port.
+3. Enter a subdomain name — letters/digits/hyphens, 3–32 chars. The preview shows the full URL live.
+4. *Optional:* tick **Protect with Basic Auth** and provide a username + password. Recommended whenever the alias is reachable from the public internet.
+5. Click **Add Alias**. The URL is immediately usable; copy it from the table to share.
+
+Notes:
+- Aliases survive workspace stop/restart. While the workspace is stopped you'll get `502 Bad Gateway`; once it's running again the alias works.
+- Reserved names (`git`, `api`, `admin`, …) and already-taken names are rejected with a clear error.
+- Deleting an alias frees the name immediately. Visitors to a deleted alias get a clean `404 "Unknown subdomain..."` page rather than landing on your password-protected platform frontend.
+- Aliases are **per-workspace** but **globally unique** — `myapp.<domain>` can only point at one workspace at a time.
+- The Aliases icon shows a small counter badge with the number of active aliases on each card.
+
 ## Python Flask Development
 
 ### Pre-installed Tools

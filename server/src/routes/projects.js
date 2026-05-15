@@ -1,8 +1,22 @@
 const express = require('express');
 const workspaceService = require('../services/workspace');
 const dockerService = require('../services/docker');
+const aliasesService = require('../services/aliasesService');
 
 const router = express.Router();
+
+function aliasErrorStatus(code) {
+  switch (code) {
+    case 'NOT_FOUND': return 404;
+    case 'CONFLICT': return 409;
+    case 'RESERVED': return 422;
+    case 'INVALID': return 400;
+    case 'NGINX_VALIDATION':
+    case 'NGINX_RELOAD':
+      return 502;
+    default: return 500;
+  }
+}
 
 // Create new project
 router.post('/create', async (req, res) => {
@@ -710,6 +724,76 @@ router.delete('/:projectId/llm-conversations/:timestamp', async (req, res) => {
       error: 'Failed to delete conversation',
       message: error.message
     });
+  }
+});
+
+// ---- Workspace port aliases (custom subdomains) ----
+
+// Auto-detected listening TCP ports inside the workspace container
+router.get('/:projectId/ports', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const project = workspaceService.projects.get(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const ports = await dockerService.getListeningPorts(projectId);
+    res.json({ success: true, ports });
+  } catch (error) {
+    console.error('Get ports error:', error);
+    res.status(500).json({ error: 'Failed to get ports', message: error.message });
+  }
+});
+
+// List aliases for a project
+router.get('/:projectId/aliases', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const aliases = aliasesService.listForProject(workspaceService, projectId);
+    res.json({ success: true, aliases: aliases.map(a => aliasesService.sanitize(a)) });
+  } catch (error) {
+    res.status(aliasErrorStatus(error.code)).json({ error: error.message });
+  }
+});
+
+// Create alias
+router.post('/:projectId/aliases', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { subdomain, port, authProtected, authUsername, authPassword } = req.body || {};
+    const alias = await aliasesService.addAlias(workspaceService, projectId, {
+      subdomain, port, authProtected, authUsername, authPassword
+    });
+    res.status(201).json({ success: true, alias });
+  } catch (error) {
+    if (!error.code) console.error('Create alias error:', error);
+    res.status(aliasErrorStatus(error.code)).json({ error: error.message });
+  }
+});
+
+// Update alias (change port and/or auth)
+router.put('/:projectId/aliases/:subdomain', async (req, res) => {
+  try {
+    const { projectId, subdomain } = req.params;
+    const { port, authProtected, authUsername, authPassword } = req.body || {};
+    const alias = await aliasesService.updateAlias(workspaceService, projectId, subdomain, {
+      port, authProtected, authUsername, authPassword
+    });
+    res.json({ success: true, alias });
+  } catch (error) {
+    if (!error.code) console.error('Update alias error:', error);
+    res.status(aliasErrorStatus(error.code)).json({ error: error.message });
+  }
+});
+
+// Delete alias
+router.delete('/:projectId/aliases/:subdomain', async (req, res) => {
+  try {
+    const { projectId, subdomain } = req.params;
+    await aliasesService.removeAlias(workspaceService, projectId, subdomain);
+    res.json({ success: true });
+  } catch (error) {
+    if (!error.code) console.error('Delete alias error:', error);
+    res.status(aliasErrorStatus(error.code)).json({ error: error.message });
   }
 });
 

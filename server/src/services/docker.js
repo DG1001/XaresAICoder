@@ -1806,8 +1806,62 @@ fi`.trim();
       console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
       return coreMap['2'];
     }
-    
+
     return shares;
+  }
+
+  // Returns sorted list of TCP ports the workspace container is listening on.
+  // Filters out code-server's own 8082 and ports bound only to loopback.
+  // Reads /proc/net/tcp{,6} directly to avoid depending on ss/netstat
+  // being installed inside the workspace image.
+  async getListeningPorts(projectId) {
+    const containerName = `workspace-${projectId}`;
+    try {
+      const container = this.docker.getContainer(containerName);
+      const info = await container.inspect();
+      if (!info.State || !info.State.Running) {
+        return [];
+      }
+
+      const exec = await container.exec({
+        Cmd: ['sh', '-c', 'cat /proc/net/tcp 2>/dev/null; echo ---; cat /proc/net/tcp6 2>/dev/null'],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+      const stream = await exec.start({});
+      const output = await this.streamToString(stream);
+
+      const ports = new Set();
+      // /proc/net/tcp(6) line format (whitespace-separated):
+      //   sl  local_address  rem_address  st  ...
+      // local_address = HEX_IP:HEX_PORT; state 0A = TCP_LISTEN.
+      for (const line of output.split('\n')) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 4) continue;
+        const local = parts[1];
+        const state = parts[3];
+        if (state !== '0A') continue; // LISTEN
+        const colonIdx = local.lastIndexOf(':');
+        if (colonIdx < 0) continue;
+        const ipHex = local.slice(0, colonIdx);
+        const portHex = local.slice(colonIdx + 1);
+        const port = parseInt(portHex, 16);
+        if (!Number.isInteger(port) || port <= 0 || port >= 65536) continue;
+        if (port === 8082) continue;
+
+        // Loopback in /proc/net/tcp is little-endian: 127.0.0.1 -> "0100007F"
+        // /proc/net/tcp6 loopback is "00000000000000000000000001000000"
+        if (ipHex.toUpperCase() === '0100007F') continue;
+        if (ipHex === '00000000000000000000000001000000') continue;
+
+        ports.add(port);
+      }
+
+      return Array.from(ports).sort((a, b) => a - b);
+    } catch (err) {
+      console.error(`getListeningPorts(${projectId}) failed:`, err.message);
+      return [];
+    }
   }
 }
 

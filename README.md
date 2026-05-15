@@ -57,7 +57,14 @@ Pre-configured workspace with multiple AI coding assistants:
 
 ## 🆕 Recent Updates
 
-### Workshop Support (Latest)
+### Custom Subdomain Aliases (Latest)
+- ✅ **Readable URLs per Port** - Map any workspace port to a short subdomain (e.g. `myapp.example.com` instead of `<uuid>-8000.example.com`)
+- ✅ **Auto-Detected Ports** - UI lists listening TCP ports in the container plus free-text entry
+- ✅ **Optional Basic Auth** - Protect each alias with a username/password (sprechende Namen are easier to guess than UUIDs)
+- ✅ **Persistent** - Alias survives workspace stop/restart; deleted aliases return clean 404 instead of leaking the auth-protected frontend
+- ✅ **Global Uniqueness + Reserved Names** - 13 reserved words (`git`, `api`, `admin`, …) blocked
+
+### Workshop Support
 - ✅ **Workspace Cloning** - Clone a base workspace into N identical copies for workshops
 - ✅ **Workshop Landing Page** - Participant self-registration with automatic workspace assignment
 - ✅ **Admin Overview** - Manage claims, release workspaces, export CSV

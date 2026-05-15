@@ -1,11 +1,13 @@
 services:
   nginx:
     image: nginx:alpine
+    container_name: xaresaicoder-nginx
     ports:
       - "${HOST_PORT}:80"
     volumes:
       - ./build/nginx.conf.template:/etc/nginx/templates/default.conf.template
       - ./frontend:/usr/share/nginx/html/frontend
+      - nginx_dynamic:/etc/nginx/dynamic
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
       - BASE_PORT=${BASE_PORT:-80}
@@ -50,9 +52,13 @@ services:
       - PROXY_NETWORK=${PROXY_NETWORK:-xaresaicoder_xares-internal}
       - WORKSHOP_GROUP=${WORKSHOP_GROUP:-}
       - WORKSHOP_ADMIN_PASSWORD=${WORKSHOP_ADMIN_PASSWORD:-}
+      - NGINX_CONTAINER_NAME=${NGINX_CONTAINER_NAME:-xaresaicoder-nginx}
+      - NGINX_DYNAMIC_DIR=/app/nginx-dynamic
+      - NGINX_VIEW_DIR=/etc/nginx/dynamic
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/app/workspaces
+      - nginx_dynamic:/app/nginx-dynamic
     networks:
       - xares-aicoder-network
     restart: unless-stopped
@@ -181,3 +187,4 @@ volumes:
   forgejo_data:
   squid_logs:
   mitmproxy_logs:
+  nginx_dynamic:

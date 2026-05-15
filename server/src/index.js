@@ -95,9 +95,25 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`XaresAICoder Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+
+  // Regenerate the dynamic nginx alias config so it matches projects.json
+  // after a server restart. Wait until workspaceService has finished loading
+  // projects from disk, otherwise generated config would be empty.
+  try {
+    const aliasesService = require('./services/aliasesService');
+    const workspaceService = require('./services/workspace');
+    await workspaceService.whenReady.catch(() => {});
+    await aliasesService.generateNginxConfig(workspaceService);
+    await aliasesService.reloadNginx().catch(err =>
+      console.warn('Initial nginx reload skipped:', err.message)
+    );
+    console.log('Alias nginx config regenerated on boot');
+  } catch (err) {
+    console.error('Failed to regenerate alias config on boot:', err);
+  }
 });
 
 module.exports = app;

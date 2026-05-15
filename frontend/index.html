@@ -974,6 +974,64 @@
         </div>
     </div>
 
+    <!-- Workspace Subdomain Aliases Modal -->
+    <div id="aliasesModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 760px;">
+            <div class="modal-header">
+                <h3>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 8px; vertical-align: text-bottom;">
+                        <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9c-.086 0-.17.01-.25.031A2 2 0 0 1 7 10.5H4a2 2 0 1 1 0-4h1.535c.218-.376.495-.714.82-1z"/>
+                        <path d="M9 5.5a3 3 0 0 0-2.83 4h1.098A2 2 0 0 1 9 6.5h3a2 2 0 1 1 0 4h-1.535a4.02 4.02 0 0 1-.82 1H12a3 3 0 1 0 0-6H9z"/>
+                    </svg>
+                    <span id="aliasesModalTitle">Subdomain Aliases</span>
+                </h3>
+                <button class="modal-close" id="closeAliasesModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="font-size: 0.8em; color: #888; font-family: monospace; margin-bottom: 12px;">ID: <span id="aliasesWorkspaceId" style="user-select: all;"></span></div>
+
+                <p style="font-size: 13px; color: var(--vscode-text-muted); margin: 0 0 12px;">
+                    Map a readable subdomain to a port in this workspace. The alias stays active until you remove it (also while the workspace is stopped, requests will fail with 502 until it restarts).
+                </p>
+
+                <div id="aliasesList" style="margin-bottom: 18px;"></div>
+
+                <h4 style="margin: 18px 0 8px; font-size: 14px;">Add new alias</h4>
+                <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                        <label for="aliasSubdomainInput" style="display: block; font-size: 12px; margin-bottom: 4px;">Subdomain</label>
+                        <input type="text" id="aliasSubdomainInput" placeholder="myapp" maxlength="32" style="width: 100%; padding: 8px 12px; background: var(--vscode-input-bg); border: 1px solid var(--vscode-border); border-radius: 4px; color: var(--vscode-text); font-size: 13px; box-sizing: border-box;">
+                        <div id="aliasSubdomainPreview" style="font-size: 11px; color: var(--vscode-text-muted); margin-top: 4px; min-height: 14px;"></div>
+                    </div>
+                    <div>
+                        <label for="aliasPortSelect" style="display: block; font-size: 12px; margin-bottom: 4px;">Port</label>
+                        <div style="display: flex; gap: 6px;">
+                            <select id="aliasPortSelect" style="flex: 1; padding: 8px; background: var(--vscode-input-bg); border: 1px solid var(--vscode-border); border-radius: 4px; color: var(--vscode-text); font-size: 13px;">
+                                <option value="">Loading…</option>
+                            </select>
+                            <input type="number" id="aliasPortCustom" placeholder="Port" min="1" max="65535" style="width: 90px; padding: 8px; background: var(--vscode-input-bg); border: 1px solid var(--vscode-border); border-radius: 4px; color: var(--vscode-text); font-size: 13px; display: none;">
+                        </div>
+                    </div>
+                </div>
+
+                <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 13px;">
+                    <input type="checkbox" id="aliasAuthToggle">
+                    <span>Protect with Basic Auth</span>
+                </label>
+                <div id="aliasAuthFields" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" id="aliasAuthUser" placeholder="Username" maxlength="64" style="padding: 8px 12px; background: var(--vscode-input-bg); border: 1px solid var(--vscode-border); border-radius: 4px; color: var(--vscode-text); font-size: 13px;">
+                    <input type="password" id="aliasAuthPass" placeholder="Password (min 6)" maxlength="128" style="padding: 8px 12px; background: var(--vscode-input-bg); border: 1px solid var(--vscode-border); border-radius: 4px; color: var(--vscode-text); font-size: 13px;">
+                </div>
+
+                <div id="aliasError" style="color: var(--vscode-error); font-size: 12px; margin-top: 6px; display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="addAliasBtn">Add Alias</button>
+                <button class="btn-secondary" id="closeAliasesModalBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Version Footer -->
     <div class="version-footer">
         <span id="version-info">Loading...</span>

@@ -560,6 +560,49 @@ docker exec xaresaicoder-nginx-1 curl http://workspace-projectid:5000
    app.wsgi_app = ProxyFix(app.wsgi_app)
    ```
 
+### "Unknown subdomain" 404 (Catch-all)
+
+**Symptoms**:
+- Visiting `<something>.<BASE_DOMAIN>` returns `HTTP 404` with body `Unknown subdomain. The alias may have been deleted or was never created.`
+- Used to return the platform frontend before; now returns 404.
+
+**Cause**: nginx has a `default_server` catch-all server block. Any Host header that doesn't match the frontend (`<BASE_DOMAIN>`), a workspace UUID (`<uuid>.<BASE_DOMAIN>`), a workspace port subdomain (`<uuid>-<port>.<BASE_DOMAIN>`), or a registered alias falls through to this 404. This is intentional — it prevents random subdomain scans from hitting the auth-protected frontend.
+
+**Diagnosis**:
+```bash
+# Is the alias actually registered?
+curl http://localhost/api/projects/<projectId>/aliases
+
+# Is it in nginx's dynamic config?
+docker exec xaresaicoder-nginx cat /etc/nginx/dynamic/aliases.conf | grep server_name
+
+# Did nginx reload after the last alias change?
+docker logs xaresaicoder-nginx 2>&1 | grep -E "reloading|signal" | tail -5
+```
+
+**Solutions**:
+1. **Create / re-create the alias** via the **Aliases** UI on the workspace card.
+2. **Force nginx reload** if you suspect a stale state:
+   ```bash
+   docker exec xaresaicoder-nginx nginx -t && docker exec xaresaicoder-nginx nginx -s reload
+   ```
+3. **Confirm the subdomain is the one you expect** — aliases are case-sensitive (lowercase only) and limited to `[a-z][a-z0-9-]+[a-z0-9]`.
+
+### Custom Alias Routes But Returns 502/401 Even With Right Credentials
+
+**Symptoms**:
+- The alias `myapp.<BASE_DOMAIN>` returns `502 Bad Gateway` instead of the expected app.
+- Or: returns `401` even though Basic Auth is disabled.
+
+**Causes & Fixes**:
+
+| Code | Likely cause | Fix |
+|------|--------------|-----|
+| 502 | Workspace stopped, or no listener on configured port | Start workspace; verify `netstat -tln \| grep <port>` shows `0.0.0.0:<port>` |
+| 502 (intermittent) | nginx reloaded mid-request | Retry; permanent 502 indicates app crash |
+| 401 with no auth configured | Stale config / nginx didn't reload | `docker exec xaresaicoder-nginx nginx -s reload`; check `aliases.conf` actually omits `auth_basic` |
+| 401 with right credentials | htpasswd contains a hash format nginx-alpine can't parse | Re-create the alias — server now writes `{SHA}<base64>` which is always supported |
+
 ## Password Protection Issues
 
 ### Cannot Access Protected Workspace

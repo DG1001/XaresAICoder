@@ -20,8 +20,9 @@ class WorkspaceService {
       enableResourceLimits: process.env.ENABLE_RESOURCE_LIMITS !== 'false' // default true
     };
 
-    // Load existing projects on startup
-    this.loadProjectsFromDisk();
+    // Load existing projects on startup. Expose a promise so that
+    // other components can await readiness before reading this.projects.
+    this.whenReady = this.loadProjectsFromDisk();
 
     // Automatic cleanup removed - users manage workspace lifecycle manually
   }
@@ -91,6 +92,7 @@ class WorkspaceService {
         gitRepository: null, // Will be set if Git repo is created
         gitUrl: options.gitUrl || null, // Store Git URL for cloned repositories
         proxyMode: options.proxyMode || 'none', // Per-workspace proxy mode: 'none', 'security', or 'logging'
+        aliases: [],
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'creating',
@@ -263,6 +265,7 @@ class WorkspaceService {
         gitRepository: null,
         gitUrl: source.gitUrl || null,
         proxyMode: source.proxyMode || 'none',
+        aliases: [],
         createdAt: new Date(),
         lastAccessed: new Date(),
         status: 'creating',
@@ -515,10 +518,19 @@ class WorkspaceService {
     try {
       await dockerService.stopWorkspace(projectId);
       this.projects.delete(projectId);
-      
+
       // Save to disk
       await this.saveProjectsToDisk();
-      
+
+      // Clean up any subdomain aliases tied to this workspace.
+      // Lazy-require to avoid circular dependency.
+      try {
+        const aliasesService = require('./aliasesService');
+        await aliasesService.cleanupForProject(projectId);
+      } catch (aliasErr) {
+        console.error(`Alias cleanup failed for ${projectId}:`, aliasErr);
+      }
+
       return { success: true };
     } catch (error) {
       console.error('Error deleting project:', error);
@@ -568,7 +580,12 @@ class WorkspaceService {
           createdAt: p.createdAt,
           lastAccessed: p.lastAccessed,
           notes: p.notes || '',
-          proxyMode: p.proxyMode || 'none'
+          proxyMode: p.proxyMode || 'none',
+          aliases: (Array.isArray(p.aliases) ? p.aliases : []).map(a => ({
+            subdomain: a.subdomain,
+            port: a.port,
+            authProtected: !!a.authProtected
+          }))
         };
       } catch (error) {
         console.error(`Error getting status for project ${p.projectId}:`, error);
@@ -588,7 +605,12 @@ class WorkspaceService {
           createdAt: p.createdAt,
           lastAccessed: p.lastAccessed,
           notes: p.notes || '',
-          proxyMode: p.proxyMode || 'none'
+          proxyMode: p.proxyMode || 'none',
+          aliases: (Array.isArray(p.aliases) ? p.aliases : []).map(a => ({
+            subdomain: a.subdomain,
+            port: a.port,
+            authProtected: !!a.authProtected
+          }))
         };
       }
     });
@@ -699,6 +721,8 @@ class WorkspaceService {
               memoryLimit: projectData.memoryLimit || '2g',
               // Migrate useProxy (boolean) to proxyMode (string) for backward compat
               proxyMode: projectData.proxyMode || (projectData.useProxy === true ? 'logging' : 'none'),
+              // Initialize aliases array for older projects without the field
+              aliases: Array.isArray(projectData.aliases) ? projectData.aliases : [],
               // Update status from Docker
               status: dockerStatus.status,
               lastAccessed: new Date(projectData.lastAccessed || projectData.createdAt)

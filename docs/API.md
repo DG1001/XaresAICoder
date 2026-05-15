@@ -14,6 +14,7 @@ Complete API documentation for XaresAICoder platform.
 - [Project Notes](#project-notes)
 - [Project Metadata](#project-metadata)
 - [Network Proxy & Monitoring](#network-proxy--monitoring)
+- [Subdomain Aliases](#subdomain-aliases)
 - [Whitelist Management](#whitelist-management)
 - [Workshop](#workshop)
 - [Git Integration](#git-integration)
@@ -693,6 +694,113 @@ Returns filtered Squid proxy logs for Security Proxy workspaces.
 **Endpoint**: `GET /api/projects/:projectId/squid-logs`
 
 See existing documentation above for response format.
+
+## Subdomain Aliases
+
+Map a human-readable subdomain to any port inside a workspace. The alias is served by nginx as an exact-match `server_name`, so it takes priority over the regex-based UUID routing. Aliases survive workspace stop/restart; deleting one returns a clean 404 (the catch-all server block) rather than leaking the auth-protected frontend.
+
+### List Listening Ports
+
+Auto-detected TCP ports the workspace container is currently listening on. Reads `/proc/net/tcp{,6}` (no `ss`/`netstat` needed). Port `8082` (code-server) is filtered out; loopback-only binds are excluded.
+
+**Endpoint**: `GET /api/projects/:projectId/ports`
+
+**Response** (200):
+```json
+{ "success": true, "ports": [3000, 8000] }
+```
+
+Returns empty array when the workspace is stopped.
+
+### List Aliases
+
+**Endpoint**: `GET /api/projects/:projectId/aliases`
+
+**Response** (200):
+```json
+{
+  "success": true,
+  "aliases": [
+    {
+      "subdomain": "myapp",
+      "port": 3000,
+      "authProtected": false,
+      "authUsername": null,
+      "createdAt": "2026-05-15T10:00:00Z",
+      "updatedAt": "2026-05-15T10:00:00Z",
+      "url": "http://myapp.localhost/"
+    }
+  ]
+}
+```
+
+### Create Alias
+
+**Endpoint**: `POST /api/projects/:projectId/aliases`
+
+**Request Body**:
+```json
+{
+  "subdomain": "myapp",
+  "port": 3000,
+  "authProtected": false,
+  "authUsername": "alice",
+  "authPassword": "secret123"
+}
+```
+
+**Validation**:
+- `subdomain`: 3-32 chars, lowercase, regex `^[a-z][a-z0-9-]+[a-z0-9]$`, must not be a reserved word (`www`, `api`, `admin`, `git`, `forgejo`, `code-server`, `workshop`, `mitm`, `proxy`, `squid`, `nginx`, `dashboard`, `config`, `localhost`).
+- `port`: 1-65535; `8082` is rejected (code-server itself).
+- `authUsername`: 1-64 chars from `[A-Za-z0-9_.-]` (required when `authProtected: true`).
+- `authPassword`: 6-128 chars (required when `authProtected: true`).
+
+**Response** (201): the newly created alias (same shape as the list entry above).
+
+**Error Codes**:
+| Code | Reason |
+|------|--------|
+| 400 | Invalid subdomain/port/username/password format |
+| 404 | Project not found |
+| 409 | Subdomain already in use (across all workspaces) |
+| 422 | Subdomain is reserved |
+| 502 | nginx config validation or reload failed |
+
+### Update Alias
+
+**Endpoint**: `PUT /api/projects/:projectId/aliases/:subdomain`
+
+**Request Body** (all fields optional):
+```json
+{
+  "port": 4000,
+  "authProtected": true,
+  "authUsername": "alice",
+  "authPassword": "newSecret123"
+}
+```
+
+Use `{ "authProtected": false }` to remove Basic Auth. Use the same body to add Basic Auth or rotate the password.
+
+**Response** (200): the updated alias.
+
+### Delete Alias
+
+**Endpoint**: `DELETE /api/projects/:projectId/aliases/:subdomain`
+
+Removes the alias, deletes the corresponding htpasswd file, regenerates `aliases.conf` and reloads nginx.
+
+**Response** (200):
+```json
+{ "success": true }
+```
+
+### Implementation Notes
+
+- Basic Auth uses **SHA1** hashes (`{SHA}<base64>` in htpasswd) — universally supported by stock nginx. bcrypt is not used because nginx-alpine builds don't guarantee bcrypt support.
+- All write endpoints validate (`nginx -t`) and reload (`nginx -s reload`) the new config; on validation failure the previous config is rolled back from `last-known-good.txt`.
+- Aliases are **not** copied when cloning a workspace (subdomains must remain globally unique).
+- Unknown subdomains (never registered, or deleted) are served by a catch-all server block returning `HTTP 404 "Unknown subdomain..."` instead of falling through to the frontend.
 
 ## Whitelist Management
 

@@ -24,6 +24,24 @@ VS Code auto-detects common ports: `3000` Node/React, `3001` Node/React alt, `50
 
 Workspace env vars: `PROJECT_ID`, `VSCODE_PROXY_URI` (templated app URL), `PROXY_DOMAIN` (workspace itself, `<id>.<domain>`).
 
+## Custom Subdomain Aliases
+
+The user can attach a readable subdomain (e.g. `myapp.<domain>`) to any port via the workspace UI. The alias points at the same `0.0.0.0:<port>` your app binds to, so plain HTTP/REST/WebSocket apps just work. `$VSCODE_PROXY_URI` always returns the long UUID URL — for the alias URL, the user copies it from the UI.
+
+When an app is reached via the alias instead of the UUID URL, a few classes of issues can show up:
+
+| Stack | Quickfix |
+|---|---|
+| **Vite ≥ 5** dev server (host check) | `server: { host: '0.0.0.0', allowedHosts: true, hmr: { clientPort: 80 } }` in `vite.config.js` |
+| **Next.js dev** | `experimental.allowedDevOrigins: ['*']` in `next.config.js`, or trust forwarded headers |
+| **Express / Node with origin checks** | `app.set('trust proxy', true)` and use `req.get('X-Forwarded-Host')`, not `req.hostname` |
+| **CRA / webpack-dev-server** | `WDS_SOCKET_HOST=0.0.0.0` + `DANGEROUSLY_DISABLE_HOST_CHECK=true` (dev only) |
+| **OAuth / OIDC redirect_uri** | Register both URLs at the provider, or only use the UUID URL for the auth flow |
+| **Cookies / session** | UUID URL and alias URL are different origins — sessions don't carry over; pick one and stick with it |
+| **Hardcoded absolute URLs in API responses** | Build response URLs from `X-Forwarded-Host` / `X-Forwarded-Proto`, not from app config |
+
+Rule of thumb: **develop on the UUID URL, share / demo via the alias**. WebSocket + HMR over the alias works for Vite/webpack default configs as long as no fixed `hmr.host` is hardcoded.
+
 ## Bind Examples
 
 - **Flask**: `app.run(host='0.0.0.0', port=5000)`
