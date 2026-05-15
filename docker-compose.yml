@@ -149,7 +149,7 @@ services:
       xares-aicoder-network:
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -sf http://localhost:8080 || exit 1"]
+      test: ["CMD", "python3", "-c", "import socket,sys; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8080)); sys.exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3
