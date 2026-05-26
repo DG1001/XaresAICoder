@@ -608,10 +608,14 @@ deploy_application() {
     HOST_PORT=$(grep "^HOST_PORT=" .env | cut -d'=' -f2)
     HOST_PORT=${HOST_PORT:-80}
 
-    # Construct health check URL
-    # For external SSL proxy setups (HTTPS/443 with different HOST_PORT), check internal service
+    # Construct health check URL.
+    # nginx routes by Host header and its default_server returns 404 for unknown
+    # hosts (incl. "localhost"), so when hitting localhost we must override the
+    # Host header to BASE_DOMAIN.
+    CURL_HOST_HEADER=""
     if [ "$BASE_PORT" = "443" ] && [ "$PROTOCOL" = "https" ] && [ "$HOST_PORT" != "443" ]; then
         HEALTH_URL="http://localhost:${HOST_PORT}/api/health"
+        CURL_HOST_HEADER="Host: ${BASE_DOMAIN}"
         print_status "External SSL proxy detected - checking internal service"
     elif [ "$BASE_PORT" = "80" ] && [ "$PROTOCOL" = "http" ]; then
         HEALTH_URL="http://${BASE_DOMAIN}/api/health"
@@ -620,13 +624,18 @@ deploy_application() {
     else
         HEALTH_URL="${PROTOCOL}://${BASE_DOMAIN}:${BASE_PORT}/api/health"
     fi
-    
+
     # Health check
     print_status "Performing health check..."
     print_status "Testing: $HEALTH_URL"
-    
+
     for i in {1..10}; do
-        if curl -s -f "$HEALTH_URL" >/dev/null 2>&1; then
+        if [ -n "$CURL_HOST_HEADER" ]; then
+            curl_ok=$(curl -s -f -H "$CURL_HOST_HEADER" "$HEALTH_URL" >/dev/null 2>&1 && echo yes || echo no)
+        else
+            curl_ok=$(curl -s -f "$HEALTH_URL" >/dev/null 2>&1 && echo yes || echo no)
+        fi
+        if [ "$curl_ok" = "yes" ]; then
             print_success "Health check passed!"
             break
         else
