@@ -255,9 +255,12 @@ class DockerService {
         'git config user.email "user@xaresaicoder.local"'
       ];
 
-      // Configure sudo to preserve proxy environment variables when THIS workspace uses proxy
+      // Configure sudo to preserve proxy environment variables when THIS workspace uses proxy.
+      // NODE_EXTRA_CA_CERTS must be kept too: `sudo npm install -g` (update_claude, update_gemini,
+      // update_qwen, update_codex, update_pi) otherwise loses the proxy CA trust and fails TLS
+      // verification against the MITM proxy, silently falling back to stale cached packages.
       if (useProxy) {
-        commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
+        commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy NODE_EXTRA_CA_CERTS\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
         commands.push('sudo chmod 440 /etc/sudoers.d/proxy');
 
         // Parse proxy host and port from activeProxyHost (format: "host:port")
