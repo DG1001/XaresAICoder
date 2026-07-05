@@ -92,8 +92,11 @@ The captured data enables:
 ### Documentation Generation
 - ✅ Two documentation types: Clean and Detailed
 - ✅ Markdown format for easy reading/sharing
-- ✅ Token usage summaries
-- ✅ Conversation history with timestamps
+- ✅ Streamed API requests grouped into sessions — the dialog is shown once
+  instead of being repeated on every request
+- ✅ Token usage summaries including Anthropic cache read/write tokens
+- ✅ Full tool inputs and results in detailed mode (the actual code written)
+- ✅ Conversation history in chronological order
 - ✅ Downloadable documentation files
 
 ### Conversation Management
@@ -137,20 +140,33 @@ The logger monitors these domains:
 For streaming APIs (Claude Code, Claude API):
 ```
 event: message_start
-data: {"type":"message_start","message":{"id":"msg_123","model":"claude-3-5-sonnet-20241022"}}
+data: {"type":"message_start","message":{"id":"msg_123","model":"...","usage":{"input_tokens":1234,"cache_read_input_tokens":18000,"output_tokens":1}}}
 
 event: content_block_delta
-data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Here"}}
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Here"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","name":"Write","input":{}}}
 
 event: content_block_delta
-data: {"type":"content_block_delta","delta":{"type":"text_delta","text":" is"}}
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\""}}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":567}}
 ```
 
 The logger:
 1. Detects SSE format (lines starting with `event:`)
 2. Parses each `data:` line as JSON
-3. Extracts text from `content_block_delta` events
-4. Combines chunks into complete response
+3. Extracts text from `content_block_delta` (`text_delta`) events
+4. Reconstructs `tool_use` blocks from `content_block_start` plus the streamed
+   `input_json_delta` fragments (keyed by block index), so tool-only turns with
+   no text output are captured too
+5. Reads token usage from **both** `message_start` (input + cache tokens) and
+   `message_delta` (final `output_tokens`). This is essential: `message_start`
+   only carries a placeholder `output_tokens` of 1, so ignoring `message_delta`
+   makes completion token counts meaningless
+6. Combines everything into the complete response
 
 ### 4. JSON Log Format
 
@@ -178,14 +194,24 @@ Each conversation is stored as:
   "parsed_response": {
     "id": "msg_abc123",
     "model": "claude-3-5-sonnet-20241022",
-    "content": [{"type": "text", "text": "Here is the code..."}],
+    "content": [
+      {"type": "text", "text": "Here is the code..."},
+      {"type": "tool_use", "name": "Write", "input": {"file_path": "/workspace/app.js", "content": "..."}}
+    ],
     "usage": {
       "input_tokens": 1234,
+      "cache_read_input_tokens": 18000,
+      "cache_creation_input_tokens": 250,
       "output_tokens": 567
     }
   }
 }
 ```
+
+> Token accounting: the prompt total reported in the documentation is
+> `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`.
+> Anthropic bills cache reads/writes separately, so omitting them (as an
+> earlier version did) drastically understates prompt size.
 
 ## Using the Feature
 
@@ -327,31 +353,30 @@ curl http://localhost/api/whitelist
 # AI Coding Session Documentation (Clean)
 
 **Generated:** 2025-01-15T14:30:00.000Z
-**Total Conversations:** 5
+**Sessions:** 1
+**Total API Requests:** 3
 **Type:** Clean (User/Assistant conversation only)
 
 ## Summary
-- **claude-3-5-sonnet-20241022**: 3 conversations, 12,456 tokens
-- **gpt-4**: 2 conversations, 8,234 tokens
+- **claude-opus-4-8**: 3 API requests, 20,690 tokens
 
 ## Conversation History
 
-### Conversation 1
-**Time:** 1/15/2025, 2:30:45 PM
-**Model:** claude-3-5-sonnet-20241022
+## Session 1
+**Model:** claude-opus-4-8
+**Time:** 1/15/2025, 2:30:45 PM – 1/15/2025, 2:34:10 PM
+**API Requests:** 3
+**Tokens:** Prompt: 19,486, Completion: 1,204, Total: 20,690
 
-#### Request
 **user:**
 ```
 Please help me implement user authentication
 ```
 
-#### Response
+**assistant:**
 ```
 I'll help you implement user authentication...
 ```
-
-**Tokens:** Prompt: 234, Completion: 567, Total: 801
 ```
 
 **Best for:**
@@ -365,12 +390,11 @@ I'll help you implement user authentication...
 **Purpose:** Complete technical details for debugging and analysis
 
 **Includes:**
-- ALL messages (system, user, assistant, tool)
+- ALL messages (system, user, assistant, tool), rendered once per session
 - System prompts (truncated at 5000 chars)
-- Request parameters (max_tokens, temperature)
-- Response metadata (status codes, IDs)
-- Complete token usage breakdown
-- Tool use indicators
+- Full tool inputs and results — the actual code written/edited and commands run
+- Token usage breakdown including cache read/write tokens
+- A per-session API request breakdown table (time, tokens, request id)
 - Message numbering and role labels
 
 **Example Output:**
@@ -378,46 +402,52 @@ I'll help you implement user authentication...
 # AI Coding Session Documentation (Detailed)
 
 **Generated:** 2025-01-15T14:30:00.000Z
-**Total Conversations:** 5
+**Sessions:** 1
+**Total API Requests:** 2
 **Type:** Detailed (Complete technical details)
 
 ## Conversation History
 
-### Conversation 1
-**Time:** 1/15/2025, 2:30:45 PM
-**Model:** claude-3-5-sonnet-20241022
-**Endpoint:** https://api.anthropic.com/v1/messages
-**Request ID:** msg_abc123
+## Session 1
+**Model:** claude-opus-4-8
+**Time:** 1/15/2025, 2:30:45 PM – 1/15/2025, 2:31:30 PM
+**API Requests:** 2
+**Tokens:** Prompt: 28,940, Completion: 1,120, Total: 30,060
 
-#### Request
-**Message 1 (system):**
-```
-You are Claude Code, Anthropic's official CLI...
-(5000+ char system prompt)
-```
+#### Dialog
 
-**Message 2 (user):**
+**Message 1 (user):**
 ```
 Please help me implement user authentication
 ```
 
-**Request Parameters:**
-- Max Tokens: 4096
-- Temperature: 1.0
-
-#### Response
+**Message 2 (assistant):**
 ```
-I'll help you implement user authentication...
+I'll add a login form and a session helper.
+[Tool Use: Write]
+{
+  "file_path": "/workspace/auth.js",
+  "content": "export function login(user, pass) { ... }"
+}
 ```
 
-**Token Usage:**
-- Prompt: 1234
-- Completion: 567
-- Total: 1801
+**Message 3 (user):**
+```
+[Tool Result]
+File created successfully at: /workspace/auth.js
+```
 
-**Response Metadata:**
-- Status Code: 200
-- Response Time: 2025-01-15T14:30:47.456Z
+**Final Response (assistant):**
+```
+Done — authentication is wired up. Want me to add password hashing next?
+```
+
+#### API Request Breakdown (2)
+
+| # | Time | Prompt | Completion | Total | Request ID |
+|---|------|--------|------------|-------|------------|
+| 1 | 1/15/2025, 2:30:45 PM | 14,210 | 612 | 14,822 | msg_abc123 |
+| 2 | 1/15/2025, 2:31:30 PM | 14,730 | 508 | 15,238 | msg_def456 |
 ```
 
 **Best for:**
@@ -613,27 +643,48 @@ const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
 // Files stored at: /var/log/mitmproxy/llm_conversations/{ipAddress}/
 ```
 
-**Note:** IP addresses are dynamic and reused when workspaces are deleted/recreated. Conversation logs remain associated with the IP, not the project ID.
+**⚠️ Recordings are partitioned by container IP, not by a stable project ID.**
+The mitmproxy logger keys every conversation (and domain record) on the client
+container's IP. Two workspaces running at the same time have different IPs and
+stay cleanly separated — but Docker assigns IPs dynamically from the subnet pool
+and the logs are never pruned automatically. Two consequences:
 
-### Filtering Logic
+- **Cross-workspace mixing:** if a workspace is deleted and its IP is later
+  reused by a new workspace, the new workspace inherits the old directory, and
+  its conversation/domain views will include the earlier workspace's recordings.
+  In effect the data is no longer strictly per-workspace.
+- **Orphaned history:** if a workspace restarts and gets a different IP, its
+  earlier conversations remain under the old IP and no longer appear in the
+  API/UI for that project (see Troubleshooting → "IP Address Changed, Lost
+  Conversations").
+
+For workshop-style use with many short-lived workspaces this is worth keeping in
+mind. Deleting a workspace's conversations before its IP is recycled, or keying
+logs on the project ID instead of the IP (see Future Enhancements → Static IP
+Assignment), would avoid it.
+
+### Session Grouping & Filtering
+
+**Session grouping:** Each streamed API request carries the full, growing
+conversation history, so rendering requests individually repeats the whole
+dialog on every request. The generator instead groups requests whose message
+histories share a common prefix into a single session, then renders the dialog
+once from the fullest request in the group. Prefix matching uses per-message
+fingerprints that normalize string vs. text-block content and serialize tool
+inputs as canonical (key-sorted) JSON, so equivalent messages match despite
+harness re-serialization. Requests are sorted chronologically; grouping is by
+conversation prefix, **not** by workspace.
 
 **Clean documentation filtering:**
-```javascript
-// Only include user and assistant messages
-const conversationMessages = conv.parsed_request.messages.filter(msg =>
-  msg.role === 'user' || msg.role === 'assistant'
-);
-
-// Skip system-reminder tags
-content = msg.content.filter(block =>
-  block.type === 'text' && !block.text?.includes('<system-reminder>')
-);
-```
+- Only user and assistant messages
+- Harness noise is stripped (`<system-reminder>`, `<local-command-*>` and
+  `<command-*>` wrappers) rather than dropping the entire message — this keeps
+  the real first user prompt, which the earlier filter discarded
 
 **Detailed documentation:**
-- Includes ALL roles: system, user, assistant, tool
-- Shows complete system prompts (truncated at 5000 chars)
-- Displays tool use/result indicators
+- All roles: system, user, assistant, tool
+- Full system prompts (truncated at 5000 chars)
+- Full tool inputs and results, plus a per-session API request breakdown table
 
 ## Privacy & Security
 
@@ -747,14 +798,21 @@ sudo update-ca-certificates
 **Problem:** Documentation shows requests but empty responses
 
 **Causes:**
-1. **Streaming responses not parsed correctly**
+1. **Tool-only turn** — the assistant produced only a tool call and no text.
+   These are now captured (the response shows the tool call); only very old logs
+   recorded before this fix show a truly empty response.
+
+2. **Streaming responses not parsed correctly**
    - Check mitmproxy logs for SSE parsing errors
 
-2. **Old logs before SSE support**
-   - Generate new conversations
-   - Old logs can't be retroactively fixed
+3. **Old logs before the SSE token/tool fixes**
+   - Correct `output_tokens` and response-side tool calls are only recorded for
+     conversations captured *after* the fix. Older JSON logs stored a
+     placeholder `output_tokens` and no response tool calls, and can't be fixed
+     retroactively. Tool inputs in the request history and session grouping *do*
+     apply retroactively, since the request messages were logged in full.
 
-3. **Non-standard API format**
+4. **Non-standard API format**
    - Some APIs may use different response formats
    - Update `llm-logger.py` to support new formats
 

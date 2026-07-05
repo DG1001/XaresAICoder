@@ -314,6 +314,14 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" alway
 | **LLM Conversations** | mitmproxy volume | Per-workspace IP | Until container reset |
 | **Proxy Logs** | Squid volume | Per-workspace IP | Until container reset |
 
+> ⚠️ **"Per-workspace IP" is not a stable boundary.** Proxy recordings (domains,
+> LLM conversations, Squid logs) are partitioned by the workspace's Docker
+> container IP, not by project ID. Docker reuses IPs from the subnet pool and
+> the logs are not pruned automatically, so a new workspace that inherits a
+> recycled IP can surface a previous workspace's recordings, and a workspace
+> that restarts under a new IP loses visibility of its earlier logs. See
+> [LLM_CONVERSATION_LOGGING.md](LLM_CONVERSATION_LOGGING.md#ip-to-project-mapping).
+
 ### Data Isolation
 
 ```bash
