@@ -156,8 +156,9 @@ class LLMConversationLogger:
 
                 # Check if response is SSE format (Anthropic streaming)
                 if resp_body.startswith('event:') or '\nevent:' in resp_body:
-                    # Parse SSE response
-                    content_blocks = []
+                    # Parse SSE response. Blocks are keyed by their stream index
+                    # so text and tool_use blocks can be reassembled in order.
+                    blocks_by_index = {}
                     usage_data = None
                     model_name = None
                     message_id = None
@@ -166,31 +167,74 @@ class LLMConversationLogger:
                         if line.startswith('data: '):
                             try:
                                 event_data = json.loads(line[6:])  # Remove 'data: ' prefix
+                                etype = event_data.get('type')
 
-                                # Extract model and ID from message_start
-                                if event_data.get('type') == 'message_start':
+                                # Extract model and ID from message_start.
+                                # NOTE: usage here only has input/cache tokens and a
+                                # placeholder output_tokens (1). Final output_tokens
+                                # arrive later in message_delta.
+                                if etype == 'message_start':
                                     msg = event_data.get('message', {})
                                     model_name = msg.get('model')
                                     message_id = msg.get('id')
                                     usage_data = msg.get('usage')
 
-                                # Collect content_block_delta events
-                                elif event_data.get('type') == 'content_block_delta':
+                                # Merge final usage from message_delta. This carries the
+                                # real cumulative output_tokens (and sometimes updated
+                                # cache figures), so it must overwrite the placeholder.
+                                elif etype == 'message_delta':
+                                    delta_usage = event_data.get('usage')
+                                    if delta_usage:
+                                        usage_data = {**(usage_data or {}), **delta_usage}
+
+                                # A new block begins — record text or tool_use metadata
+                                elif etype == 'content_block_start':
+                                    idx = event_data.get('index', 0)
+                                    cb = event_data.get('content_block', {})
+                                    if cb.get('type') == 'tool_use':
+                                        blocks_by_index[idx] = {
+                                            'type': 'tool_use',
+                                            'id': cb.get('id'),
+                                            'name': cb.get('name'),
+                                            'json_buf': ''
+                                        }
+                                    elif cb.get('type') == 'text':
+                                        blocks_by_index[idx] = {'type': 'text', 'text': cb.get('text', '')}
+
+                                # Deltas append text or streamed tool-input JSON
+                                elif etype == 'content_block_delta':
+                                    idx = event_data.get('index', 0)
                                     delta = event_data.get('delta', {})
                                     if delta.get('type') == 'text_delta':
-                                        content_blocks.append({
-                                            'type': 'text',
-                                            'text': delta.get('text', '')
-                                        })
+                                        blk = blocks_by_index.setdefault(idx, {'type': 'text', 'text': ''})
+                                        blk['text'] = blk.get('text', '') + delta.get('text', '')
+                                    elif delta.get('type') == 'input_json_delta':
+                                        blk = blocks_by_index.setdefault(idx, {'type': 'tool_use', 'json_buf': ''})
+                                        blk['json_buf'] = blk.get('json_buf', '') + delta.get('partial_json', '')
                             except json.JSONDecodeError:
                                 pass
 
-                    # Combine text content
+                    # Assemble content blocks in stream order
                     combined_content = []
-                    if content_blocks:
-                        combined_text = ''.join(block.get('text', '') for block in content_blocks if block.get('type') == 'text')
-                        if combined_text:
-                            combined_content.append({'type': 'text', 'text': combined_text})
+                    for idx in sorted(blocks_by_index.keys()):
+                        blk = blocks_by_index[idx]
+                        if blk['type'] == 'text':
+                            if blk.get('text'):
+                                combined_content.append({'type': 'text', 'text': blk['text']})
+                        elif blk['type'] == 'tool_use':
+                            tool_input = {}
+                            buf = blk.get('json_buf', '')
+                            if buf:
+                                try:
+                                    tool_input = json.loads(buf)
+                                except json.JSONDecodeError:
+                                    tool_input = {'_raw': buf}
+                            combined_content.append({
+                                'type': 'tool_use',
+                                'id': blk.get('id'),
+                                'name': blk.get('name'),
+                                'input': tool_input
+                            })
 
                     log_data['parsed_response'] = {
                         'id': message_id,
