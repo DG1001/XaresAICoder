@@ -24,7 +24,10 @@ LLM_DOMAINS = [
     'opencode.ai',  # OpenCode free tier uses opencode.ai/zen/v1/
     'api.huggingface.co',
     'z.ai',  # z.ai LLM API
-    'api.z.ai'
+    'api.z.ai',
+    'api.deepseek.com',
+    'openrouter.ai',
+    'chatgpt.com',  # Codex CLI with ChatGPT login (streams via WebSocket)
 ]
 
 class LLMConversationLogger:
@@ -252,8 +255,8 @@ class LLMConversationLogger:
                         'content': resp_json.get('content'),
                         'usage': resp_json.get('usage')
                     }
-        except json.JSONDecodeError:
-            ctx.log.warn(f"Failed to parse JSON for {log_data['url']}")
+        except (json.JSONDecodeError, AttributeError, TypeError, KeyError) as e:
+            ctx.log.warn(f"Failed to parse payload for {log_data['url']}: {type(e).__name__}")
 
         # Skip logging if either request or response body is empty
         # (streaming chunks, health checks, or incomplete conversations)
@@ -279,5 +282,43 @@ class LLMConversationLogger:
             json.dump(log_data, f, indent=2, ensure_ascii=False)
 
         ctx.log.info(f"Logged LLM conversation: {client_ip} -> {log_data['url']}")
+
+    # ---- WebSocket capture (Codex CLI streams model calls via WS) ----
+    def websocket_message(self, flow: http.HTTPFlow):
+        """Collect text frames for LLM domains (e.g. chatgpt.com/backend-api/codex/responses)."""
+        if not any(domain in flow.request.host for domain in LLM_DOMAINS):
+            return
+        try:
+            m = flow.websocket.messages[-1]
+            flow.metadata.setdefault('ws_msgs', []).append({
+                'from_client': m.from_client,
+                'text': m.text if m.is_text else f"[binary {len(m.content)}b]",
+            })
+        except Exception as e:
+            ctx.log.warn(f"WS capture error: {type(e).__name__}")
+
+    def websocket_end(self, flow: http.HTTPFlow):
+        msgs = flow.metadata.get('ws_msgs')
+        if not msgs:
+            return
+        try:
+            client_ip = flow.client_conn.peername[0]
+            entry = {
+                'client_ip': client_ip,
+                'timestamp': datetime.utcnow().isoformat(),
+                'method': 'WEBSOCKET',
+                'url': flow.request.pretty_url,
+                'headers': dict(flow.request.headers),
+                'websocket_messages': msgs,
+            }
+            workspace_dir = os.path.join(LOG_DIR, client_ip)
+            os.makedirs(workspace_dir, exist_ok=True)
+            filename = entry['timestamp'].replace(':', '-').replace('.', '-') + '-ws.json'
+            with open(os.path.join(workspace_dir, filename), 'w') as f:
+                json.dump(entry, f, indent=2, ensure_ascii=False)
+            ctx.log.info(f"Logged WS conversation: {client_ip} -> {flow.request.pretty_url} ({len(msgs)} frames)")
+        except Exception as e:
+            ctx.log.warn(f"WS log error: {type(e).__name__}")
+
 
 addons = [LLMConversationLogger()]
