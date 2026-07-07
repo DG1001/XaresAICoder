@@ -109,13 +109,37 @@ function formatResponseBody(parsedResponse, detailed) {
  */
 function computeUsage(usage) {
   if (!usage) return null;
-  const cacheRead = usage.cache_read_input_tokens || 0;
+  // Cache reads across provider dialects: Anthropic (cache_read_input_tokens),
+  // OpenAI (prompt_tokens_details.cached_tokens), DeepSeek (prompt_cache_hit_tokens).
+  const cacheRead = usage.cache_read_input_tokens
+    || usage.prompt_tokens_details?.cached_tokens
+    || usage.prompt_cache_hit_tokens || 0;
   const cacheCreation = usage.cache_creation_input_tokens || 0;
   const input = usage.prompt_tokens || usage.input_tokens || 0;
   const output = usage.completion_tokens || usage.output_tokens || 0;
-  const prompt = input + cacheRead + cacheCreation;
+  // Only Anthropic excludes cache reads/creations from input_tokens;
+  // OpenAI and DeepSeek already include cached tokens in prompt_tokens.
+  const anthropicStyle = ('cache_read_input_tokens' in usage)
+    || ('cache_creation_input_tokens' in usage);
+  const prompt = input + (anthropicStyle ? cacheRead + cacheCreation : 0);
   const total = usage.total_tokens || (prompt + output);
   return { input, cacheRead, cacheCreation, prompt, output, total };
+}
+
+// Usage for a conversation, falling back to a regex scan of the raw response
+// body when parsed_response.usage is missing (e.g. OpenAI SSE streams the
+// logger does not parse). Merges all "usage" objects found in the body
+// (Anthropic SSE: message_start + message_delta).
+function usageOf(conv) {
+  if (conv?.parsed_response?.usage) return computeUsage(conv.parsed_response.usage);
+  const body = conv?.response?.body;
+  if (typeof body !== 'string') return null;
+  const re = /"usage"\s*:\s*(\{(?:[^{}]|\{[^{}]*\})*\})/g;
+  let usage = null, m;
+  while ((m = re.exec(body)) !== null) {
+    try { usage = Object.assign(usage || {}, JSON.parse(m[1])); } catch (e) { /* ignore */ }
+  }
+  return computeUsage(usage);
 }
 
 // --- Session reconstruction -------------------------------------------------
@@ -213,10 +237,10 @@ function prepareSessions(conversations) {
 
     const models = [...new Set(g.requests.map(r => r.parsed_request?.model).filter(Boolean))];
     const tokens = g.requests.reduce((acc, r) => {
-      const u = computeUsage(r.parsed_response?.usage);
-      if (u) { acc.prompt += u.prompt; acc.output += u.output; acc.total += u.total; }
+      const u = usageOf(r);
+      if (u) { acc.prompt += u.prompt; acc.cacheRead += u.cacheRead || 0; acc.output += u.output; acc.total += u.total; }
       return acc;
-    }, { prompt: 0, output: 0, total: 0 });
+    }, { prompt: 0, cacheRead: 0, output: 0, total: 0 });
     const times = g.requests.map(r => r.timestamp).filter(Boolean).sort();
 
     return {
@@ -281,7 +305,7 @@ function renderDocHeader(typeLabel, typeDesc, sessions, conversations) {
   md += `## Summary\n\n`;
   Object.entries(byModel).forEach(([model, convs]) => {
     const totalTokens = convs.reduce((sum, c) =>
-      sum + (computeUsage(c.parsed_response?.usage)?.total || 0), 0
+      sum + (usageOf(c)?.total || 0), 0
     );
     md += `- **${model}**: ${convs.length} API requests, ${totalTokens} tokens\n`;
   });
@@ -303,19 +327,20 @@ function renderSessionHeader(session, idx) {
   }
   md += `**API Requests:** ${session.requests.length}\n`;
   md += `**Tokens:** Prompt: ${session.tokens.prompt}, `;
+  md += `Cache Read: ${session.tokens.cacheRead || 0}, `;
   md += `Completion: ${session.tokens.output}, Total: ${session.tokens.total}\n\n`;
   return md;
 }
 
 function renderRequestBreakdown(session) {
   let md = `#### API Request Breakdown (${session.requests.length})\n\n`;
-  md += `| # | Time | Prompt | Completion | Total | Request ID |\n`;
-  md += `|---|------|--------|------------|-------|------------|\n`;
+  md += `| # | Time | Prompt | Cache Read | Completion | Total | Request ID |\n`;
+  md += `|---|------|--------|-----------|------------|-------|------------|\n`;
   session.requests.forEach((r, i) => {
-    const u = computeUsage(r.parsed_response?.usage) || { prompt: 0, output: 0, total: 0 };
+    const u = usageOf(r) || { prompt: 0, cacheRead: 0, output: 0, total: 0 };
     const t = r.timestamp ? new Date(r.timestamp).toLocaleString() : 'N/A';
     const id = r.parsed_response?.id || 'N/A';
-    md += `| ${i + 1} | ${t} | ${u.prompt} | ${u.output} | ${u.total} | ${id} |\n`;
+    md += `| ${i + 1} | ${t} | ${u.prompt} | ${u.cacheRead || 0} | ${u.output} | ${u.total} | ${id} |\n`;
   });
   md += `\n`;
   return md;
@@ -387,7 +412,7 @@ function generateJSONDocumentation(conversations) {
     summary: {
       models: [...new Set(conversations.map(c => c.parsed_request?.model).filter(Boolean))],
       totalTokens: conversations.reduce((sum, c) =>
-        sum + (computeUsage(c.parsed_response?.usage)?.total || 0), 0
+        sum + (usageOf(c)?.total || 0), 0
       )
     },
     sessions: sessions.map(session => ({
