@@ -267,6 +267,15 @@ function renderMessagesMarkdown(messages, detailed) {
       } else if (typeof msg.content === 'string') {
         content = truncate(msg.content, 5000);
       }
+      // OpenAI format: tool calls live in msg.tool_calls, not in content blocks.
+      if (Array.isArray(msg.tool_calls)) {
+        const markers = msg.tool_calls.map(tc => {
+          const name = tc.function?.name || tc.name || 'unknown';
+          const args = tc.function?.arguments;
+          return args ? `[Tool Use: ${name}]\n${truncate(String(args), 4000)}` : `[Tool Use: ${name}]`;
+        }).join('\n');
+        content = content ? content + '\n' + markers : markers;
+      }
     } else {
       if (Array.isArray(msg.content)) {
         content = msg.content
