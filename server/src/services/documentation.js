@@ -355,7 +355,145 @@ function renderRequestBreakdown(session) {
   return md;
 }
 
+// --- Codex WebSocket captures (OpenAI Responses API over WS) -----------------
+// The mitmproxy logger stores one JSON entry per WebSocket connection holding
+// all text frames. Client frames are `response.create` payloads that carry the
+// model and only the NEW input items (the history lives server-side via
+// previous_response_id / store:true); server frames stream the output, whose
+// finished items arrive as `response.output_item.done` (the final
+// `response.completed` usually has an empty `output` array but carries usage
+// and the response id). Expand such an entry into one synthetic conversation
+// per request — with a cumulatively rebuilt message history, so the existing
+// prefix-based session grouping, token accounting, and the convo viewer all
+// work unchanged.
+
+function wsInputItemToMessages(item) {
+  if (!item || typeof item !== 'object') return [];
+  switch (item.type) {
+    case 'message':
+      return [{
+        role: item.role || 'user',
+        content: [{
+          type: 'text',
+          text: (Array.isArray(item.content) ? item.content : [])
+            .map(c => (c && c.text) || '')
+            .filter(Boolean)
+            .join('\n')
+        }]
+      }];
+    case 'function_call_output':
+    case 'custom_tool_call_output': {
+      const out = typeof item.output === 'string' ? item.output : JSON.stringify(item.output || '');
+      return [{ role: 'tool', content: [{ type: 'tool_result', content: out }] }];
+    }
+    default:
+      // additional_tools (tool definitions) and unknown items are dropped
+      return [];
+  }
+}
+
+function wsOutputItemToBlock(item) {
+  if (!item || typeof item !== 'object') return null;
+  switch (item.type) {
+    case 'message': {
+      const text = (Array.isArray(item.content) ? item.content : [])
+        .map(c => (c && c.text) || '')
+        .filter(Boolean)
+        .join('\n');
+      return text ? { type: 'text', text } : null;
+    }
+    case 'function_call': {
+      let input;
+      try { input = JSON.parse(item.arguments); } catch (e) { input = { arguments: item.arguments }; }
+      return { type: 'tool_use', name: item.name || 'unknown', input };
+    }
+    case 'custom_tool_call':
+      return {
+        type: 'tool_use',
+        name: item.name || 'unknown',
+        input: typeof item.input === 'object' && item.input !== null ? item.input : { input: item.input }
+      };
+    case 'reasoning': {
+      const text = (Array.isArray(item.summary) ? item.summary : [])
+        .map(s => (s && s.text) || '')
+        .filter(Boolean)
+        .join('\n');
+      return text ? { type: 'thinking', thinking: text } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function expandWebSocketConversation(conv) {
+  if (!conv || !Array.isArray(conv.websocket_messages)) return [conv];
+
+  // Pair client `response.create` frames with the streamed server events that
+  // follow them (frames are stored in wire order on one connection).
+  const requests = [];
+  let cur = null;
+  conv.websocket_messages.forEach(m => {
+    let ev;
+    try { ev = JSON.parse(m.text); } catch (e) { return; }
+    if (m.from_client) {
+      if (ev.type === 'response.create') {
+        cur = { create: ev, outputs: [], completed: null };
+        requests.push(cur);
+      }
+      return;
+    }
+    if (!cur) return;
+    if (ev.type === 'response.output_item.done' && ev.item) {
+      cur.outputs.push(ev.item);
+    } else if (ev.type === 'response.completed' && ev.response) {
+      cur.completed = ev.response;
+      if (Array.isArray(ev.response.output) && ev.response.output.length) {
+        cur.outputs = ev.response.output;
+      }
+    }
+  });
+  if (!requests.length) return [conv];
+
+  // The logger writes the entry when the connection closes, so conv.timestamp
+  // is the END of the session. Synthesize per-request timestamps one second
+  // apart to preserve ordering (frame times are not recorded).
+  const endTs = conv.timestamp ? Date.parse(conv.timestamp) : Date.now();
+
+  const cumulative = [];
+  return requests.map((r, i) => {
+    cumulative.push(...(r.create.input || []).flatMap(wsInputItemToMessages));
+    const messages = cumulative.slice();
+    const blocks = r.outputs.map(wsOutputItemToBlock).filter(Boolean);
+    if (blocks.length) cumulative.push({ role: 'assistant', content: blocks });
+
+    const usage = r.completed && r.completed.usage;
+    return {
+      timestamp: new Date(endTs - (requests.length - i) * 1000).toISOString(),
+      method: 'WEBSOCKET',
+      url: conv.url,
+      parsed_request: {
+        model: r.create.model || (r.completed && r.completed.model),
+        messages
+      },
+      parsed_response: {
+        id: r.completed && r.completed.id,
+        model: (r.completed && r.completed.model) || r.create.model,
+        content: blocks,
+        usage: usage ? {
+          prompt_tokens: usage.input_tokens || 0,
+          completion_tokens: usage.output_tokens || 0,
+          total_tokens: usage.total_tokens,
+          prompt_tokens_details: {
+            cached_tokens: (usage.input_tokens_details && usage.input_tokens_details.cached_tokens) || 0
+          }
+        } : undefined
+      }
+    };
+  });
+}
+
 function generateDocumentationFromConversations(conversations, format = 'markdown', type = 'clean') {
+  conversations = (conversations || []).flatMap(expandWebSocketConversation);
   if (format === 'markdown') {
     if (type === 'detailed') {
       return generateDetailedMarkdownDocumentation(conversations);
