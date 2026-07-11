@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>AI-Conversation-Viewer · XaresAICoder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#1E2C39; --card:#283949; --card-hi:#2E4255; --teal:#3BCFB8;
+    --orange:#F4A160; --red:#E2685F; --white:#FFFFFF; --sub:#B8C4D0; --muted:#768492;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--sub);font-family:"Segoe UI",system-ui,sans-serif;padding:28px 36px;min-height:100vh}
+  h1{color:var(--white);font-size:26px;margin-bottom:4px}
+  .kicker{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .kicker .sq{width:16px;height:16px;background:var(--teal)}
+  .kicker span{color:var(--teal);font-weight:600;font-size:14px}
+  .sub{color:var(--sub);font-style:italic;font-size:14px;margin-bottom:22px}
+  #drop{border:2px dashed var(--muted);border-radius:12px;padding:60px 30px;text-align:center;
+        font-size:18px;color:var(--muted);cursor:pointer;transition:.15s}
+  #drop.hover,#drop:hover{border-color:var(--teal);color:var(--teal)}
+  #drop b{color:var(--sub)}
+  .hidden{display:none!important}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:20px}
+  .tile{background:var(--card);border-top:4px solid var(--teal);border-radius:4px;padding:14px 16px}
+  .tile.orange{border-top-color:var(--orange)}
+  .tile .v{font-size:32px;font-weight:700;color:var(--teal);font-variant-numeric:tabular-nums}
+  .tile.orange .v{color:var(--orange)}
+  .tile .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .panel{background:var(--card);border-radius:6px;padding:18px 20px;margin-bottom:20px}
+  .panel h2{color:var(--white);font-size:16px;margin-bottom:12px}
+  .panel h2 small{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
+  #chart{width:100%;height:auto;display:block}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:var(--card-hi);border:1px solid var(--teal);color:var(--teal);
+        border-radius:14px;padding:4px 12px;font-size:13px;font-family:Consolas,monospace}
+  .chip b{color:var(--white)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{color:var(--muted);text-align:left;font-weight:600;padding:6px 10px;border-bottom:1px solid var(--card-hi);white-space:nowrap}
+  td{padding:5px 10px;border-bottom:1px solid rgba(118,132,146,.15);vertical-align:top}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:Consolas,monospace}
+  th.num{text-align:right}
+  tr.srow{cursor:pointer}
+  tr.srow td:first-child::before{content:"▸";color:var(--muted);margin-right:6px;display:inline-block;transition:.1s}
+  tr.srow.open td:first-child::before{transform:rotate(90deg);color:var(--teal)}
+  tr.detail>td{padding:0;border:none}
+  .subtbl{width:100%;border-collapse:collapse;background:rgba(0,0,0,.18)}
+  .subtbl th{font-size:11px;padding:4px 10px;color:var(--muted);font-weight:600}
+  .subtbl td{padding:3px 10px;font-size:12.5px;border-bottom:1px solid rgba(118,132,146,.1)}
+  .subtbl tr:last-child td{border-bottom:none}
+  .cachebar{display:inline-block;height:9px;border-radius:2px;background:var(--teal);vertical-align:middle;margin-left:6px}
+  .model{font-family:Consolas,monospace;font-size:12.5px;padding:1px 8px;border-radius:10px;white-space:nowrap}
+  .userq{color:var(--white)}
+  tr:hover td{background:rgba(59,207,184,.05)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  #reset{background:none;border:1px solid var(--muted);color:var(--muted);border-radius:6px;
+         padding:5px 14px;cursor:pointer;font-size:13px;float:right}
+  #reset:hover{border-color:var(--teal);color:var(--teal)}
+  .foot{color:var(--muted);font-size:11.5px;font-style:italic;margin-top:8px}
+</style>
+</head>
+<body>
+  <div class="kicker"><div class="sq"></div><span>XaresAICoder · Proxy-Mitschnitt</span>
+    <button id="reset" class="hidden" onclick="location.reload()">neue Datei</button></div>
+  <h1>Was hat der Agent wirklich geschickt?</h1>
+  <div class="sub">Detailed-Doku der AI-Conversations hier ablegen — Auswertung passiert komplett lokal im Browser.</div>
+
+  <div id="drop"><b>Markdown-Datei hierher ziehen</b> · klicken zum Auswählen · oder Strg+V zum Einfügen
+    <input type="file" id="file" accept=".md,.txt,.markdown" class="hidden"></div>
+
+  <div id="out" class="hidden">
+    <div class="tiles" id="tiles"></div>
+    <div class="panel">
+      <h2>Kontext je API-Request <small>Balkenhöhe = Prompt-Tokens · kräftig = voll bezahlt, blass = aus dem Cache · Farbe = Modell</small></h2>
+      <svg id="chart" viewBox="0 0 1000 250" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel">
+      <h2>Werkzeug-Nutzung <small>Tool-Calls über alle Sessions</small></h2>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="panel">
+      <h2>Sessions <small>Zeile anklicken → einzelne API-Requests der Session (Cache greift ab Request 2)</small></h2>
+      <div style="overflow-x:auto"><table id="tbl"></table></div>
+      <div class="foot">Tokens = Usage laut API (bei Anthropic inkl. Cache-Reads, die input_tokens sonst verschweigt). Cache-Reads kosten nur ~1/10 des Input-Preises.</div>
+    </div>
+  </div>
+
+<script>
+const COLORS = ["#3BCFB8","#F4A160","#E2685F","#7FA8F4","#C792EA","#FFD866","#8BD649","#F97E72"];
+
+function parse(md){
+  const sessions = [];
+  const blocks = md.split(/^## Session \d+\s*$/m).slice(1);
+  for (const b of blocks){
+    const s = {};
+    s.model = ((b.match(/\*\*Model:\*\* (.+)/)||[])[1]||"unknown").split(",")[0].trim();
+    s.time  = (b.match(/\*\*Time:\*\* (.+)/)||[])[1]||"";
+    const tok = b.match(/\*\*Tokens:\*\* Prompt: (\d+)(?:, Cache Read: (\d+))?, Completion: (\d+)/);
+    s.prompt = +((tok||[])[1]||0);
+    s.cache  = +((tok||[])[2]||0);
+    s.out    = +((tok||[])[3]||0);
+    const dialog = (b.split(/^#### API Request Breakdown/m)[0]||"");
+    s.tools = [...dialog.matchAll(/\[Tool Use: ([^\]\s(]+)/g)].map(m=>m[1]);
+    // erster User-Text (ohne system-reminder) als Session-Titel
+    s.userText = "";
+    for (const m of dialog.matchAll(/\*\*Message \d+ \(user\):\*\*\n```\n([\s\S]*?)\n```/g)){
+      const t = m[1].replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g,"").trim();
+      if (t){ s.userText = t.split("\n").find(l=>l.trim())||""; break; }
+    }
+    // Request-Breakdown-Tabelle: | # | Time | Prompt | Cache Read | Completion | Total | ID |
+    s.requests = [];
+    const tblPart = b.split(/^#### API Request Breakdown/m)[1]||"";
+    for (const m of tblPart.matchAll(/^\| (\d+) \| ([^|]+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \|/gm)){
+      s.requests.push({ time: m[2].trim(), prompt:+m[3], cache:+m[4], out:+m[5],
+                        ts: Date.parse(m[2].trim())||0, model: s.model, userText: s.userText });
+    }
+    // Fallback altes Tabellen-Format ohne Cache-Spalte
+    if (!s.requests.length){
+      for (const m of tblPart.matchAll(/^\| (\d+) \| ([^|]+) \| (\d+) \| (\d+) \| (\d+) \|/gm)){
+        s.requests.push({ time: m[2].trim(), prompt:+m[3], cache:0, out:+m[4],
+                          ts: Date.parse(m[2].trim())||0, model: s.model, userText: s.userText });
+      }
+    }
+    sessions.push(s);
+  }
+  return sessions;
+}
+
+function fmt(n){ return n.toLocaleString("de-DE"); }
+// HTML/SVG-sicher escapen — sonst bricht z.B. "<transcript>" im Tooltip das Markup
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function render(md, quiet){
+  const sessions = parse(md);
+  if (!sessions.length){
+    if (!quiet) alert("Keine Sessions gefunden — ist das die Detailed-Doku (neues Format)?");
+    return false;
+  }
+  document.getElementById("drop").classList.add("hidden");
+  document.getElementById("out").classList.remove("hidden");
+  document.getElementById("reset").classList.remove("hidden");
+
+  const models = [...new Set(sessions.map(s=>s.model))];
+  const color  = m => COLORS[models.indexOf(m)%COLORS.length];
+  // Nach Session gruppieren (gleiche Reihenfolge wie die Tabelle unten), NICHT
+  // global nach Zeit — sonst rutschen zeitlich verschachtelte Neben-Sessions
+  // (z.B. Guard-Checks) mitten in die Haupt-Session und passen nicht zur Tabelle.
+  const reqs = [...sessions].sort((a,b)=>(a.requests[0]?.ts||0)-(b.requests[0]?.ts||0))
+                            .flatMap(s=>s.requests);
+  const totIn    = sessions.reduce((a,s)=>a+s.prompt,0);
+  const totCache = sessions.reduce((a,s)=>a+s.cache,0);
+  const totOut   = sessions.reduce((a,s)=>a+s.out,0);
+  const allTools = sessions.flatMap(s=>s.tools);
+  const maxP = reqs.reduce((a,r)=>Math.max(a,r.prompt),0);
+
+  const tiles = [
+    [fmt(sessions.length),"Sessions",""],
+    [fmt(reqs.length),"API-Requests",""],
+    [models.length,"Modelle",""],
+    [fmt(totIn),"Input-Tokens gesamt (zum LLM)","orange"],
+    [totIn?Math.round(100*totCache/totIn)+" %":"–","davon aus dem Cache — nur ~1/10 des Preises",""],
+    [fmt(totIn-totCache),"voll bezahlte Input-Tokens","orange"],
+    [fmt(totOut),"Output-Tokens (vom LLM)",""],
+    [fmt(allTools.length),"Tool-Calls",""],
+  ];
+  document.getElementById("tiles").innerHTML = tiles.map(([v,l,o])=>
+    `<div class="tile ${o}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+
+  // Chart: Balken je Request, Cache-Anteil als heller Block unten
+  const svg = document.getElementById("chart");
+  // FIX: festes Koordinatensystem statt svg.clientWidth (das war je nach
+  // Browser/Layout unzuverlässig → Balken konnten unsichtbar werden).
+  const W = 1000, H = 250, pad = 44;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const bw = Math.max(3,Math.min(34,(W-pad-10)/Math.max(1,reqs.length)-3));
+  let x = pad, parts = [];
+  const yMax = Math.max(1, maxP*1.08);
+  for (const gy of [0.25,0.5,0.75,1]){
+    const y = H-26-(H-60)*gy;
+    parts.push(`<line x1="${pad}" y1="${y}" x2="${W-4}" y2="${y}" stroke="#2E4255" stroke-width="1"/>`);
+    parts.push(`<text x="${pad-6}" y="${y+4}" fill="#768492" font-size="10" text-anchor="end">${Math.round(yMax*gy/1000)}k</text>`);
+  }
+  reqs.forEach((r,i)=>{
+    const h    = Math.max(2,(H-60)*(r.prompt/yMax));           // ganzer Kontext
+    const paid = Math.max(0, r.prompt - r.cache);
+    const hp   = (H-60)*(paid/yMax);                           // davon voll bezahlt
+    const y0   = H-26-h;
+    const col  = color(r.model);
+    const tip  = `<title>${esc(`#${i+1} · ${r.model} · ${fmt(r.prompt)} Prompt-Tokens (${r.prompt?Math.round(100*r.cache/r.prompt):0}% Cache) · ${r.time}${r.userText?" · "+r.userText.slice(0,70):""}`)}</title>`;
+    // Vollbalken in Modellfarbe = gesamter Kontext (klar erkennbar, gedämpft)
+    parts.push(`<rect x="${x}" y="${y0}" width="${bw}" height="${h}" fill="${col}" opacity="0.55">${tip}</rect>`);
+    // kräftiger Sockel = voll bezahlter Anteil (volle Deckkraft)
+    if (hp>0.5) parts.push(`<rect x="${x}" y="${H-26-hp}" width="${bw}" height="${Math.max(2,hp)}" fill="${col}" opacity="1">${tip}</rect>`);
+    // dünne helle Oberkante — macht jeden Balken auch bei hohem Cache klar sichtbar
+    parts.push(`<rect x="${x}" y="${y0}" width="${bw}" height="2" fill="${col}" opacity="1">${tip}</rect>`);
+    x += bw+3;
+  });
+  parts.push(`<line x1="${pad}" y1="${H-26}" x2="${W-4}" y2="${H-26}" stroke="#768492" stroke-width="1"/>`);
+  parts.push(`<text x="${pad}" y="${H-9}" fill="#768492" font-size="11">Request 1</text>`);
+  parts.push(`<text x="${W-6}" y="${H-9}" fill="#768492" font-size="11" text-anchor="end">Request ${reqs.length} — nach Session →</text>`);
+  svg.innerHTML = parts.join("");
+  document.getElementById("legend").innerHTML = models.map(m=>
+    `<span><i style="background:${color(m)}"></i>${esc(m)}</span>`).join("") +
+    `<span><i style="background:#B8C4D0"></i>kräftig = voll bezahlt</span>` +
+    `<span><i style="background:#B8C4D0;opacity:.55"></i>gedämpft = Cache (~1/10 Preis)</span>`;
+
+  // Tool-Chips
+  const freq = {};
+  allTools.forEach(t=>freq[t]=(freq[t]||0)+1);
+  document.getElementById("chips").innerHTML =
+    Object.entries(freq).sort((a,b)=>b[1]-a[1])
+      .map(([t,n])=>`<span class="chip">${esc(t)} <b>×${n}</b></span>`).join("")
+    || `<span style="color:var(--muted)">keine Tool-Calls protokolliert</span>`;
+
+  // Session-Tabelle mit aufklappbarem Request-Detail
+  const ordered = sessions.map((s,i)=>({s, t: s.requests[0]?.ts||0}))
+    .sort((a,b)=>a.t-b.t).map(o=>o.s);
+  const subRow = r => {
+    const pct = r.prompt?Math.round(100*r.cache/r.prompt):0;
+    return `<tr>
+      <td class="num">${r.n}</td>
+      <td>${(r.time.split(", ")[1]||r.time)}</td>
+      <td class="num">${fmt(r.prompt)}</td>
+      <td class="num">${pct} %<span class="cachebar" style="width:${Math.round(pct*0.5)}px"></span></td>
+      <td class="num">${fmt(r.prompt-r.cache)}</td>
+      <td class="num">${fmt(r.out)}</td></tr>`;
+  };
+  const rows = ordered.map((s,i)=>{
+    s.requests.forEach((r,k)=>r.n=k+1);
+    const detail = s.requests.length ? `<tr class="detail hidden"><td colspan="9">
+      <table class="subtbl"><tr><th class="num">Req</th><th>Zeit</th><th class="num">Prompt-Tok</th>
+        <th class="num">Cache</th><th class="num">voll bezahlt</th><th class="num">Output</th></tr>
+      ${s.requests.map(subRow).join("")}</table></td></tr>` : "";
+    return `<tr class="srow">
+      <td class="num">${i+1}</td>
+      <td>${(s.time.split("–")[0]||s.time).split(", ")[1]||s.time}</td>
+      <td><span class="model" style="border:1px solid ${color(s.model)};color:${color(s.model)}">${esc(s.model)}</span></td>
+      <td class="num">${s.requests.length}</td>
+      <td class="num">${s.prompt?fmt(s.prompt):"–"}</td>
+      <td class="num">${s.prompt&&s.cache?Math.round(100*s.cache/s.prompt)+" %":"–"}</td>
+      <td class="num">${s.out?fmt(s.out):"–"}</td>
+      <td>${esc([...new Set(s.tools)].slice(0,5).join(", "))}</td>
+      <td class="userq">${esc((s.userText||"").slice(0,60))}</td>
+    </tr>${detail}`;
+  }).join("");
+  document.getElementById("tbl").innerHTML =
+    `<tr><th class="num">#</th><th>Start</th><th>Modell</th><th class="num">Reqs</th>
+     <th class="num">In-Tok</th><th class="num">Cache</th><th class="num">Out-Tok</th>
+     <th>Tools</th><th>Erster User-Text</th></tr>` + rows;
+  // Klick klappt die Detail-Zeile darunter auf
+  document.querySelectorAll("#tbl tr.srow").forEach(tr=>{
+    tr.onclick = ()=>{
+      const d = tr.nextElementSibling;
+      if (d && d.classList.contains("detail")){ d.classList.toggle("hidden"); tr.classList.toggle("open"); }
+    };
+  });
+  return true;
+}
+
+// --- Eingabe-Wege ----------------------------------------------------------
+const drop = document.getElementById("drop"), file = document.getElementById("file");
+drop.onclick = ()=>file.click();
+file.onchange = ()=>file.files[0]?.text().then(render);
+drop.ondragover = e=>{e.preventDefault();drop.classList.add("hover")};
+drop.ondragleave = ()=>drop.classList.remove("hover");
+drop.ondrop = e=>{e.preventDefault();drop.classList.remove("hover");
+  e.dataTransfer.files[0]?.text().then(render)};
+document.addEventListener("paste", e=>{
+  const t = e.clipboardData.getData("text");
+  if (t && t.includes("## Session")) render(t);
+});
+// Test-Modus: #test lädt testdata.md aus demselben Verzeichnis
+if (location.hash === "#test") fetch("testdata.md").then(r=>r.text()).then(render);
+
+// --- App-Modus: ?project=<id> holt die Detailed-Doku direkt von der API ----
+// (gleiche Origin wie das Frontend; wird vom "Convo Viewer"-Button im
+//  AI-Conversations-Modal geöffnet — kein Datei-Download nötig)
+const params = new URLSearchParams(location.search);
+const projectId = params.get("project");
+if (projectId){
+  drop.innerHTML = "<b>Lade Conversations aus der App …</b>";
+  fetch(`/api/projects/${encodeURIComponent(projectId)}/generate-documentation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ format: "markdown", type: params.get("type") || "detailed" })
+  })
+    .then(r => r.json().then(d => ({ ok: r.ok, d })))
+    .then(({ ok, d }) => {
+      if (!ok || !d.success) throw new Error(d.message || d.error || "unbekannter Fehler");
+      if (!render(d.documentation, true))
+        drop.innerHTML = "<b>Keine Sessions im Mitschnitt.</b> Erst LLM-Traffic im Workspace erzeugen — " +
+                         "oder eine Detailed-Doku-Datei hierher ziehen.";
+    })
+    .catch(err => {
+      drop.innerHTML = `<b>Konnte Conversations nicht laden:</b> ${esc(err.message)}<br>` +
+                       "Alternativ eine Detailed-Doku-Datei hierher ziehen · klicken zum Auswählen";
+    });
+}
+</script>
+</body>
+</html>

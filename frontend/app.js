@@ -2798,6 +2798,9 @@ class XaresAICoder {
                             </div>
                         </div>
                         <div class="modal-footer">
+                            <button class="btn-primary" onclick="app.openConvoViewer('${projectId}')" title="Visualize the captured conversations in the browser (context growth, cache hit-rate, tool usage) — no download needed">
+                                📊 Convo Viewer
+                            </button>
                             <button class="btn-primary" onclick="app.generateDocumentation('${projectId}', 'clean')" title="Generate clean documentation (conversation only)">
                                 📄 Clean Docs
                             </button>
@@ -2821,6 +2824,12 @@ class XaresAICoder {
             console.error('Error opening AI conversations modal:', error);
             this.showError('Failed to load AI conversations');
         }
+    }
+
+    openConvoViewer(projectId) {
+        // The viewer fetches the detailed documentation itself via
+        // /api/projects/:id/generate-documentation — always fresh, no download.
+        window.open(`/convo-viewer.html?project=${encodeURIComponent(projectId)}`, '_blank', 'noopener');
     }
 
     async generateDocumentation(projectId, type = 'clean') {
