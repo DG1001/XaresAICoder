@@ -284,39 +284,70 @@ class LLMConversationLogger:
         ctx.log.info(f"Logged LLM conversation: {client_ip} -> {log_data['url']}")
 
     # ---- WebSocket capture (Codex CLI streams model calls via WS) ----
+    # Codex holds ONE WebSocket open for the whole session, so waiting for
+    # websocket_end would make the conversation invisible until the user
+    # quits. Instead the growing frame buffer is flushed to the same file
+    # every WS_FLUSH_FRAMES frames or WS_FLUSH_SECONDS seconds (idempotent
+    # rewrite); websocket_end writes the final state.
+    WS_FLUSH_FRAMES = 20
+    WS_FLUSH_SECONDS = 5.0
+
+    def _ws_flush(self, flow, in_progress):
+        msgs = flow.metadata.get('ws_msgs')
+        if not msgs:
+            return
+        client_ip = flow.client_conn.peername[0]
+        started = flow.metadata['ws_started']
+        filename = flow.metadata.get('ws_file')
+        if not filename:
+            filename = started.replace(':', '-').replace('.', '-') + '-ws.json'
+            flow.metadata['ws_file'] = filename
+        entry = {
+            'client_ip': client_ip,
+            'timestamp': started,
+            'last_updated': datetime.utcnow().isoformat(),
+            'in_progress': in_progress,
+            'method': 'WEBSOCKET',
+            'url': flow.request.pretty_url,
+            'headers': dict(flow.request.headers),
+            'websocket_messages': msgs,
+        }
+        workspace_dir = os.path.join(LOG_DIR, client_ip)
+        os.makedirs(workspace_dir, exist_ok=True)
+        # write-then-rename so readers never see a half-written JSON file
+        path = os.path.join(workspace_dir, filename)
+        with open(path + '.tmp', 'w') as f:
+            json.dump(entry, f, indent=2, ensure_ascii=False)
+        os.replace(path + '.tmp', path)
+        flow.metadata['ws_last_flush'] = time.time()
+        flow.metadata['ws_flushed_count'] = len(msgs)
+
     def websocket_message(self, flow: http.HTTPFlow):
         """Collect text frames for LLM domains (e.g. chatgpt.com/backend-api/codex/responses)."""
         if not any(domain in flow.request.host for domain in LLM_DOMAINS):
             return
         try:
             m = flow.websocket.messages[-1]
+            flow.metadata.setdefault('ws_started', datetime.utcnow().isoformat())
             flow.metadata.setdefault('ws_msgs', []).append({
                 'from_client': m.from_client,
+                'ts': datetime.utcfromtimestamp(m.timestamp).isoformat(),
                 'text': m.text if m.is_text else f"[binary {len(m.content)}b]",
             })
+            msgs = flow.metadata['ws_msgs']
+            due = (len(msgs) - flow.metadata.get('ws_flushed_count', 0) >= self.WS_FLUSH_FRAMES
+                   or time.time() - flow.metadata.get('ws_last_flush', 0) >= self.WS_FLUSH_SECONDS)
+            if due:
+                self._ws_flush(flow, in_progress=True)
         except Exception as e:
             ctx.log.warn(f"WS capture error: {type(e).__name__}")
 
     def websocket_end(self, flow: http.HTTPFlow):
-        msgs = flow.metadata.get('ws_msgs')
-        if not msgs:
-            return
         try:
-            client_ip = flow.client_conn.peername[0]
-            entry = {
-                'client_ip': client_ip,
-                'timestamp': datetime.utcnow().isoformat(),
-                'method': 'WEBSOCKET',
-                'url': flow.request.pretty_url,
-                'headers': dict(flow.request.headers),
-                'websocket_messages': msgs,
-            }
-            workspace_dir = os.path.join(LOG_DIR, client_ip)
-            os.makedirs(workspace_dir, exist_ok=True)
-            filename = entry['timestamp'].replace(':', '-').replace('.', '-') + '-ws.json'
-            with open(os.path.join(workspace_dir, filename), 'w') as f:
-                json.dump(entry, f, indent=2, ensure_ascii=False)
-            ctx.log.info(f"Logged WS conversation: {client_ip} -> {flow.request.pretty_url} ({len(msgs)} frames)")
+            self._ws_flush(flow, in_progress=False)
+            msgs = flow.metadata.get('ws_msgs') or []
+            if msgs:
+                ctx.log.info(f"Logged WS conversation: {flow.client_conn.peername[0]} -> {flow.request.pretty_url} ({len(msgs)} frames)")
         except Exception as e:
             ctx.log.warn(f"WS log error: {type(e).__name__}")
 

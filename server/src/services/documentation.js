@@ -437,7 +437,7 @@ function expandWebSocketConversation(conv) {
     try { ev = JSON.parse(m.text); } catch (e) { return; }
     if (m.from_client) {
       if (ev.type === 'response.create') {
-        cur = { create: ev, outputs: [], completed: null };
+        cur = { create: ev, ts: m.ts, outputs: [], completed: null };
         requests.push(cur);
       }
       return;
@@ -454,9 +454,10 @@ function expandWebSocketConversation(conv) {
   });
   if (!requests.length) return [conv];
 
-  // The logger writes the entry when the connection closes, so conv.timestamp
-  // is the END of the session. Synthesize per-request timestamps one second
-  // apart to preserve ordering (frame times are not recorded).
+  // Newer captures carry a real timestamp per frame ('ts', taken from the
+  // wire). Older captures do not — there conv.timestamp is the END of the
+  // session, so synthesize per-request timestamps one second apart to
+  // preserve ordering.
   const endTs = conv.timestamp ? Date.parse(conv.timestamp) : Date.now();
 
   const cumulative = [];
@@ -468,7 +469,7 @@ function expandWebSocketConversation(conv) {
 
     const usage = r.completed && r.completed.usage;
     return {
-      timestamp: new Date(endTs - (requests.length - i) * 1000).toISOString(),
+      timestamp: r.ts || new Date(endTs - (requests.length - i) * 1000).toISOString(),
       method: 'WEBSOCKET',
       url: conv.url,
       parsed_request: {
