@@ -231,6 +231,17 @@ Each conversation is stored as:
    - View full request/response JSON
    - See timestamps, models, token usage
 
+### Visualizing Conversations (Convo Viewer)
+
+1. Open AI Conversations modal
+2. Click **📊 Convo Viewer**
+3. A new tab opens `/convo-viewer.html?project=<id>` — the viewer fetches the
+   detailed documentation itself via the API (no download) and shows context
+   growth per API request, cache hit-rate, tool usage, and a per-session
+   request breakdown
+4. The page also accepts a previously downloaded detailed-docs markdown file
+   via drag & drop
+
 ### Generating Documentation
 
 **Method 1: From Modal**
