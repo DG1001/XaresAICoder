@@ -103,12 +103,27 @@ function parse(md){
     s.out    = +((tok||[])[3]||0);
     const dialog = (b.split(/^#### API Request Breakdown/m)[0]||"");
     s.tools = [...dialog.matchAll(/\[Tool Use: ([^\]\s(]+)/g)].map(m=>m[1]);
-    // erster User-Text (ohne system-reminder) als Session-Titel
+    // erster ECHTER User-Text als Session-Titel: Harness-Kontext überspringen
+    // (Codex injiziert z.B. "# AGENTS.md instructions" als role:user, der
+    //  eigentliche Prompt kommt erst danach). Fallback: erste User-Message.
     s.userText = "";
+    let fallbackText = "";
+    const NOISE = /^(#\s*AGENTS\.md|<user_instructions|<environment_context|<permissions|<workspace|\[Tool Result\])/i;
     for (const m of dialog.matchAll(/\*\*Message \d+ \(user\):\*\*\n```\n([\s\S]*?)\n```/g)){
-      const t = m[1].replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g,"").trim();
-      if (t){ s.userText = t.split("\n").find(l=>l.trim())||""; break; }
+      const t = m[1]
+        .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g,"")
+        .replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g,"")
+        .replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g,"")
+        .replace(/<command-(name|message|args)>[\s\S]*?<\/command-\1>/g,"")
+        .trim();
+      if (!t) continue;
+      const first = t.split("\n").find(l=>l.trim())||"";
+      if (!fallbackText) fallbackText = first;
+      if (NOISE.test(t)) continue;
+      s.userText = first;
+      break;
     }
+    if (!s.userText) s.userText = fallbackText;
     // Request-Breakdown-Tabelle: | # | Time | Prompt | Cache Read | Completion | Total | ID |
     s.requests = [];
     const tblPart = b.split(/^#### API Request Breakdown/m)[1]||"";
