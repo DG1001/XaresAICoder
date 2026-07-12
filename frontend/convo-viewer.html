@@ -103,10 +103,13 @@ function parse(md){
     s.out    = +((tok||[])[3]||0);
     const dialog = (b.split(/^#### API Request Breakdown/m)[0]||"");
     s.tools = [...dialog.matchAll(/\[Tool Use: ([^\]\s(]+)/g)].map(m=>m[1]);
-    // erster ECHTER User-Text als Session-Titel: Harness-Kontext überspringen
-    // (Codex injiziert z.B. "# AGENTS.md instructions" als role:user, der
-    //  eigentliche Prompt kommt erst danach). Fallback: erste User-Message.
-    s.userText = "";
+    // Echte User-Messages einsammeln (Harness-Kontext überspringen — Codex
+    // injiziert z.B. "# AGENTS.md instructions" als role:user). Der
+    // Session-Titel wird nach dem Parsen ALLER Sessions bestimmt: bei
+    // Fortsetzungs-Sessions (Codex-Reconnect schickt die volle History
+    // erneut) zählt die erste User-Message, die gegenüber der längsten
+    // Vorgänger-Session NEU ist.
+    s.userMsgs = [];
     let fallbackText = "";
     const NOISE = /^(#\s*AGENTS\.md|<user_instructions|<environment_context|<permissions|<workspace|\[Tool Result\])/i;
     for (const m of dialog.matchAll(/\*\*Message \d+ \(user\):\*\*\n```\n([\s\S]*?)\n```/g)){
@@ -120,10 +123,9 @@ function parse(md){
       const first = t.split("\n").find(l=>l.trim())||"";
       if (!fallbackText) fallbackText = first;
       if (NOISE.test(t)) continue;
-      s.userText = first;
-      break;
+      s.userMsgs.push({ full: t, first });
     }
-    if (!s.userText) s.userText = fallbackText;
+    s.userText = (s.userMsgs[0]||{}).first || fallbackText;
     // Request-Breakdown-Tabelle: | # | Time | Prompt | Cache Read | Completion | Total | ID |
     s.requests = [];
     const tblPart = b.split(/^#### API Request Breakdown/m)[1]||"";
@@ -139,6 +141,19 @@ function parse(md){
       }
     }
     sessions.push(s);
+  }
+  // Fortsetzungs-Sessions: Titel = erste User-Message, die gegenüber der
+  // längsten anderen Session, deren User-Messages ein echtes Präfix dieser
+  // Session sind, neu hinzukam.
+  for (const s of sessions){
+    let bestLen = 0;
+    for (const o of sessions){
+      if (o === s || !o.userMsgs.length || o.userMsgs.length >= s.userMsgs.length) continue;
+      if (o.userMsgs.length > bestLen && o.userMsgs.every((m,i)=>m.full === s.userMsgs[i].full)){
+        bestLen = o.userMsgs.length;
+      }
+    }
+    if (bestLen && s.userMsgs[bestLen]) s.userText = s.userMsgs[bestLen].first;
   }
   return sessions;
 }
