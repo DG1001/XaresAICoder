@@ -110,9 +110,11 @@ function formatResponseBody(parsedResponse, detailed) {
 function computeUsage(usage) {
   if (!usage) return null;
   // Cache reads across provider dialects: Anthropic (cache_read_input_tokens),
-  // OpenAI (prompt_tokens_details.cached_tokens), DeepSeek (prompt_cache_hit_tokens).
+  // OpenAI chat (prompt_tokens_details.cached_tokens), OpenAI Responses API /
+  // Codex (input_tokens_details.cached_tokens), DeepSeek (prompt_cache_hit_tokens).
   const cacheRead = usage.cache_read_input_tokens
     || usage.prompt_tokens_details?.cached_tokens
+    || usage.input_tokens_details?.cached_tokens
     || usage.prompt_cache_hit_tokens || 0;
   const cacheCreation = usage.cache_creation_input_tokens || 0;
   const input = usage.prompt_tokens || usage.input_tokens || 0;
@@ -369,16 +371,23 @@ function renderRequestBreakdown(session) {
 
 function wsInputItemToMessages(item) {
   if (!item || typeof item !== 'object') return [];
-  switch (item.type) {
+  // A Responses-API message item carries an explicit `type: 'message'` over the
+  // WebSocket transport, but omits `type` entirely over HTTP when a `role` is
+  // present. Treat a role-bearing, type-less item as a message so Codex/Pi HTTP
+  // captures surface their user prompts (otherwise they hit `default` and drop).
+  const type = item.type || (item.role ? 'message' : undefined);
+  switch (type) {
     case 'message':
       return [{
         role: item.role || 'user',
         content: [{
           type: 'text',
-          text: (Array.isArray(item.content) ? item.content : [])
-            .map(c => (c && c.text) || '')
-            .filter(Boolean)
-            .join('\n')
+          text: typeof item.content === 'string'
+            ? item.content
+            : (Array.isArray(item.content) ? item.content : [])
+                .map(c => (c && c.text) || '')
+                .filter(Boolean)
+                .join('\n')
         }]
       }];
     case 'function_call_output':
@@ -387,7 +396,8 @@ function wsInputItemToMessages(item) {
       return [{ role: 'tool', content: [{ type: 'tool_result', content: out }] }];
     }
     default:
-      // additional_tools (tool definitions) and unknown items are dropped
+      // additional_tools (tool definitions), reasoning, function_call and
+      // unknown items are dropped
       return [];
   }
 }
@@ -493,8 +503,83 @@ function expandWebSocketConversation(conv) {
   });
 }
 
+// --- Codex/Pi HTTP captures (OpenAI Responses API over plain POST) -----------
+// Codex CLI (and Pi, which reuses the Codex ChatGPT auth) can also talk to the
+// Responses API over ordinary HTTP POSTs instead of a WebSocket. The request
+// carries the whole cumulative history in `input` (not `messages`) and the
+// response is a Responses-API SSE stream, so the Anthropic-SSE and OpenAI-chat
+// code paths both fail to parse it (empty content, null usage → no user text,
+// no cache, and every request lands in its own session). Normalize such a
+// capture into the same shape expandWebSocketConversation produces, reusing the
+// same item mappers, so message rendering, prefix-based session grouping and
+// token/cache accounting all work unchanged. Captures that already carry
+// `messages` (Claude, OpenAI chat, OpenCode, …) pass through untouched.
+
+function parseResponsesApiSse(body) {
+  if (typeof body !== 'string') return { outputs: [], completed: null };
+  let outputs = [];
+  let completed = null;
+  for (const line of body.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    let ev;
+    try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
+    if (ev.type === 'response.output_item.done' && ev.item) {
+      outputs.push(ev.item);
+    } else if (ev.type === 'response.completed' && ev.response) {
+      completed = ev.response;
+      // The final event usually repeats the full output; prefer it when present.
+      if (Array.isArray(ev.response.output) && ev.response.output.length) {
+        outputs = ev.response.output;
+      }
+    }
+  }
+  return { outputs, completed };
+}
+
+function normalizeResponsesApiConversation(conv) {
+  if (!conv || conv.method === 'WEBSOCKET') return conv;
+  // Anything already parsed into messages (Claude/OpenAI-chat/OpenCode) is left
+  // as-is; only Responses-API captures lack messages.
+  if (Array.isArray(conv.parsed_request && conv.parsed_request.messages)) return conv;
+
+  let reqBody;
+  try { reqBody = JSON.parse(conv.body || (conv.request && conv.request.body) || ''); }
+  catch (e) { return conv; }
+  if (!reqBody || !Array.isArray(reqBody.input)) return conv;  // not a Responses-API request
+
+  const messages = reqBody.input.flatMap(wsInputItemToMessages);
+  const { outputs, completed } = parseResponsesApiSse(conv.response && conv.response.body);
+  const blocks = outputs.map(wsOutputItemToBlock).filter(Boolean);
+  const usage = completed && completed.usage;
+
+  return {
+    ...conv,
+    parsed_request: {
+      model: reqBody.model || (conv.parsed_request && conv.parsed_request.model),
+      messages
+    },
+    parsed_response: {
+      id: (completed && completed.id) || (conv.parsed_response && conv.parsed_response.id),
+      model: (completed && completed.model) || reqBody.model,
+      content: blocks,
+      // Remap Responses-API usage into the OpenAI-chat shape computeUsage reads,
+      // so cache_read (input_tokens_details.cached_tokens) is accounted for.
+      usage: usage ? {
+        prompt_tokens: usage.input_tokens || 0,
+        completion_tokens: usage.output_tokens || 0,
+        total_tokens: usage.total_tokens,
+        prompt_tokens_details: {
+          cached_tokens: (usage.input_tokens_details && usage.input_tokens_details.cached_tokens) || 0
+        }
+      } : undefined
+    }
+  };
+}
+
 function generateDocumentationFromConversations(conversations, format = 'markdown', type = 'clean') {
-  conversations = (conversations || []).flatMap(expandWebSocketConversation);
+  conversations = (conversations || [])
+    .flatMap(expandWebSocketConversation)
+    .map(normalizeResponsesApiConversation);
   if (format === 'markdown') {
     if (type === 'detailed') {
       return generateDetailedMarkdownDocumentation(conversations);
