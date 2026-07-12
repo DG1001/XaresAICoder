@@ -2,9 +2,14 @@ FROM codercom/code-server:latest
 
 USER root
 
+# Silence npm's update-notifier (avoids the "New major version of npm" notice
+# during image builds and in the workspace update_* scripts)
+ENV NO_UPDATE_NOTIFIER=1
+
 # Install Node.js 22.x from NodeSource (Claude Code >=2.1.193 requires Node >=22)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs
+    && apt-get install -y nodejs \
+    && npm install -g npm@latest
 
 # Install other system dependencies including ripgrep for OpenAI Codex
 RUN apt-get update && apt-get install -y \
