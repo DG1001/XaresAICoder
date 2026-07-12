@@ -392,7 +392,7 @@ This eliminates manual token entry while maintaining the HTTP authentication app
         <div class="token-info">
           <label>Google AI API Key</label>
           <input type="password" placeholder="AIxxxxxxxxxxxxxxxx" id="google-key">
-          <small>Used by: Gemini CLI</small>
+          <small>Used by: Aider, OpenCode, Crush, Pi</small>
         </div>
         <div class="token-actions">
           <button class="btn-success" onclick="testAIToken('google')">Test</button>
@@ -971,7 +971,6 @@ echo "🤖 AI Tools:"
 [ -n "$OPENAI_API_KEY" ] && echo "  • Continue: Available in VS Code"
 [ -n "$ANTHROPIC_API_KEY" ] && echo "  • Cline: Available in VS Code"
 [ -n "$ANTHROPIC_API_KEY" ] && echo "  • OpenCode SST: opencode [prompt]"
-[ -n "$GOOGLE_API_KEY" ] && echo "  • Gemini CLI: gemini [prompt]"
 echo ""
 
 # Check and install missing extensions

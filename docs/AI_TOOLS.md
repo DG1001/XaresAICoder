@@ -25,7 +25,6 @@ XaresAICoder provides a curated selection of AI coding assistants that work seam
 **⌨️ Command Line Tools** - Terminal-based AI assistants
 - **OpenCode SST** - Multi-model AI with project analysis
 - **Aider** - AI pair programming with git integration
-- **Gemini CLI** - Google's AI for code generation
 - **Claude Code** - Anthropic's agentic coding tool
 - **Qwen Code** - AI workflow automation and code exploration
 - **OpenAI Codex CLI** - OpenAI's terminal-based coding assistant
@@ -202,41 +201,6 @@ I'll add comprehensive error handling to your database connection function.
 > Run the tests to make sure it works
 
 [Aider runs tests and shows results]
-```
-
-### Gemini CLI - Google's AI Assistant
-
-**Best for**: Code generation, debugging, Google ecosystem integration
-
-#### Features
-- ✅ **Google's Gemini Model** - Advanced code understanding
-- ✅ **Natural Language Interface** - Describe what you want
-- ✅ **Code Generation** - Create new code from descriptions
-- ✅ **Debugging Help** - Analyze and fix errors
-- ✅ **Multi-Language Support** - Works with many programming languages
-
-#### Setup
-```bash
-# Get API key from Google AI Studio
-# https://makersuite.google.com/app/apikey
-
-# Set your API key
-export GEMINI_API_KEY=your_key_here
-```
-
-#### Usage
-```bash
-# Start interactive session
-gemini
-
-# Direct questions
-gemini "How do I implement a REST API in Python?"
-
-# Code analysis
-gemini "Explain this code: $(cat main.py)"
-
-# Debugging
-gemini "Why is this function not working?" --file problematic_code.py
 ```
 
 ### Claude Code - Anthropic's Agentic Tool
@@ -602,7 +566,6 @@ export OPENCODE_DEFAULT_MODEL=gpt-4
 # Check tool availability
 which opencode
 which aider
-which gemini
 which claude
 which qwen-code
 which codex
@@ -612,7 +575,6 @@ which pi
 # Test API connections
 opencode auth status
 aider --version
-gemini --help
 qwen-code --version
 codex --version
 crush --version
@@ -623,14 +585,14 @@ pi --version
 
 ### Use Case Matrix
 
-| Task | Continue | Cline | OpenCode | Aider | Gemini | Claude Code | Qwen Code | Codex CLI | Crush | Pi |
-|------|----------|-------|----------|-------|--------|-------------|-----------|-----------|-------|----|
-| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
-| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
-| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ❌ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐ |
-| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
-| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |
+| Task | Continue | Cline | OpenCode | Aider | Claude Code | Qwen Code | Codex CLI | Crush | Pi |
+|------|----------|-------|----------|-------|-------------|-----------|-----------|-------|----|
+| **Code Completion** | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **File Editing** | ⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **Project Analysis** | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| **Git Integration** | ❌ | ⭐ | ❌ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐ |
+| **Multi-File Ops** | ❌ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
+| **Learning Curve** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |
 
 ### Model Support
 
@@ -640,7 +602,6 @@ pi --version
 | **Cline** | ❌ | ✅ | ❌ | ❌ |
 | **OpenCode** | ✅ | ✅ | ✅ | ✅ |
 | **Aider** | ✅ | ✅ | ✅ | ✅ (Ollama) |
-| **Gemini CLI** | ❌ | ❌ | ✅ | ❌ |
 | **Claude Code** | ❌ | ✅ | ❌ | ❌ |
 | **Qwen Code** | ✅ | ❌ | ❌ | ✅ (Qwen) |
 | **Codex CLI** | ✅ | ❌ | ❌ | ❌ |
@@ -659,13 +620,13 @@ graph TD
     B -->|Writing Code| C[Continue + Cline]
     B -->|Planning| D[OpenCode SST + Claude Code]
     B -->|Refactoring| E[Aider + Claude Code]
-    B -->|Debugging| F[Gemini CLI + Continue]
+    B -->|Debugging| F[Claude Code + Continue]
     B -->|Learning| G[Continue + OpenCode SST]
 ```
 
 **Recommended Combinations**:
 - **Beginner**: Continue + OpenCode SST + Crush
-- **Intermediate**: Continue + Aider + Gemini CLI + Crush
+- **Intermediate**: Continue + Aider + Crush
 - **Advanced**: All tools based on specific needs
 - **Team Lead**: OpenCode SST + Claude Code + Aider + Crush
 - **Multi-Model Focus**: Crush + Continue + OpenCode SST
@@ -688,8 +649,8 @@ aider main.py tests.py
 # Code review - use Cline for analysis
 # (In VS Code: Ctrl+Shift+P -> "Cline: Analyze Code")
 
-# Debugging - use Gemini for specific issues
-gemini "Why does this function return None?" --file debug.py
+# Debugging - use Claude Code for specific issues
+claude "Why does this function return None? See debug.py"
 ```
 
 ### 3. Context Management

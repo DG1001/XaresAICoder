@@ -46,13 +46,6 @@ export OPENAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, GEMINI_API_KEY
 aider  # Start pair programming session
 ```
 
-#### Gemini CLI - Google's AI Assistant
-Best for code generation and debugging:
-```bash
-export GEMINI_API_KEY=your_key_here  # Get from https://makersuite.google.com/app/apikey
-gemini  # Start interactive session
-```
-
 #### Claude Code - Anthropic's Agentic Tool
 Best for deep codebase understanding and advanced workflows:
 ```bash
@@ -106,13 +99,6 @@ pi -p "your question"  # One-shot print mode
 - **Git integration**: Aider automatically commits changes
 - **Model selection**: Supports OpenAI, Anthropic, Google, and local models
 
-### Gemini CLI Commands
-
-- **Interactive mode**: `gemini`
-- **Direct requests**: `gemini "explain this code"`
-- **Code generation**: Natural language to code conversion
-- **Debugging help**: Error analysis and solutions
-
 ### Claude Code Commands
 
 - **Agentic session**: `claude`
@@ -164,7 +150,6 @@ Install from marketplace: `saoudrizwan.claude-dev`
 3. **Choose the right tool**: 
    - **OpenCode SST**: Project analysis, collaboration
    - **Aider**: Interactive pair programming
-   - **Gemini**: Quick code generation
    - **Claude Code**: Complex multi-file tasks
    - **Continue**: Inline completions
    - **Cline**: VS Code integrated editing
@@ -243,9 +228,6 @@ Your Python Flask workspace includes:
    # Aider for interactive development
    aider app.py
    
-   # Gemini for quick code generation
-   gemini "add a database connection to my Flask app"
-   
    # Continue extension for inline completions (in VS Code)
    ```
 
@@ -288,10 +270,6 @@ For Aider:
 - Set your API key: `export OPENAI_API_KEY=your_key` (or ANTHROPIC_API_KEY, GEMINI_API_KEY)
 - Check installation: `which aider`
 
-For Gemini CLI:
-- Set your API key: `export GEMINI_API_KEY=your_key`
-- Get API key from: https://makersuite.google.com/app/apikey
-
 For Claude Code:
 - Requires Claude Pro/Max subscription or API billing
 - Set `ANTHROPIC_API_KEY` or sign in interactively
@@ -319,7 +297,6 @@ For VS Code Extensions (Continue, Cline):
 1. **AI Tools**: 
    - OpenCode SST: `opencode --help` or use `/help` in interactive mode
    - Aider: Built-in help and documentation
-   - Gemini: Interactive help within the tool
    - Claude Code: Comprehensive built-in guidance
 2. **VS Code**: Use the built-in help and documentation
 3. **Flask**: Refer to the official Flask documentation
@@ -464,7 +441,7 @@ opencode
 
 **Traditional single-file requests**:
 ```bash
-gemini "update the user model in models.py to include email validation"
+codex "update the user model in models.py to include email validation"
 ```
 
 ### GitHub Integration

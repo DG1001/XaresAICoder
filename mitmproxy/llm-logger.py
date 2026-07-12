@@ -17,9 +17,8 @@ DOMAINS_DIR = "/var/log/mitmproxy/domains"
 LLM_DOMAINS = [
     'api.openai.com',
     'api.anthropic.com',
-    'generativelanguage.googleapis.com',
+    'generativelanguage.googleapis.com',  # Google Gemini API (used by Aider/OpenCode/Crush/Pi via GEMINI_API_KEY)
     'api.google.dev',
-    'cloudcode-pa.googleapis.com',  # Gemini CLI uses this (Code Assist backend)
     'api.opencode.ai',
     'opencode.ai',  # OpenCode free tier uses opencode.ai/zen/v1/
     'api.huggingface.co',

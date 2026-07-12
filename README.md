@@ -33,7 +33,6 @@ Pre-configured workspace with multiple AI coding assistants:
 - **Cline (Claude Dev)** - AI coding assistant with file editing capabilities
 - **OpenCode SST** - Multi-model AI assistant for project analysis
 - **Aider** - AI pair programming with direct file editing and git integration
-- **Gemini CLI** - Google's AI for code generation and debugging
 - **Claude Code** - Anthropic's agentic tool for deep codebase understanding
 - **Qwen Code** - AI workflow automation and code exploration
 - **OpenAI Codex CLI** - OpenAI's terminal-based coding assistant
@@ -336,7 +335,7 @@ Features:
 ## 🚧 Current Status
 
 ### ✅ **Production Ready**
-- Professional VS Code interface with 9 integrated AI tools
+- Professional VS Code interface with 8 integrated AI tools
 - Container management with real-time monitoring
 - Dual proxy modes (LLM Logging & Security Proxy)
 - Workshop support with workspace cloning and participant self-registration

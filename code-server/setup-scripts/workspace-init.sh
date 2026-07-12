@@ -101,8 +101,6 @@ echo "  • OpenCode SST  | opencode    | OPENAI / ANTHROPIC / GEMINI_API_KEY"
 echo "                  | docs: github.com/sst/opencode"
 echo "  • Aider         | aider       | OPENAI / ANTHROPIC / GEMINI_API_KEY"
 echo "                  | docs: aider.chat"
-echo "  • Gemini CLI    | gemini      | GEMINI_API_KEY"
-echo "                  | docs: github.com/google-gemini/gemini-cli"
 echo "  • Claude Code   | claude      | ANTHROPIC_API_KEY"
 echo "                  | docs: docs.anthropic.com/claude-code"
 echo "  • Qwen Code     | qwen-code   | DASHSCOPE_API_KEY"
@@ -142,7 +140,7 @@ fi
 echo ""
 echo "🔄 Update Commands:"
 echo "  • sudo update_aider (uv)"
-echo "  • sudo update_gemini, sudo update_claude, sudo update_qwen, sudo update_codex, sudo update_pi (npm)"
+echo "  • sudo update_claude, sudo update_qwen, sudo update_codex, sudo update_pi (npm)"
 echo "  • sudo update_crush, update_opencode (downloads and installs latest version)"
 echo ""
 # Show Git commands only if Git server is enabled
@@ -173,16 +171,6 @@ UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool upgrade aider-c
 echo "✅ Aider updated successfully!"
 UPDATE_AIDER_EOF
 chmod +x /usr/local/bin/update_aider
-
-# Update Gemini CLI (requires sudo)
-cat > /usr/local/bin/update_gemini << 'UPDATE_GEMINI_EOF'
-#!/bin/bash
-echo "🔄 Updating Gemini CLI..."
-echo "💡 Note: Run with sudo if you get permission errors"
-npm update -g @google/gemini-cli
-echo "✅ Gemini CLI updated successfully!"
-UPDATE_GEMINI_EOF
-chmod +x /usr/local/bin/update_gemini
 
 # Update Claude Code (requires sudo)
 cat > /usr/local/bin/update_claude << 'UPDATE_CLAUDE_EOF'
@@ -609,7 +597,6 @@ All AI tools are pre-installed and ready to use:
 ### Command Line Tools
 - `opencode` - Multi-model AI assistant with project analysis
 - `aider` - AI pair programming with file editing
-- `gemini` - Google's AI for code generation
 - `claude` - Anthropic's agentic coding tool
 - `qwen-code` - AI workflow automation and code exploration
 - `codex` - OpenAI Codex CLI (terminal-based ChatGPT)

@@ -909,7 +909,6 @@ grep ENABLE_GIT_SERVER .env
    ```bash
    sudo update_aider
    update_opencode
-   sudo update_gemini
    # See `info` for the full list of update commands
    ```
 

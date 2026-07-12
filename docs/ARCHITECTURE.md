@@ -454,7 +454,6 @@ tmpfs:
 | **Cline** | VS Code Extension | Marketplace | AI file editing |
 | **OpenCode SST** | CLI Tool | Custom installer | Multi-model AI assistant |
 | **Aider** | CLI Tool | pip install | AI pair programming |
-| **Gemini CLI** | CLI Tool | npm install | Google AI integration |
 | **Claude Code** | CLI Tool | Download | Anthropic's agentic tool |
 
 ### Monitoring and Observability
