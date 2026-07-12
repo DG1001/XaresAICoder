@@ -2,14 +2,18 @@ FROM codercom/code-server:latest
 
 USER root
 
-# Silence npm's update-notifier (avoids the "New major version of npm" notice
-# during image builds and in the workspace update_* scripts)
-ENV NO_UPDATE_NOTIFIER=1
+# Silence npm's own update-notifier (avoids the "New major version of npm" notice
+# during image builds and in the workspace update_* scripts). npm honours its
+# NPM_CONFIG_* config via env; NO_UPDATE_NOTIFIER only affects third-party CLIs.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 
-# Install Node.js 22.x from NodeSource (Claude Code >=2.1.193 requires Node >=22)
+# Install Node.js 22.x from NodeSource (Claude Code >=2.1.193 requires Node >=22).
+# Keep the npm bundled with Node — do NOT upgrade to npm >=12, which blocks package
+# lifecycle scripts by default (allowScripts). That breaks the AI tools whose
+# postinstall fetches a native binary (Claude Code's install.cjs, Crush), leaving
+# them non-functional in the image.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && npm install -g npm@latest
+    && apt-get install -y nodejs
 
 # Install other system dependencies including ripgrep for OpenAI Codex
 RUN apt-get update && apt-get install -y \
