@@ -208,8 +208,17 @@ setup_environment() {
             current_subnet="172.30.0.0/16"
         fi
 
-        local suggested_subnet=$(check_internal_network_subnet "$current_subnet")
-        if [ $? -eq 0 ] && [ "$suggested_subnet" != "$current_subnet" ]; then
+        # Assign separately from the declaration: `local x=$(...)` would make $?
+        # the exit status of `local` (always 0), not of the command substitution.
+        local suggested_subnet
+        suggested_subnet=$(check_internal_network_subnet "$current_subnet")
+        local subnet_check_rc=$?
+
+        if [ $subnet_check_rc -ne 0 ] || [ -z "$suggested_subnet" ]; then
+            # No usable subnet determined — keep the existing configuration
+            # rather than writing an empty value into .env.
+            print_warning "Keeping configured internal subnet: $current_subnet"
+        elif [ "$suggested_subnet" != "$current_subnet" ]; then
             print_warning "Using alternative subnet: $suggested_subnet"
             if grep -q "^INTERNAL_NETWORK_SUBNET=" .env; then
                 sed_inplace "s|^INTERNAL_NETWORK_SUBNET=.*|INTERNAL_NETWORK_SUBNET=$suggested_subnet|" .env
@@ -286,8 +295,10 @@ check_internal_network_subnet() {
 
     print_status "Checking internal network subnet: $requested_subnet" >&2
 
-    # Get all existing network subnets
-    local existing_subnets=$(docker network ls --format "{{.Name}}" | while read network; do
+    # Get all existing network subnets, excluding our own internal network:
+    # on a re-deploy it already exists with exactly the requested subnet and
+    # would otherwise be reported as a conflict with itself.
+    local existing_subnets=$(docker network ls --format "{{.Name}}" | grep -v 'xares-internal' | while read network; do
         docker network inspect "$network" --format '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | grep -v ": $" || true
     done)
 
@@ -326,7 +337,9 @@ if conflicts:
                 # Suggest alternative
                 local alternatives=("172.31.0.0/16" "172.25.0.0/16" "10.100.0.0/16")
                 for alt in "${alternatives[@]}"; do
-                    if ! echo "$existing_subnets" | python3 -c "
+                    # The snippet exits 1 on overlap, 0 when the candidate is
+                    # free — so a zero status is what qualifies an alternative.
+                    if echo "$existing_subnets" | python3 -c "
 import sys
 import ipaddress
 requested = ipaddress.IPv4Network('$alt', strict=False)
