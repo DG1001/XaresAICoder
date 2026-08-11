@@ -69,7 +69,14 @@ function formatResponseBody(parsedResponse, detailed) {
     const choice = parsedResponse.choices[0] || {};
     const message = choice.message || {};
     const parts = [];
-    const text = message.content || choice.text;
+    // Reasoning models (e.g. qwen3 via LM Studio) put their whole answer in
+    // reasoning_content and leave content empty, which would render as an
+    // empty turn. Used only as a fallback so models with a normal answer stay
+    // clean, mirroring how Anthropic thinking blocks are dropped above.
+    const reasoning = message.reasoning_content
+      ? `[Reasoning]\n${message.reasoning_content}`
+      : null;
+    const text = message.content || choice.text || reasoning;
     if (text) parts.push(text);
     if (Array.isArray(message.tool_calls)) {
       message.tool_calls.forEach(tc => {

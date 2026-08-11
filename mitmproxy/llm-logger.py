@@ -29,6 +29,166 @@ LLM_DOMAINS = [
     'chatgpt.com',  # Codex CLI with ChatGPT login (streams via WebSocket)
 ]
 
+# Local and self-hosted model servers cannot be matched by host name: they run
+# on host.docker.internal, a LAN IP or any private hostname. They are therefore
+# recognised by their API path instead, which covers LM Studio, Ollama, vLLM,
+# llama.cpp, LocalAI and anything else speaking the OpenAI or Anthropic API.
+# The "model" check further down still filters out non-LLM traffic that happens
+# to share one of these paths.
+LLM_PATH_MARKERS = (
+    '/v1/chat/completions',
+    '/v1/completions',
+    '/v1/messages',
+    '/v1/responses',
+    '/api/chat',      # Ollama native
+    '/api/generate',  # Ollama native
+)
+
+# Extra hosts an operator wants captured, comma separated (e.g. an internal
+# inference gateway that uses a non-standard path).
+LLM_EXTRA_DOMAINS = [
+    d.strip() for d in os.environ.get('LLM_EXTRA_DOMAINS', '').split(',') if d.strip()
+]
+
+
+def is_llm_host(host):
+    """True if the host is a known or operator-configured LLM endpoint."""
+    host = host or ''
+    return (any(domain in host for domain in LLM_DOMAINS)
+            or any(domain in host for domain in LLM_EXTRA_DOMAINS))
+
+
+def is_llm_request(flow):
+    """True if this flow looks like a call to an LLM API, cloud or self-hosted."""
+    if is_llm_host(flow.request.host):
+        return True
+    path = (flow.request.path or '').split('?')[0].rstrip('/')
+    return any(path.endswith(marker) for marker in LLM_PATH_MARKERS)
+
+
+def parse_openai_stream(body):
+    """Reassemble an OpenAI-style SSE stream into a chat.completion shape.
+
+    Streamed responses arrive as many `data: {...}` chunks carrying deltas, so
+    json.loads() on the raw body fails and the conversation would be stored
+    without a parsed_response. Local servers (LM Studio, Ollama's OpenAI
+    endpoint, vLLM, llama.cpp) stream this way by default.
+    """
+    content = ''
+    reasoning = ''
+    tool_calls = {}
+    finish_reason = None
+    model = None
+    resp_id = None
+    usage = None
+
+    for line in body.split('\n'):
+        line = line.strip()
+        if not line.startswith('data:'):
+            continue
+        payload = line[len('data:'):].strip()
+        if not payload or payload == '[DONE]':
+            continue
+        try:
+            chunk = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        model = chunk.get('model') or model
+        resp_id = chunk.get('id') or resp_id
+        # Only sent when the client asks for stream_options.include_usage
+        if chunk.get('usage'):
+            usage = chunk['usage']
+
+        for choice in chunk.get('choices') or []:
+            delta = choice.get('delta') or {}
+            if delta.get('content'):
+                content += delta['content']
+            # Reasoning models emit their text here instead of in content
+            if delta.get('reasoning_content'):
+                reasoning += delta['reasoning_content']
+            if choice.get('finish_reason'):
+                finish_reason = choice['finish_reason']
+
+            for tc in delta.get('tool_calls') or []:
+                idx = tc.get('index', 0)
+                slot = tool_calls.setdefault(idx, {
+                    'id': None,
+                    'type': 'function',
+                    'function': {'name': '', 'arguments': ''}
+                })
+                if tc.get('id'):
+                    slot['id'] = tc['id']
+                fn = tc.get('function') or {}
+                if fn.get('name'):
+                    slot['function']['name'] = fn['name']
+                if fn.get('arguments'):
+                    slot['function']['arguments'] += fn['arguments']
+
+    message = {'role': 'assistant', 'content': content or None}
+    if reasoning:
+        message['reasoning_content'] = reasoning
+    if tool_calls:
+        message['tool_calls'] = [tool_calls[i] for i in sorted(tool_calls)]
+
+    return {
+        'id': resp_id,
+        'model': model,
+        'choices': [{'index': 0, 'message': message, 'finish_reason': finish_reason}],
+        'usage': usage
+    }
+
+
+def parse_ollama_stream(body):
+    """Reassemble Ollama's native NDJSON stream (/api/chat, /api/generate).
+
+    One JSON object per line, each carrying an incremental message.content or
+    response fragment — again not parseable as a single JSON document.
+    """
+    content = ''
+    model = None
+    done_reason = None
+    usage = None
+
+    for line in body.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            chunk = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        model = chunk.get('model') or model
+        # /api/chat carries message.content, /api/generate carries response
+        msg = chunk.get('message') or {}
+        if msg.get('content'):
+            content += msg['content']
+        elif chunk.get('response'):
+            content += chunk['response']
+
+        if chunk.get('done'):
+            done_reason = chunk.get('done_reason') or 'stop'
+            if chunk.get('prompt_eval_count') or chunk.get('eval_count'):
+                usage = {
+                    'prompt_tokens': chunk.get('prompt_eval_count', 0),
+                    'completion_tokens': chunk.get('eval_count', 0),
+                    'total_tokens': (chunk.get('prompt_eval_count', 0)
+                                     + chunk.get('eval_count', 0))
+                }
+
+    return {
+        'id': None,
+        'model': model,
+        'choices': [{
+            'index': 0,
+            'message': {'role': 'assistant', 'content': content or None},
+            'finish_reason': done_reason
+        }],
+        'usage': usage
+    }
+
+
 class LLMConversationLogger:
     def __init__(self):
         os.makedirs(LOG_DIR, exist_ok=True)
@@ -109,7 +269,7 @@ class LLMConversationLogger:
         # Track ALL domains for whitelist generation (before LLM check)
         self._track_domain(flow)
 
-        if not any(domain in flow.request.host for domain in LLM_DOMAINS):
+        if not is_llm_request(flow):
             return
 
         client_ip = flow.client_conn.peername[0]
@@ -244,16 +404,26 @@ class LLMConversationLogger:
                         'content': combined_content,
                         'usage': usage_data
                     }
+                elif resp_body.lstrip().startswith('data:') or '\ndata:' in resp_body:
+                    # OpenAI-compatible SSE stream — the default for local
+                    # servers and for OpenAI itself when stream=true.
+                    log_data['parsed_response'] = parse_openai_stream(resp_body)
                 else:
-                    # Regular JSON response (OpenAI, OpenCode, etc.)
-                    resp_json = json.loads(resp_body)
-                    log_data['parsed_response'] = {
-                        'id': resp_json.get('id'),
-                        'model': resp_json.get('model'),
-                        'choices': resp_json.get('choices'),
-                        'content': resp_json.get('content'),
-                        'usage': resp_json.get('usage')
-                    }
+                    try:
+                        resp_json = json.loads(resp_body)
+                    except json.JSONDecodeError:
+                        # Ollama's native endpoints stream newline-delimited
+                        # JSON, which is not a single parseable document.
+                        log_data['parsed_response'] = parse_ollama_stream(resp_body)
+                    else:
+                        # Regular JSON response (OpenAI, OpenCode, etc.)
+                        log_data['parsed_response'] = {
+                            'id': resp_json.get('id'),
+                            'model': resp_json.get('model'),
+                            'choices': resp_json.get('choices'),
+                            'content': resp_json.get('content'),
+                            'usage': resp_json.get('usage')
+                        }
         except (json.JSONDecodeError, AttributeError, TypeError, KeyError) as e:
             ctx.log.warn(f"Failed to parse payload for {log_data['url']}: {type(e).__name__}")
 
@@ -323,7 +493,7 @@ class LLMConversationLogger:
 
     def websocket_message(self, flow: http.HTTPFlow):
         """Collect text frames for LLM domains (e.g. chatgpt.com/backend-api/codex/responses)."""
-        if not any(domain in flow.request.host for domain in LLM_DOMAINS):
+        if not is_llm_host(flow.request.host):
             return
         try:
             m = flow.websocket.messages[-1]
