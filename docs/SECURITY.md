@@ -372,6 +372,49 @@ graph TD
     C --> I[Password can be added at any time]
 ```
 
+### Git Server Credentials Are Shared With Every Workspace
+
+When `ENABLE_GIT_SERVER=true`, `server/src/services/docker.js` injects `GIT_ADMIN_USER`
+and `GIT_ADMIN_PASSWORD` as environment variables into **every** workspace container —
+not only into those created with the "create Git repository" option. Workspaces that do
+have a repository additionally carry the credential inside the remote URL in
+`.git/config`.
+
+There is no isolation here: a single `printenv GIT_ADMIN_PASSWORD` inside any workspace
+reveals it. Treat the credential as disclosed the moment a workspace is handed to someone
+else.
+
+**If the account is a Forgejo administrator — which is the default, since the account is
+created with `--admin` — every workspace holder gains full administrative access to the
+Git server, including the web UI and the admin API.**
+
+Recommended hardening for shared or workshop use:
+
+| Measure | Why |
+|---|---|
+| Demote `GIT_ADMIN_USER` to a regular user | The platform only needs `POST /api/v1/user/repos`, `GET /api/v1/repos/{user}/{repo}` and `/api/v1/version` — none require admin rights |
+| Keep private repositories under a separate account | A non-admin account cannot read repositories owned by others |
+| Use an access token instead of the account password | A token works for git-over-HTTP and the API but cannot log into the web UI. Scopes: `write:repository` **and** `write:user` |
+| Set `GIT_ADMIN_BOOTSTRAP_PASSWORD` | Account creation in `deploy.sh` / `setup-forgejo.sh` must not use the token — it would become the account password |
+
+Note that a demoted account still grants **write access to all repositories it owns**, so
+participants can modify each other's repositories. That is acceptable for disposable
+workshop repositories; anything stronger requires a separate Forgejo account per
+workspace.
+
+Verification — run these from inside a workspace; all three must fail:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" http://forgejo:3000/api/v1/admin/users   # expect 403
+git clone http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/<other>/<private>.git  # expect "not found"
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" http://forgejo:3000/api/v1/repos/<other>/<private>  # expect 404
+```
+
+See [INSTALLATION.md](INSTALLATION.md#git-server-configuration) for the configuration
+details.
+
 ### VS Code Authentication
 
 Protected workspaces use VS Code's built-in authentication, controlled by the entrypoint script which reads an optional override file:

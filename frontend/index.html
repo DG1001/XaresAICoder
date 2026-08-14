@@ -422,36 +422,52 @@
                             <h4>Workspace Git Commands</h4>
                             <p>Use these commands <strong>inside your workspace containers</strong> to work with Git repositories:</p>
                             
+                            <p>Every workspace already carries the credentials in the environment variables
+                                <code>$GIT_ADMIN_USER</code> and <code>$GIT_ADMIN_PASSWORD</code>, so the commands below
+                                work as-is — no need to type a password anywhere.</p>
+
                             <div class="git-commands">
                                 <div class="command-section">
                                     <h5>🆕 Create New Repository</h5>
-                                    <code>curl -u developer:admin123! -X POST \<br>&nbsp;&nbsp;-H "Content-Type: application/json" \<br>&nbsp;&nbsp;-d '{"name":"my-project","description":"My new project","private":false}' \<br>&nbsp;&nbsp;http://forgejo:3000/api/v1/user/repos</code>
+                                    <code>curl -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" -X POST \<br>&nbsp;&nbsp;-H "Content-Type: application/json" \<br>&nbsp;&nbsp;-d '{"name":"my-project","description":"My new project","private":false}' \<br>&nbsp;&nbsp;http://forgejo:3000/api/v1/user/repos</code>
                                     <p>Replace <code>my-project</code> with your desired repository name.</p>
                                 </div>
-                                
+
                                 <div class="command-section">
                                     <h5>🔗 Clone Repository</h5>
-                                    <code>git clone http://developer:admin123\!@forgejo:3000/developer/repo.git</code>
+                                    <code>git clone http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/$GIT_ADMIN_USER/repo.git</code>
                                 </div>
-                                
+
                                 <div class="command-section">
                                     <h5>📂 Add Remote to Existing Project</h5>
-                                    <code>git remote add origin http://developer:admin123\!@forgejo:3000/developer/repo.git</code>
+                                    <code>git remote add origin http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/$GIT_ADMIN_USER/repo.git</code>
                                     <br>
                                     <code>git push -u origin main</code>
                                 </div>
-                                
+
+                                <div class="command-section">
+                                    <h5>⚡ Shortcut</h5>
+                                    <code>setup_local_remote</code>
+                                    <p>Run this inside an existing Git repository — it creates the remote repository
+                                        and wires up <code>origin</code> for you.</p>
+                                </div>
+
                                 <div class="command-section">
                                     <h5>🌐 Web Access</h5>
-                                    <p>Manage repositories through the web interface:</p>
-                                    <code>http://localhost/git/</code>
-                                    <p>Login: <strong>developer</strong> / <strong>admin123!</strong></p>
+                                    <p>Browse repositories in the web interface:</p>
+                                    <code><a href="/git/" target="_blank" rel="noopener">/git/</a></code>
+                                    <p>The credentials in the workspace are meant for Git and the API. Depending on how
+                                        this instance is configured they may be an access token, which cannot be used to
+                                        sign in to the web interface.</p>
                                 </div>
                             </div>
-                            
+
                             <div class="setup-note">
-                                <p><strong>Note:</strong> These URLs work from inside workspace containers. Replace <code>my-project</code> and <code>repo</code> with your actual repository name.</p>
+                                <p><strong>Note:</strong> The <code>forgejo:3000</code> hostname resolves only inside workspace containers. Replace <code>my-project</code> and <code>repo</code> with your actual repository name.</p>
                                 <p><strong>Workflow:</strong> Create repo → Clone/Add remote → Push your code. No need to use the web interface for basic repository creation!</p>
+                                <p><strong>Private repositories:</strong> The account above may not be the owner of every
+                                    repository on this server. Repositories owned by another account are not visible with
+                                    these credentials.</p>
                             </div>
                         </div>
                     </div>

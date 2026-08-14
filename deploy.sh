@@ -386,6 +386,9 @@ setup_git_server() {
         local PROTOCOL=$(grep "^PROTOCOL=" .env | cut -d'=' -f2)
         local GIT_ADMIN_USER=$(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2)
         local GIT_ADMIN_PASSWORD=$(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)
+        # Password used only to CREATE the Forgejo account. Kept separate because
+        # GIT_ADMIN_PASSWORD is shipped into every workspace and may hold a token.
+        local GIT_ADMIN_BOOTSTRAP_PASSWORD=$(grep "^GIT_ADMIN_BOOTSTRAP_PASSWORD=" .env | cut -d'=' -f2)
         local GIT_ADMIN_EMAIL=$(grep "^GIT_ADMIN_EMAIL=" .env | cut -d'=' -f2)
         local GIT_SITE_NAME=$(grep "^GIT_SITE_NAME=" .env | cut -d'=' -f2)
         
@@ -395,11 +398,12 @@ setup_git_server() {
         PROTOCOL=${PROTOCOL:-http}
         GIT_ADMIN_USER=${GIT_ADMIN_USER:-developer}
         GIT_ADMIN_PASSWORD=${GIT_ADMIN_PASSWORD:-admin123!}
+        GIT_ADMIN_BOOTSTRAP_PASSWORD=${GIT_ADMIN_BOOTSTRAP_PASSWORD:-$GIT_ADMIN_PASSWORD}
         GIT_ADMIN_EMAIL=${GIT_ADMIN_EMAIL:-gitadmin@xaresaicoder.local}
         GIT_SITE_NAME=${GIT_SITE_NAME:-XaresAICoder Git Server}
         
         # Export variables for the setup script
-        export BASE_DOMAIN BASE_PORT PROTOCOL GIT_ADMIN_USER GIT_ADMIN_PASSWORD GIT_ADMIN_EMAIL GIT_SITE_NAME
+        export BASE_DOMAIN BASE_PORT PROTOCOL GIT_ADMIN_USER GIT_ADMIN_PASSWORD GIT_ADMIN_BOOTSTRAP_PASSWORD GIT_ADMIN_EMAIL GIT_SITE_NAME
         export FORGEJO_CONTAINER_NAME="xaresaicoder-forgejo"
         
         # Check if setup script exists
@@ -442,7 +446,7 @@ setup_git_server() {
         if docker exec -u git "$FORGEJO_CONTAINER_NAME" forgejo admin user create \
             --admin \
             --username "$GIT_ADMIN_USER" \
-            --password "$GIT_ADMIN_PASSWORD" \
+            --password "$GIT_ADMIN_BOOTSTRAP_PASSWORD" \
             --email "$GIT_ADMIN_EMAIL" 2>/dev/null; then
             print_success "Admin user '$GIT_ADMIN_USER' created successfully!"
         else
@@ -706,7 +710,8 @@ show_deployment_info() {
     if [ "$GIT_SERVER_ENABLED" = "true" ]; then
         echo "  🗂️  Git Server (Forgejo):"
         echo "     $MAIN_URL/git/"
-        echo "     Admin: $(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2) / $(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)"
+        # Prefer the bootstrap password here: GIT_ADMIN_PASSWORD may hold a token.
+        echo "     Admin: $(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2) / $(grep -m1 -E "^GIT_ADMIN_(BOOTSTRAP_)?PASSWORD=" .env | cut -d'=' -f2-)"
         echo
     fi
     

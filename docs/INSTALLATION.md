@@ -165,10 +165,65 @@ curl http://localhost/api/health
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GIT_ADMIN_USER` | developer | Git server admin username |
-| `GIT_ADMIN_PASSWORD` | admin123! | Git server admin password |
+| `GIT_ADMIN_USER` | developer | Git server account used by the platform |
+| `GIT_ADMIN_PASSWORD` | admin123! | Credential shipped **into every workspace** — see warning below |
+| `GIT_ADMIN_BOOTSTRAP_PASSWORD` | *(falls back to `GIT_ADMIN_PASSWORD`)* | Real account password, used only to create the account |
 | `GIT_ADMIN_EMAIL` | gitadmin@xaresaicoder.local | Admin email |
 | `GIT_SITE_NAME` | XaresAICoder Git Server | Git server site name |
+
+> **⚠️ `GIT_ADMIN_PASSWORD` leaves the server.** When `ENABLE_GIT_SERVER=true`, it is
+> injected as an environment variable into **every** workspace container — not just into
+> those created with the "create Git repository" option — and it is embedded in the git
+> remote URL of workspaces that have a repository. Anyone who receives a workspace can
+> read it with a single `printenv`.
+
+This has three consequences for any setup where workspaces are handed to other people
+(workshops, training, shared machines):
+
+**1. The account must not be a Forgejo administrator.** By default the first Forgejo
+account is created with `--admin`, which would give every workspace holder full
+administrative access to the instance, including the web UI. The platform itself needs no
+administrative rights — it only calls `POST /api/v1/user/repos`,
+`GET /api/v1/repos/{user}/{repo}` and `/api/v1/version`. Create a separate personal
+administrator account and demote `GIT_ADMIN_USER` to a regular user.
+
+**2. Private repositories belong to a different account.** A demoted `GIT_ADMIN_USER`
+cannot see repositories owned by anyone else, so keep anything confidential under your
+personal account. Moving an existing repository is a single API call:
+
+```bash
+curl -u "<admin>:<password>" -X POST \
+  "http://<forgejo>/api/v1/repos/<old-owner>/<repo>/transfer" \
+  -H 'Content-Type: application/json' -d '{"new_owner":"<new-owner>"}'
+```
+
+**3. Prefer an access token over the account password.** A Forgejo access token works for
+git-over-HTTP *and* for the API, but cannot be used to log into the web UI. Put the token
+into `GIT_ADMIN_PASSWORD` and the real password into `GIT_ADMIN_BOOTSTRAP_PASSWORD`:
+
+```bash
+curl -u "<user>:<password>" -X POST \
+  "http://<forgejo>/api/v1/users/<user>/tokens" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"xaresaicoder-platform","scopes":["write:repository","write:user"]}'
+```
+
+Both scopes are required: `POST /api/v1/user/repos` is routed under `/user/` and returns
+`403` with `write:repository` alone.
+
+Keeping the two variables separate matters because `deploy.sh` and `setup-forgejo.sh`
+create the Forgejo account with `--password`. If the token were used there, it would
+simply *become* the account password — and web login would be possible again. Existing
+installations are unaffected: account creation is skipped when the user already exists.
+
+After changing the credential, run `docker compose up -d server` so the platform picks it
+up, and rewrite the remotes of existing workspaces — they carry the old credential in
+`.git/config`:
+
+```bash
+docker exec <workspace> sh -c 'cd /workspace && git remote set-url origin \
+  "http://<user>:<token>@forgejo:3000/<owner>/<repo>.git"'
+```
 
 ### Docker Network Settings
 
