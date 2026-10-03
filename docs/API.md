@@ -973,13 +973,16 @@ Assigns the next free workspace to a participant.
 ```json
 {
   "workspaceUrl": "http://workshop-1.localhost/",
-  "projectName": "Workshop 1"
+  "projectName": "Workshop 1",
+  "claimToken": "9f2c4e0b7a1d4c3e8b6a5f4e3d2c1b0a"
 }
 ```
 
+`claimToken` is a secret for this participant only; the landing page stores it
+in `localStorage` to show the workspace again later (see My Claim).
+
 **Response** (Duplicate - 409): no workspace URL is returned, so knowing a
-participant's email address does not reveal their workspace. The landing page
-remembers the participant's own claim in the browser (`localStorage`).
+participant's email address does not reveal their workspace.
 ```json
 {
   "error": "Diese E-Mail-Adresse ist bereits registriert. Falls du den Link zu deinem Workspace verloren hast, wende dich bitte an die Workshop-Leitung."
@@ -996,6 +999,18 @@ hold one workspace and no workspace is handed out twice.
   "error": "Leider sind keine Workspaces mehr verfügbar. Bitte wenden Sie sich an den Workshop-Leiter."
 }
 ```
+
+### My Claim
+
+Returns the workspace for a claim token from `POST /claim` while the claim is
+active. Used by the landing page to show a participant's workspace again.
+
+**Endpoint**: `POST /api/workshop/my-claim`
+
+**Request Body**: `{ "token": "<claimToken>" }`
+
+**Response**: `200` with `{ "workspaceUrl", "projectName" }`; `404` if the claim
+was released (or the token is unknown); `400` for a malformed token.
 
 ### List Claims (Admin)
 

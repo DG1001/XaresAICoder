@@ -368,7 +368,7 @@ After cloning workspaces for a workshop, use the built-in landing page to distri
 3. The system assigns the next free running workspace from the configured group
 4. The workspace URL is shown immediately with a copy button and a direct link
 
-Each email address can only be registered once. The landing page remembers the participant's workspace in their browser, so reopening the page on the same device shows it again; registering the same email from another device is rejected (the server never reveals a workspace URL by email) — participants who lost their link ask the workshop lead, who sees all assignments on the admin page.
+Each email address can only be registered once. The landing page keeps a secret claim token in the participant's browser and asks the server for the workspace on reload, so reopening the page on the same device shows it again — until the admin releases the claim ("Not your workspace?" lets the next person on a shared computer register); registering the same email from another device is rejected (the server never reveals a workspace URL by email) — participants who lost their link ask the workshop lead, who sees all assignments on the admin page.
 
 ### Setup (Admin)
 

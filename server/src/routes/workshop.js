@@ -179,13 +179,20 @@ router.post('/claim', async (req, res) => {
         projectName:  freeProject.projectName || freeProject.name,
         workspaceUrl: freeProject.workspaceUrl,
         group:        getWorkshopGroup(),
-        claimedAt:    new Date().toISOString()
+        claimedAt:    new Date().toISOString(),
+        // Secret handed only to this participant's browser, so the landing
+        // page can show the workspace again later (see POST /my-claim)
+        token:        crypto.randomBytes(16).toString('hex')
       };
 
       claims.set(freeProject.projectId, claim);
       await saveClaims();
 
-      return { status: 200, body: { workspaceUrl: freeProject.workspaceUrl, projectName: claim.projectName } };
+      return { status: 200, body: {
+        workspaceUrl: freeProject.workspaceUrl,
+        projectName:  claim.projectName,
+        claimToken:   claim.token
+      } };
     });
 
     res.status(result.status).json(result.body);
@@ -193,6 +200,23 @@ router.post('/claim', async (req, res) => {
     console.error('Workshop claim error:', error);
     res.status(500).json({ error: 'Interner Fehler. Bitte versuche es erneut.' });
   }
+});
+
+// POST /api/workshop/my-claim
+// Returns the workspace for a claim token issued by /claim, as long as the
+// claim is still active. 404 once it was released, so a browser never keeps
+// showing a workspace that may already belong to someone else.
+router.post('/my-claim', (req, res) => {
+  const { token } = req.body || {};
+  if (typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token)) {
+    return res.status(400).json({ error: 'Ungültiges Token.' });
+  }
+  for (const claim of claims.values()) {
+    if (claim.token && safeEqual(claim.token, token)) {
+      return res.json({ workspaceUrl: claim.workspaceUrl, projectName: claim.projectName });
+    }
+  }
+  res.status(404).json({ error: 'Keine aktive Zuordnung gefunden.' });
 });
 
 // GET /api/workshop/claims  (admin)
@@ -224,7 +248,8 @@ router.post('/claims/:projectId/release', async (req, res) => {
       return res.status(404).json({ error: 'Claim nicht gefunden.' });
     }
 
-    const claim = claims.get(projectId);
+    // The token is only useful while the claim is active
+    const { token, ...claim } = claims.get(projectId);
 
     // Move to history log
     history.push({
