@@ -1111,20 +1111,20 @@ class XaresAICoder {
                 this.workspacePasswords.delete(projectId);
                 this.removeProjectFromStorage(projectId);
                 this.loadProjects();
-                this.hidePasswordModal();
+                this.closePasswordModalFor('delete', projectId);
             } else {
                 if (response.status === 401) {
-                    this.showPasswordError('Invalid password. Please try again.');
+                    this.showActionPasswordError('delete', projectId);
                 } else {
                     this.showError(data.message || 'Failed to delete project');
-                    this.hidePasswordModal();
+                    this.closePasswordModalFor('delete', projectId);
                 }
             }
 
         } catch (error) {
             console.error('Error deleting project:', error);
             this.showError('Failed to delete project. Please try again.');
-            this.hidePasswordModal();
+            this.closePasswordModalFor('delete', projectId);
         }
     }
 
@@ -1158,20 +1158,20 @@ class XaresAICoder {
             if (response.ok) {
                 if (password) this.workspacePasswords.set(projectId, password);
                 this.loadProjects(); // Refresh the list to show updated status
-                this.hidePasswordModal();
+                this.closePasswordModalFor('start', projectId);
             } else {
                 if (response.status === 401) {
-                    this.showPasswordError('Invalid password. Please try again.');
+                    this.showActionPasswordError('start', projectId);
                 } else {
                     this.showError(data.message || 'Failed to start project');
-                    this.hidePasswordModal();
+                    this.closePasswordModalFor('start', projectId);
                 }
             }
 
         } catch (error) {
             console.error('Error starting project:', error);
             this.showError('Failed to start project. Please try again.');
-            this.hidePasswordModal();
+            this.closePasswordModalFor('start', projectId);
         } finally {
             this.setProjectActionLoading(projectId, false);
         }
@@ -1210,20 +1210,20 @@ class XaresAICoder {
             if (response.ok) {
                 if (password) this.workspacePasswords.set(projectId, password);
                 this.loadProjects(); // Refresh the list to show updated status
-                this.hidePasswordModal();
+                this.closePasswordModalFor('stop', projectId);
             } else {
                 if (response.status === 401) {
-                    this.showPasswordError('Invalid password. Please try again.');
+                    this.showActionPasswordError('stop', projectId);
                 } else {
                     this.showError(data.message || 'Failed to stop project');
-                    this.hidePasswordModal();
+                    this.closePasswordModalFor('stop', projectId);
                 }
             }
 
         } catch (error) {
             console.error('Error stopping project:', error);
             this.showError('Failed to stop project. Please try again.');
-            this.hidePasswordModal();
+            this.closePasswordModalFor('stop', projectId);
         } finally {
             this.setProjectActionLoading(projectId, false);
         }
@@ -1457,6 +1457,10 @@ class XaresAICoder {
     }
 
     showPasswordModal(action, projectId, projectName) {
+        // A prompt that is replaced counts as cancelled, so nobody awaits it forever
+        if (this.pendingPasswordAction && this.pendingPasswordAction.resolve) {
+            this.pendingPasswordAction.resolve(null);
+        }
         const modal = document.getElementById('passwordVerifyModal');
         const messageElement = document.getElementById('passwordVerifyMessage');
         const passwordInput = document.getElementById('verifyPasswordInput');
@@ -1489,6 +1493,26 @@ class XaresAICoder {
             this.pendingPasswordAction.resolve(null);
         }
         this.pendingPasswordAction = null;
+    }
+
+    isPasswordPromptFor(action, projectId) {
+        const pending = this.pendingPasswordAction;
+        return !!pending && pending.action === action && pending.projectId === projectId;
+    }
+
+    // Start/stop/delete finish asynchronously (start waits for readiness), so
+    // they must only close the modal if it still shows their own prompt –
+    // not a password prompt the user opened for another workspace meanwhile.
+    closePasswordModalFor(action, projectId) {
+        if (this.isPasswordPromptFor(action, projectId)) this.hidePasswordModal();
+    }
+
+    showActionPasswordError(action, projectId) {
+        if (this.isPasswordPromptFor(action, projectId)) {
+            this.showPasswordError('Invalid password. Please try again.');
+        } else {
+            this.showError('Invalid password for protected workspace.');
+        }
     }
 
     // Shows the password modal and resolves with the entered password,
@@ -1550,9 +1574,10 @@ class XaresAICoder {
 
     handlePasswordConfirm() {
         const passwordInput = document.getElementById('verifyPasswordInput');
-        const password = passwordInput.value.trim();
-        
-        if (!password) {
+        // Not trimmed: the password must match exactly what was set
+        const password = passwordInput.value;
+
+        if (!password.trim()) {
             this.showPasswordError('Please enter the workspace password.');
             return;
         }
@@ -2540,7 +2565,7 @@ class XaresAICoder {
         errorEl.style.display = 'none';
 
         const action = document.querySelector('input[name="passwordAction"]:checked').value;
-        const currentPassword = document.getElementById('currentPasswordInput').value.trim();
+        const currentPassword = document.getElementById('currentPasswordInput').value; // exact match, not trimmed
         const newPassword = document.getElementById('newPasswordInput').value.trim();
 
         // Validate current password is provided if workspace is protected
@@ -2593,6 +2618,12 @@ class XaresAICoder {
             const data = await response.json();
 
             if (response.ok) {
+                // Keep the remembered password in sync for protected requests
+                if (action === 'remove') {
+                    this.workspacePasswords.delete(projectId);
+                } else {
+                    this.workspacePasswords.set(projectId, newPassword);
+                }
                 this.hidePasswordManageModal();
                 this.loadProjects();
 
