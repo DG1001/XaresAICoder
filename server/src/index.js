@@ -26,7 +26,9 @@ app.get('/api/config', (req, res) => {
     enableProxy: process.env.ENABLE_PROXY === 'true',
     baseDomain: process.env.BASE_DOMAIN || 'localhost',
     basePort: process.env.BASE_PORT || '80',
-    protocol: process.env.PROTOCOL || 'http'
+    protocol: process.env.PROTOCOL || 'http',
+    // Default for the per-workspace "allow sudo" choice
+    workspaceSudoDefault: process.env.WORKSPACE_SUDO_ENABLED === 'true'
   };
 
   if (config.gitServerEnabled) {

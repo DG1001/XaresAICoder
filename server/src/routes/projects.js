@@ -73,7 +73,11 @@ function clampInt(value, fallback, min, max) {
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group, proxyMode: rawProxyMode, useProxy } = req.body;
+    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group, proxyMode: rawProxyMode, useProxy, sudoEnabled } = req.body;
+
+    if (sudoEnabled !== undefined && typeof sudoEnabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid request', message: 'sudoEnabled must be a boolean' });
+    }
 
     // Determine proxyMode: support new proxyMode field, with backward compat for old useProxy boolean
     let proxyMode = rawProxyMode;
@@ -148,7 +152,8 @@ router.post('/create', async (req, res) => {
       gitUsername: gitUsername || null,
       gitToken: gitToken || null,
       group: group || null, // Will default to 'Uncategorized' in service
-      proxyMode: proxyMode || 'none'
+      proxyMode: proxyMode || 'none',
+      sudoEnabled // undefined -> WORKSPACE_SUDO_ENABLED default
     });
     
     res.status(201).json({
@@ -300,7 +305,11 @@ router.post('/:projectId/stop', async (req, res) => {
 router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { count, password, keepAiLogins } = req.body;
+    const { count, password, keepAiLogins, sudoEnabled } = req.body;
+
+    if (sudoEnabled !== undefined && typeof sudoEnabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid request', message: 'sudoEnabled must be a boolean' });
+    }
 
     // Validate count
     if (count === undefined || count === null) {
@@ -333,7 +342,8 @@ router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
 
     const clones = await workspaceService.cloneProject(projectId, cloneCount, {
       password,
-      keepAiLogins: keepAiLogins === true
+      keepAiLogins: keepAiLogins === true,
+      sudoEnabled
     });
 
     res.status(202).json({

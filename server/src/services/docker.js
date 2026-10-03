@@ -59,6 +59,24 @@ const PLATFORM_ENV_KEYS = [
   'NVIDIA_VISIBLE_DEVICES', 'NVIDIA_DRIVER_CAPABILITIES'
 ];
 
+// Prepends sandbox_mode = "danger-full-access" to ~/.codex/config.toml unless a
+// sandbox_mode is already configured. Under Docker's default seccomp profile
+// Codex's own sandbox (bubblewrap) cannot create user namespaces; the
+// workspace container is the sandbox. Prepended because TOML top-level keys
+// must precede any [table].
+const CODEX_SANDBOX_DEFAULT_SCRIPT = `
+f="$HOME/.codex/config.toml"
+mkdir -p "$HOME/.codex"
+if ! grep -qs '^[[:space:]]*sandbox_mode[[:space:]]*=' "$f"; then
+  {
+    echo '# Set by XaresAICoder: this workspace container is the sandbox. Codex'"'"'s own'
+    echo '# sandbox (bubblewrap) needs user namespaces, which the container blocks.'
+    echo 'sandbox_mode = "danger-full-access"'
+    if [ -f "$f" ]; then cat "$f"; fi
+  } > "$f.tmp" && mv "$f.tmp" "$f"
+fi
+`;
+
 // Runs (as root, without network) in a throwaway container created from a
 // clone snapshot. Removes the source workspace's credentials and histories so
 // they are not handed to every clone. AI tool logins and transcripts are only
@@ -126,8 +144,15 @@ class DockerService {
     this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
     this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
     this.squidProxyHost = 'xaresaicoder-squid-proxy:3128'; // Squid proxy container for security whitelist filtering
-    // Workspace sudo privileges configuration
+    // Default for workspaces that do not choose themselves (per-workspace sudoEnabled)
     this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
+    // 'default' = Docker's default seccomp profile; 'unconfined' only if some
+    // tool really needs syscalls the default profile blocks
+    this.seccompMode = process.env.WORKSPACE_SECCOMP === 'unconfined' ? 'unconfined' : 'default';
+    // Per-workspace writable layer limit (e.g. '20G'); only enforceable on
+    // overlay2 backed by xfs with project quotas (see getHostCapabilities)
+    this.diskLimit = (process.env.WORKSPACE_DISK_LIMIT || '').trim();
+    this.hostCapabilities = null;
     // Security and isolation configuration
     this.securityConfig = {
       pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 2048,
@@ -154,7 +179,9 @@ class DockerService {
     gitRepository = null,
     gitUrl = null,
     gitUsername = null,
-    gitToken = null
+    gitToken = null,
+    sudoEnabled = this.workspaceSudoEnabled,
+    hostCapabilities = { ncpu: null, diskQuota: false }
   }) {
     const containerName = `workspace-${projectId}`;
     const useProxy = proxyMode !== 'none';
@@ -256,7 +283,8 @@ class DockerService {
       },
       HostConfig: {
         Memory: this.parseMemoryLimit(memoryLimit),
-        CpuShares: this.parseCpuCores(cpuCores),
+        // Hard CPU limit (CpuShares was only a relative weight under contention)
+        NanoCpus: this.cpuCoresToNanoCpus(cpuCores, hostCapabilities.ncpu),
         NetworkMode: workspaceNetwork,
         PidMode: '', // Isolated PID namespace (default, but explicit for security)
         IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
@@ -269,10 +297,15 @@ class DockerService {
         // running workspaces accumulate dozens of them.
         Init: true,
         SecurityOpt: [
-          // Conditionally prevent privilege escalation based on sudo configuration
-          ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
-          'seccomp=unconfined' // Allow system calls needed for development tools (debuggers, etc.)
+          // Without sudo, block privilege escalation (setuid binaries) entirely
+          ...(sudoEnabled ? [] : ['no-new-privileges:true']),
+          // Docker's default seccomp profile unless explicitly configured otherwise
+          ...(this.seccompMode === 'unconfined' ? ['seccomp=unconfined'] : [])
         ],
+        // Limit the container's writable layer where the host supports it
+        ...(this.diskLimit && hostCapabilities.diskQuota && {
+          StorageOpt: { size: this.diskLimit }
+        }),
         // Drop all capabilities, then add back only what's needed for development
         CapDrop: ['ALL'],
         CapAdd: [
@@ -335,7 +368,8 @@ class DockerService {
       const { useProxy, spec } = this.buildContainerSpec(projectId, {
         ...authOptions,
         image: this.codeServerImage,
-        projectType
+        projectType,
+        hostCapabilities: await this.getHostCapabilities()
       });
       const container = await this.docker.createContainer(spec);
 
@@ -352,6 +386,7 @@ class DockerService {
 
       // Initialize git repository and project structure after container is ready
       await this.initializeProject(container, projectType, proxyMode);
+      await this.ensureCodexSandboxDefault(container);
       console.log(`Initialization completed for ${containerName}`);
 
       this.activeContainers.set(projectId, {
@@ -1562,6 +1597,24 @@ fi`.trim();
     }
   }
 
+  // See CODEX_SANDBOX_DEFAULT_SCRIPT. Only needed with the default seccomp
+  // profile; non-fatal.
+  async ensureCodexSandboxDefault(container) {
+    if (this.seccompMode !== 'default') return;
+    try {
+      const exec = await container.exec({
+        Cmd: ['sh', '-c', CODEX_SANDBOX_DEFAULT_SCRIPT],
+        User: 'coder',
+        Env: ['HOME=/home/coder'],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+      await this.streamToString(await exec.start());
+    } catch (error) {
+      console.warn(`Could not set Codex sandbox default: ${error.message}`);
+    }
+  }
+
   /**
    * Remove the source workspace's credentials from a raw clone snapshot.
    * Runs CLONE_CLEANUP_SCRIPT once in a throwaway container (as root, no
@@ -1626,7 +1679,8 @@ fi`.trim();
       const { useProxy, spec } = this.buildContainerSpec(projectId, {
         ...options,
         image: snapshotImage,
-        projectType: 'clone'
+        projectType: 'clone',
+        hostCapabilities: await this.getHostCapabilities()
       });
       // The snapshot's image config still carries the source's environment;
       // container env only overrides keys it sets, so blank out the rest
@@ -1644,6 +1698,7 @@ fi`.trim();
 
       // Wait for code-server to be ready (no project initialization needed — filesystem is cloned)
       await this.waitForWorkspaceReady(containerName);
+      await this.ensureCodexSandboxDefault(container);
       console.log(`Clone workspace ${containerName} is ready`);
 
       this.activeContainers.set(projectId, {
@@ -1921,23 +1976,36 @@ fi`.trim();
     return memory;
   }
 
-  parseCpuCores(cpuCores) {
-    // Convert CPU cores string to CPU shares
-    // Docker CPU shares: 1024 shares = 1 CPU core
-    const coreMap = {
-      '1': 1024,  // 1 core
-      '2': 2048,  // 2 cores
-      '4': 4096,  // 4 cores
-      '8': 8192   // 8 cores
-    };
-    
-    const shares = coreMap[cpuCores];
-    if (!shares) {
-      console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
-      return coreMap['2'];
+  // Docker host facts needed for limits, read once: CPU count (NanoCpus must
+  // not exceed it) and whether per-container disk quotas are supported.
+  async getHostCapabilities() {
+    if (this.hostCapabilities) return this.hostCapabilities;
+    try {
+      const info = await this.docker.info();
+      const status = Object.fromEntries(info.DriverStatus || []);
+      // overlay2 size limits need xfs with project quotas ('pquota')
+      const diskQuota = info.Driver === 'overlay2' && status['Backing Filesystem'] === 'xfs';
+      if (this.diskLimit && !diskQuota) {
+        console.warn(`WORKSPACE_DISK_LIMIT=${this.diskLimit} is ignored: storage driver ${info.Driver} on ` +
+          `${status['Backing Filesystem'] || 'unknown'} does not support per-container quotas (needs overlay2 on xfs with pquota)`);
+      }
+      this.hostCapabilities = { ncpu: info.NCPU || null, diskQuota };
+    } catch (error) {
+      console.warn(`Could not read Docker host info: ${error.message}`);
+      this.hostCapabilities = { ncpu: null, diskQuota: false };
     }
+    return this.hostCapabilities;
+  }
 
-    return shares;
+  // CPU cores ('1'|'2'|'4'|'8') -> NanoCpus, capped at the host's CPU count
+  cpuCoresToNanoCpus(cpuCores, hostCpus = null) {
+    let cores = parseInt(cpuCores, 10);
+    if (![1, 2, 4, 8].includes(cores)) {
+      console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
+      cores = 2;
+    }
+    if (hostCpus) cores = Math.min(cores, hostCpus);
+    return cores * 1e9;
   }
 
   // Returns sorted list of TCP ports the workspace container is listening on.

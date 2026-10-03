@@ -55,6 +55,8 @@ function serializeProject(p) {
     lastAccessed: p.lastAccessed,
     notes: p.notes || '',
     proxyMode: p.proxyMode || 'none',
+    // null for workspaces created before this setting existed
+    sudoEnabled: typeof p.sudoEnabled === 'boolean' ? p.sudoEnabled : null,
     ...(p.clonedFrom && { clonedFrom: p.clonedFrom }),
     aliases: (Array.isArray(p.aliases) ? p.aliases : []).map(a => ({
       subdomain: a.subdomain,
@@ -151,6 +153,7 @@ class WorkspaceService {
         gitRepository: null, // Will be set if Git repo is created
         gitUrl: stripUrlCredentials(options.gitUrl), // Git URL for cloned repositories (without credentials)
         proxyMode: options.proxyMode || 'none', // Per-workspace proxy mode: 'none', 'security', or 'logging'
+        sudoEnabled: typeof options.sudoEnabled === 'boolean' ? options.sudoEnabled : process.env.WORKSPACE_SUDO_ENABLED === 'true',
         aliases: [],
         createdAt: new Date(),
         lastAccessed: new Date(),
@@ -229,7 +232,8 @@ class WorkspaceService {
         gitUrl: options.gitUrl || null,
         gitUsername: options.gitUsername || null,
         gitToken: options.gitToken || null,
-        proxyMode: proxyMode
+        proxyMode: proxyMode,
+        sudoEnabled: project ? project.sudoEnabled : undefined
       });
 
       // Update project with workspace URL, Git info, and running status
@@ -324,6 +328,7 @@ class WorkspaceService {
         gitRepository: null,
         gitUrl: source.gitUrl || null,
         proxyMode: source.proxyMode || 'none',
+        sudoEnabled: typeof options.sudoEnabled === 'boolean' ? options.sudoEnabled : process.env.WORKSPACE_SUDO_ENABLED === 'true',
         aliases: [],
         createdAt: new Date(),
         lastAccessed: new Date(),
@@ -389,7 +394,8 @@ class WorkspaceService {
             cpuCores: clone.cpuCores,
             passwordProtected: clone.passwordProtected,
             password: options.password || null,
-            proxyMode: clone.proxyMode
+            proxyMode: clone.proxyMode,
+            sudoEnabled: clone.sudoEnabled
           });
 
           // Update project status

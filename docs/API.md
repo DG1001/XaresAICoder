@@ -94,6 +94,7 @@ Creates a new workspace with the specified configuration.
   - `nodejs-react` - React application with Vite
   - `java-spring` - Spring Boot application
 - `passwordProtected` (boolean, optional): Enable password protection
+- `sudoEnabled` (boolean, optional): allow sudo in the workspace; defaults to `WORKSPACE_SUDO_ENABLED` (`GET /api/config` → `workspaceSudoDefault`)
 - `password` (string, conditional): Required if `passwordProtected` is true (min 8 chars)
 - `createGitRepo` (boolean, optional): Create Git repository (requires Git server)
 - `proxyMode` (string, optional): Network proxy mode — `none` (default), `logging` (LLM Logging Proxy, unrestricted with recording), `security` (Security Proxy, whitelist-only)
@@ -634,6 +635,7 @@ password-protected (see [Authentication](#authentication)).
 - `password` (string, **required**): Password for all cloned workspaces (min 8, max 50 chars).
   Clones are typically handed to participants and can reach each other's ports inside
   the Docker network, so code-server must be protected.
+- `sudoEnabled` (boolean, optional): allow sudo in the clones; defaults to `WORKSPACE_SUDO_ENABLED`
 - `keepAiLogins` (boolean, optional, default `false`): keep the AI tool logins and
   conversation histories of the source (e.g. to distribute a shared workshop API key).
 

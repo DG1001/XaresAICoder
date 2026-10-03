@@ -706,3 +706,53 @@ aufgeräumt. Klon ohne Opt-in: alle Zugangsdaten weg, `settings.json`/`known_hos
 Projektdatei vorhanden, Remote ohne Token, `GIT_ACCESS_TOKEN` leer, keine `FAKE`-Werte in
 der Env. Klon mit Opt-in: AI-Logins vorhanden, Rest bereinigt. Entrypoint/User korrekt,
 Login nur mit Klon-Passwort. Quelle unverändert. Test-Workspaces gelöscht.
+
+### 2.3 Härtung: sudo pro Workspace, echtes CPU-Limit, seccomp, Disk-Quota
+
+**Problem**: `CpuShares` ist nur eine relative Gewichtung (ein Workspace konnte alle
+CPUs belegen), es gab kein Disk-Limit (ein Workspace kann die Host-Platte füllen),
+`seccomp=unconfined` öffnete die volle Kernel-Angriffsfläche, und sudo war nur global
+schaltbar.
+
+**Änderung**
+- `buildContainerSpec`:
+  - `NanoCpus` (harte Grenze) statt `CpuShares`, gekappt auf die CPU-Zahl des Hosts
+    (`getHostCapabilities()` liest `docker info` einmal). `parseCpuCores` entfernt.
+  - `sudoEnabled` pro Workspace: ohne sudo `no-new-privileges:true`.
+  - seccomp: Docker-Standardprofil; `WORKSPACE_SECCOMP=unconfined` als Opt-out.
+  - `StorageOpt.size` aus `WORKSPACE_DISK_LIMIT`, aber nur wenn der Host es kann
+    (overlay2 auf xfs); sonst einmalige Warnung im Log.
+- Codex: Neue Workspaces und Klone bekommen `sandbox_mode = "danger-full-access"`
+  vorangestellt in `~/.codex/config.toml`, sofern dort noch kein `sandbox_mode` steht.
+- API/UI: `sudoEnabled` bei Create und Clone (Checkboxen, vorbelegt aus
+  `GET /api/config` → `workspaceSudoDefault`); Projekt speichert/liefert `sudoEnabled`.
+- `docker-compose.yml` reicht `WORKSPACE_SECCOMP` und `WORKSPACE_DISK_LIMIT` durch;
+  `.env.example` dokumentiert beide.
+
+**Entscheidung seccomp (mit dir abgestimmt)**: Standardprofil. Es sperrt unprivilegierte
+User-Namespaces – eine der häufigsten Quellen für Kernel-Exploits/Container-Ausbrüche.
+Folge: Die eigene Sandbox von Codex (bubblewrap) kann nicht starten (live nachgewiesen:
+`bwrap: No permissions to create a new namespace`; mit `unconfined` funktioniert sie).
+Der Workspace-Container ist ohnehin die Sandbox, daher läuft Codex darin ohne eigene.
+Chrome braucht `--no-sandbox` (Playwright-Default).
+
+**Gilt nur für neu erstellte Workspaces/Klone** – bestehende Container behalten ihre
+HostConfig, bis sie neu erstellt werden.
+
+**Tests**
+- Spec-Vergleich (24 Fälle): nur die beabsichtigten Änderungen (`NanoCpus` statt
+  `CpuShares`, kein `seccomp=unconfined`, `no-new-privileges` je nach sudo).
+- Unit: sudo aus/an → `["no-new-privileges:true"]`/`[]`; 8 Kerne auf 4-Kern-Host → 4;
+  Quota unterstützt → `{"size":"20G"}`, nicht unterstützt → kein `StorageOpt`;
+  `WORKSPACE_SECCOMP=unconfined` → wie bisher.
+- Live (Standard-seccomp, ohne sudo): `cpu.max` = `200000 100000` (2 Kerne), seccomp-Modus
+  2, sudo blockiert; Node, Python, Git, `npm install`, `pip install --user`,
+  `node --inspect`, Multiprocessing und alle 7 CLI-Agents (`--version`) funktionieren;
+  `unshare --user` blockiert. Mit sudo: `sudo` funktioniert.
+- Codex-Konfiguration: Live-Test fand einen Fehler im ersten Skript (fehlende Datei →
+  `[ -f ] && cat` als letzter Befehl → Exit 1 → `mv` lief nie); korrigiert. Danach alle
+  drei Fälle geprüft (keine Datei; Datei mit `[table]` → Eintrag davor; vorhandenes
+  `sandbox_mode` bleibt). `codex login status` liest die Datei fehlerfrei; ein
+  ungültiger Wert wird von Codex abgelehnt (Gegenprobe).
+- Auf Docker Desktop (Backing FS `extfs`) ist Disk-Quota nicht verfügbar – nur die
+  Erkennung/Warnung ist getestet.

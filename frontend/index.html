@@ -278,6 +278,17 @@
                                 </div>
                             </div>
 
+                            <div class="form-group checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="sudoEnabled" name="sudoEnabled">
+                                    <span class="checkmark"></span>
+                                    <span class="checkbox-text">Allow sudo in workspace</span>
+                                </label>
+                                <div class="checkbox-description">
+                                    Root inside the container (e.g. for apt install). Turn off for participant and exam workspaces.
+                                </div>
+                            </div>
+
                             <div class="form-group password-group" id="passwordGroup" style="display: none;">
                                 <label for="workspacePassword">Workspace Password</label>
                                 <div class="password-input-group">
@@ -957,6 +968,17 @@
                         <span>Copy AI tool logins of the source (e.g. a shared workshop API key)
                             <span style="display: block; font-size: 12px; color: var(--vscode-text-muted); margin-top: 2px;">
                                 Off by default: logins and conversation histories of Claude Code, Codex, OpenCode, Qwen, Crush, Pi, Continue and Aider are removed from the clones. Git tokens, passwords and shell history are always removed.
+                            </span>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer;">
+                        <input type="checkbox" id="cloneSudoEnabled" style="margin-top: 2px;">
+                        <span>Allow sudo in the clones
+                            <span style="display: block; font-size: 12px; color: var(--vscode-text-muted); margin-top: 2px;">
+                                Usually off for participant and exam workspaces.
                             </span>
                         </span>
                     </label>

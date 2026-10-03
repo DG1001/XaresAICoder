@@ -192,6 +192,10 @@ class XaresAICoder {
     }
 
     setupUI() {
+        // Per-workspace sudo choice defaults to the server's global setting
+        const sudoCheckbox = document.getElementById('sudoEnabled');
+        if (sudoCheckbox) sudoCheckbox.checked = !!this.config.workspaceSudoDefault;
+
         // Show/hide Git server navigation based on configuration
         const gitServerNav = document.querySelector('.nav-item[data-tab="git-server"]');
         const gitServerTab = document.getElementById('git-server-tab');
@@ -624,6 +628,8 @@ class XaresAICoder {
             requestBody.password = workspacePassword;
         }
 
+        requestBody.sudoEnabled = document.getElementById('sudoEnabled').checked;
+
         if (useGitRepository) {
             requestBody.gitUrl = gitUrl;
             if (gitUsername) {
@@ -667,6 +673,7 @@ class XaresAICoder {
             
             // Clear form
             e.target.reset();
+            document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
             
             // Hide password group and clear password input
             const passwordGroup = document.getElementById('passwordGroup');
@@ -762,6 +769,7 @@ class XaresAICoder {
 
             // Clear form
             e.target.reset();
+            document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
 
             // Show simple success message
             this.showCreateSuccess(project);
@@ -2684,6 +2692,7 @@ class XaresAICoder {
         // Pre-fill a generated password: clones are handed to participants
         document.getElementById('clonePassword').value = this.generateSecurePasswordValue();
         document.getElementById('cloneKeepAiLogins').checked = false;
+        document.getElementById('cloneSudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
         document.getElementById('cloneError').style.display = 'none';
         document.getElementById('cloneProgress').style.display = 'none';
         document.getElementById('confirmCloneBtn').disabled = false;
@@ -2742,7 +2751,12 @@ class XaresAICoder {
         document.getElementById('cloneProgress').style.display = 'block';
         document.getElementById('confirmCloneBtn').disabled = true;
 
-        const body = { count, password, keepAiLogins: document.getElementById('cloneKeepAiLogins').checked };
+        const body = {
+            count,
+            password,
+            keepAiLogins: document.getElementById('cloneKeepAiLogins').checked,
+            sudoEnabled: document.getElementById('cloneSudoEnabled').checked
+        };
 
         try {
             const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/clone`, {
