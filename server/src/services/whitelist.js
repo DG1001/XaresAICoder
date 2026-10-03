@@ -125,15 +125,15 @@ class WhitelistService {
       const domains = new Set();
       const lines = whitelistSection.split('\n');
       for (const line of lines) {
-        const trimmed = line.trim();
+        // Drop trailing comments: the default squid.conf has lines like
+        // "acl pypi_bare dstdomain pypi.org  # Bare domain separate ACL",
+        // whose comment words would otherwise be reported as domains
+        const trimmed = line.split('#')[0].trim();
         // Match: acl <name> dstdomain <domains...>
         const match = trimmed.match(/^acl\s+\S+\s+dstdomain\s+(.+)$/);
         if (match) {
-          const domainList = match[1].split(/\s+/);
-          for (const d of domainList) {
-            if (d && !d.startsWith('#')) {
-              domains.add(d);
-            }
+          for (const d of match[1].split(/\s+/)) {
+            if (d) domains.add(d);
           }
         }
       }

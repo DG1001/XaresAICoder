@@ -858,13 +858,15 @@ fi`.trim();
     const exec = await container.exec({
       Cmd: ['sh', '-c',
         'd=/var/log/mitmproxy/llm_conversations; [ -d "$d/$1" ] || exit 0; ' +
-        'mkdir -p "$d/_archive" && mv "$d/$1" "$d/_archive/$1-$(date -u +%Y%m%dT%H%M%SZ)"',
+        'mkdir -p "$d/_archive" && mv "$d/$1" "$d/_archive/$1-$(date -u +%Y%m%dT%H%M%SZ)" && echo archived',
         'sh', ipAddress],
       AttachStdout: true,
       AttachStderr: true
     });
-    await this.streamToString(await exec.start());
-    console.log(`Archived LLM conversations previously stored for IP ${ipAddress}`);
+    const output = await this.streamToString(await exec.start());
+    if (output.includes('archived')) {
+      console.log(`Archived LLM conversations previously stored for IP ${ipAddress}`);
+    }
   }
 
   /**
