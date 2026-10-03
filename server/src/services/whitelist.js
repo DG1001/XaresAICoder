@@ -31,6 +31,8 @@ class WhitelistService {
       '.openvsx.org',
       '.eclipsecontent.org'
     ];
+    // Applies run one at a time: they share squid.conf.new and the backup
+    this._applyQueue = Promise.resolve();
   }
 
   async _getSquidContainer() {
@@ -86,10 +88,19 @@ class WhitelistService {
   }
 
   async _writeFileInSquid(path, content) {
-    // base64 keeps the file content out of shell parsing entirely
+    // base64 keeps the file content out of shell parsing entirely. It is sent
+    // in chunks because Linux limits a single argv string to 128 KiB.
     const b64 = Buffer.from(content, 'utf8').toString('base64');
+    const CHUNK = 64 * 1024;
+    for (let i = 0; i < b64.length || i === 0; i += CHUNK) {
+      const op = i === 0 ? '>' : '>>';
+      await this._execInSquidChecked(
+        ['sh', '-c', `printf %s "$1" ${op} "$2.b64"`, 'sh', b64.slice(i, i + CHUNK), path],
+        `Writing ${path}`
+      );
+    }
     await this._execInSquidChecked(
-      ['sh', '-c', 'printf %s "$1" | base64 -d > "$2"', 'sh', b64, path],
+      ['sh', '-c', 'base64 -d "$1.b64" > "$1" && rm -f "$1.b64"', 'sh', path],
       `Writing ${path}`
     );
   }
@@ -203,7 +214,13 @@ class WhitelistService {
     return result.sort();
   }
 
-  async applyWhitelist(domains) {
+  applyWhitelist(domains) {
+    const run = this._applyQueue.then(() => this._applyWhitelist(domains), () => this._applyWhitelist(domains));
+    this._applyQueue = run.catch(() => {});
+    return run;
+  }
+
+  async _applyWhitelist(domains) {
     try {
       // Merge with base defaults and normalize (throws code INVALID)
       const allRaw = [...this.BASE_DOMAINS, ...domains];
@@ -269,11 +286,14 @@ class WhitelistService {
     section += '# ============================================\n';
     section += `# Auto-generated from recorded domains (${new Date().toISOString()})\n\n`;
 
-    // Group domains into a single ACL
+    // One ACL spread over several lines (squid appends repeated acl lines),
+    // so long lists never hit squid's config line length limit.
     // Use .domain format for wildcard matching (squid convention)
-    const aclDomains = domains.join(' ');
     section += '# Whitelisted domains\n';
-    section += `acl whitelist_domains dstdomain ${aclDomains}\n\n`;
+    for (let i = 0; i < domains.length; i += 20) {
+      section += `acl whitelist_domains dstdomain ${domains.slice(i, i + 20).join(' ')}\n`;
+    }
+    section += '\n';
 
     // Internal network ACL (required reference)
     section += '# Internal network (workspace containers)\n';
