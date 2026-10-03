@@ -18,7 +18,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 
 | Paket | Inhalt | Status |
 |-------|--------|--------|
-| **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | 🚧 in Arbeit (Branch `security/paket-1`) |
+| **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet – **Deploy-Test steht aus** |
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | offen – braucht Entscheidung zum Vertrauensmodell |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
 
@@ -111,7 +111,8 @@ Token aus der Git-URL.
   Start/Stop-Aktionen merken sich das Passwort ebenfalls.
 - Passwort-Dialog liegt per `z-index` über den anderen Modals.
 - Convo-Viewer (`convo-viewer.html`) fragt bei 401 per `prompt()` nach dem Passwort.
-- Doku: `docs/API.md` (Abschnitt Authentication + Clone), `CLAUDE.md`.
+- Doku: `docs/API.md` (Abschnitt Authentication + Clone), `CLAUDE.md` (nur lokal – die
+  Datei ist gitignored).
 
 **Entscheidungen**
 - **Header statt Body**: GET-Routen haben keinen Body, und beim Clone ist
@@ -225,6 +226,7 @@ Der base64-Schreibbefehl wurde lokal mit identischem argv ausgeführt.
   `cookie`, `*api-key*`, `*token*`, `*secret*`, `*session*`). Eine Allowlist wäre
   strenger, würde aber nützliche Diagnose-Header (`anthropic-version`, `openai-beta`,
   Rate-Limit-Header) verstecken.
+- *(Nachtrag: in 1.10 auf **Archivieren** statt Löschen umgestellt.)*
 - **Löschen beim Erstellen, nicht beim Löschen** eines Workspace: Lehrkräfte wollen
   Mitschnitte ggf. nach dem Löschen noch auswerten (sie bleiben auf der Platte, bis
   die IP wiederverwendet wird). Die eigentliche Lösung – Zuordnung per Projekt-ID statt
@@ -318,7 +320,9 @@ einer Endlosschleife (fiel nur im Test auf, betrifft den Produktivpfad
   angezeigt; CSV-Zellen, die mit `= + - @` (oder Tab/CR) beginnen, bekommen ein `'`.
 - `frontend/workshop/index.html`: Der eigene Claim wird in `localStorage` gemerkt und
   beim erneuten Öffnen angezeigt (ersetzt den bisherigen „409 zeigt URL“-Weg).
-- Doku: `docs/API.md`, `docs/user-guide.md`, `CLAUDE.md`, `.env.example`.
+  *(Nachtrag: in 1.10 durch ein serverseitig geprüftes Claim-Token ersetzt.)*
+- Doku: `docs/API.md`, `docs/user-guide.md`, `.env.example`, `CLAUDE.md` (nur lokal,
+  gitignored).
 
 **Entscheidungen**
 - **Breaking**: Wer den Admin-Bereich bisher ohne Passwort genutzt hat, muss
@@ -473,3 +477,74 @@ aus dem Cache; offline → `app.js` aus dem Cache, Workshop-Seite → `offline.h
 Temp-Verzeichnis mit Test-Zertifikaten (Ausgangsrechte 0644) ausgeführt → beide
 Schlüsseldateien 0600, Zertifikate unverändert 0644, Funktion endet mit Exit 0 – auch
 wenn die Dateien fehlen.
+
+### 1.10 Review-Runde: Nachbesserungen
+
+Der komplette Branch-Diff wurde von einem unabhängigen Review-Agenten gegengelesen
+(nur Änderungen dieses Branches, Fokus auf neu eingeführte Fehler). Die zentralen
+Fixes wurden als korrekt bestätigt (Middleware, Serializer, Whitelist-Validierung/
+Rollback, Redaction, Persistenz, Claim-Queue, XSS-Helfer, Service Worker). Gefunden
+und behoben:
+
+| # | Befund | Schwere | Behebung (Commit) |
+|---|--------|---------|-------------------|
+| 1 | Gemerkter Claim in `localStorage` lief nie ab: an geteilten Rechnern sah die nächste Person den fremden Workspace; nach „Freigeben“ zeigte der Browser weiter eine URL, die evtl. schon jemand anderem gehört | Mittel | Zufälliges `claimToken` bei `/claim`; die Seite speichert nur das Token und fragt `POST /api/workshop/my-claim` (404 nach Freigabe). Link „Nicht dein Workspace?“ für geteilte Rechner. Token tauchen weder in Admin-Liste noch Historie auf (`32c7fe1`) |
+| 2 | Start/Stop/Delete riefen bei jedem Abschluss `hidePasswordModal()` auf – das brach nun auch einen gerade offenen Passwort-Prompt eines *anderen* Workspace ab | Niedrig–Mittel | Modal wird nur geschlossen/annotiert, wenn es noch den eigenen Prompt zeigt; sonst Fehler-Modal (`9c44103`) |
+| 3 | Ein neuer Prompt überschrieb einen offenen Access-Prompt, dessen Promise nie aufgelöst wurde → spätere geschützte Aktionen warteten bis zum Reload | Niedrig | `showPasswordModal` löst einen ersetzten Prompt mit `null` auf (`9c44103`) |
+| 4 | Passwortänderung aktualisierte das gemerkte Passwort nicht; Verifikations-Passwörter wurden getrimmt (Passwörter mit Leerzeichen am Rand nie gültig) | Niedrig | Cache wird nach Ändern/Entfernen aktualisiert; Verifikation ohne `trim()` (`9c44103`) |
+| 5 | Muster `token` redigierte auch Rate-Limit-Header (`x-ratelimit-*-tokens`) – widersprach der eigenen Entscheidung | Niedrig | `token(?!s)` in Addon und Server (`fb7a37a`) |
+| 6 | Beim Erstellen wurden Gespräche unter der neuen IP **gelöscht** – die IP kann einem nur *gestoppten* Workspace gehört haben (Datenverlust für Lehrkräfte) | Niedrig | Verschieben nach `llm_conversations/_archive/<ip>-<UTC>` statt löschen (`fb7a37a`) |
+| 7 | Parallele Whitelist-Applies teilten sich `squid.conf.new`/`.bak` | Niedrig | Applies laufen über eine Queue (`dfc9815`) |
+| 8 | Base64-Config in *einem* argv-String – Linux begrenzt auf 128 KiB (≈ 4 500 Domains), das 5000er-Limit war nicht erreichbar; alle Domains in einer `acl`-Zeile | Niedrig | Schreiben in 64-KiB-Teilen; ACL auf Zeilen à 20 Domains verteilt (`dfc9815`) |
+| 9 | `mitmproxy/__pycache__/*.pyc` versehentlich mitcommittet (durch `py_compile` beim Testen) | Trivial | Entfernt, `__pycache__/` + `*.pyc` in `.gitignore` (`acba60a`) |
+| 10 | DEVLOG nannte `CLAUDE.md` als geändert, die Datei ist aber gitignored | Trivial | Einträge korrigiert (lokale Kopie ist aktualisiert) |
+
+**Bewusst offen gelassen**: Ein Workspace, der nach einem *Neustart* zufällig die IP
+eines anderen bekommt, sieht dessen Mitschnitte weiterhin (vorbestehend, nicht durch
+diesen Branch verursacht). Ein Workspace kann nicht unterscheiden, ob eine IP-Ablage
+seine eigene ist – das löst erst die Zuordnung per Projekt-ID (**Paket 2**).
+
+**Tests**: Claim-Token-Lebenszyklus per Express-Test (Token bei Claim, `my-claim` →
+200, unbekannt → 404, ungültig → 400, nach Freigabe → 404, Token nicht in Admin-
+Liste/Historie). Modal-Szenarien aus dem Review in der VM nachgestellt (Prompt
+überlebt fremdes Start-Ende, exaktes Passwort mit Leerzeichen, ersetzter Prompt löst
+`null` auf). Header-Muster für typische Credential- vs. Rate-Limit-Header in Python
+und JS identisch. Archiv-Skript lokal ausgeführt (Verzeichnis vorhanden/fehlend).
+Whitelist mit lokalem „Squid-Emulator“ (echte `sh`/`cat`/`cp`/`mv` auf Temp-
+Verzeichnis): 4 500 Domains → 116 KB Config, 3 Chunk-Writes, größtes argv 64 KiB,
+226 ACL-Zeilen, `getWhitelist`-Roundtrip vollständig; zwei parallele Applies laufen
+strikt nacheinander. Alle früheren Tests gegen den Endstand erneut grün.
+
+---
+
+## Paket 1 – Upgrade-Hinweise (Breaking Changes)
+
+1. **`WORKSHOP_ADMIN_PASSWORD` ist Pflicht** für die Workshop-Admin-Seite; ohne ist
+   sie deaktiviert (503).
+2. Workshop-Admin-API: Passwort nur noch per Header `X-Admin-Password`;
+   `?password=` wird abgelehnt.
+3. Passwortgeschützte Workspaces: Skripte, die Clone, Aliases, Ports, Proxy-Logs,
+   Recorded Domains, LLM-Conversations oder die Doku-Generierung aufrufen, müssen
+   `X-Workspace-Password` mitschicken.
+4. Whitelist: IP-Adressen, URLs und Einzel-Labels (`.com`) werden abgelehnt (400).
+5. Lokal angelegte Gruppen: nur noch Buchstaben, Ziffern, Leerzeichen, `-`, `_`
+   (wie serverseitig schon immer).
+6. Beim ersten Serverstart werden `projects.json`-Einträge bereinigt (kein
+   `internalCloneUrl` mehr); Dateien werden ab jetzt mit Modus 0600 geschrieben.
+
+## Paket 1 – Was noch nicht verifiziert ist
+
+In dieser Umgebung steht **kein Docker** zur Verfügung. Alle Tests liefen mit Node-/
+Python-Stubs, echten Shell-Befehlen auf Temp-Verzeichnissen und einem HTML-Parser –
+**nicht** gegen laufende Container. Vor dem Merge sollte ein Deploy-Test laufen:
+
+- [ ] `./deploy.sh` (mit `--git-server --enable-proxy`) durchläuft, Server startet,
+      bestehende `projects.json` wird geladen.
+- [ ] Workspace mit Passwort anlegen → Clone/Aliases/Logs fragen nach dem Passwort.
+- [ ] LLM-Logging-Workspace: Gespräch erzeugen → im UI ohne Keys sichtbar; Löschen
+      einzelner (auch WebSocket-)Gespräche funktioniert.
+- [ ] Whitelist aus Recorded Domains anwenden → `squid -k parse` akzeptiert die
+      mehrzeilige ACL, Security-Proxy-Workspace erreicht nur freigegebene Domains.
+- [ ] Workshop: Claim, Reload zeigt Workspace, Admin „Freigeben“ → Reload zeigt
+      Formular; Admin-Login per Header.
+- [ ] PWA: nach Deploy lädt das Dashboard die neue Version ohne Hard-Reload.
