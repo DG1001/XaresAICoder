@@ -160,8 +160,8 @@ function parse(md){
 
 function fmt(n){ return n.toLocaleString("de-DE"); }
 // HTML/SVG-sicher escapen — sonst bricht z.B. "<transcript>" im Tooltip das Markup
-function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => (
-  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 function render(md, quiet){
   const sessions = parse(md);
@@ -252,7 +252,7 @@ function render(md, quiet){
     const pct = r.prompt?Math.round(100*r.cache/r.prompt):0;
     return `<tr>
       <td class="num">${r.n}</td>
-      <td>${(r.time.split(", ")[1]||r.time)}</td>
+      <td>${esc(r.time.split(", ")[1]||r.time)}</td>
       <td class="num">${fmt(r.prompt)}</td>
       <td class="num">${pct} %<span class="cachebar" style="width:${Math.round(pct*0.5)}px"></span></td>
       <td class="num">${fmt(r.prompt-r.cache)}</td>
@@ -266,7 +266,7 @@ function render(md, quiet){
       ${s.requests.map(subRow).join("")}</table></td></tr>` : "";
     return `<tr class="srow">
       <td class="num">${i+1}</td>
-      <td>${(s.time.split("–")[0]||s.time).split(", ")[1]||s.time}</td>
+      <td>${esc((s.time.split("–")[0]||s.time).split(", ")[1]||s.time)}</td>
       <td><span class="model" style="border:1px solid ${color(s.model)};color:${color(s.model)}">${esc(s.model)}</span></td>
       <td class="num">${s.requests.length}</td>
       <td class="num">${s.prompt?fmt(s.prompt):"–"}</td>

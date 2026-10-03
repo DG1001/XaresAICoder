@@ -972,7 +972,7 @@ class XaresAICoder {
             if (this.selectedGroup) {
                 projectsList.innerHTML = `
                     <div class="no-projects-in-group">
-                        <p>No projects in "${this.selectedGroup}" group.</p>
+                        <p>No projects in "${this.escapeHtml(this.selectedGroup)}" group.</p>
                         <p><button onclick="app.selectGroup(null)" class="btn-link">Show all projects</button></p>
                     </div>
                 `;
@@ -1002,7 +1002,7 @@ class XaresAICoder {
                         ${project.passwordProtected ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Password Protected"><path d="M4 4v2h-.25A1.75 1.75 0 0 0 2 7.75v5.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 13.25v-5.5A1.75 1.75 0 0 0 12.25 6H12V4a4 4 0 1 0-8 0Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2h5Z"/></svg>' : ''}
                         ${project.proxyMode === 'security' ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="Security Proxy (Restricted Access)"><path d="M5.338 1.59a61.44 61.44 0 0 0-2.837.856.481.481 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.725 10.725 0 0 0 2.287 2.233c.346.244.652.42.893.533.12.057.218.095.293.118a.55.55 0 0 0 .101.025.615.615 0 0 0 .1-.025c.076-.023.174-.061.294-.118.24-.113.547-.29.893-.533a10.726 10.726 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.775 11.775 0 0 1-2.517 2.453 7.159 7.159 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7.158 7.158 0 0 1-1.048-.625 11.777 11.777 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43 62.456 62.456 0 0 1 5.072.56z"/><path d="M10.854 5.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7.5 7.793l2.646-2.647a.5.5 0 0 1 .708 0z"/></svg>' : ''}
                         ${project.proxyMode === 'logging' ? '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-left: 6px; color: var(--vscode-text-muted); vertical-align: text-bottom;" title="LLM Logging Proxy"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.5-3a.75.75 0 0 1 .75.75v2.5h2a.75.75 0 0 1 0 1.5h-2v2a.75.75 0 0 1-1.5 0v-2h-2a.75.75 0 0 1 0-1.5h2v-2.5A.75.75 0 0 1 8 5Z"/></svg>' : ''}
-                        ${project.gitRepository && project.gitRepository.webUrl ? `<a href="${project.gitRepository.webUrl}" target="_blank" class="git-repo-link" title="View Git Repository: ${project.gitRepository.name}${project.gitRepository.branch ? ' (branch: ' + project.gitRepository.branch + ')' : ''}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>` : ''}
+                        ${project.gitRepository && project.gitRepository.webUrl ? `<a href="${this.safeHref(project.gitRepository.webUrl)}" target="_blank" rel="noopener" class="git-repo-link" title="View Git Repository: ${this.escapeHtml(project.gitRepository.name)}${project.gitRepository.branch ? ' (branch: ' + this.escapeHtml(project.gitRepository.branch) + ')' : ''}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>` : ''}
                         ${project.status !== 'creating' ? `<button class="notes-btn" onclick="app.openPasswordManageModal('${project.projectId}')" title="Manage Password" aria-label="Manage Password">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M0 8a4 4 0 0 1 7.465-2H14a.5.5 0 0 1 .354.146l1.5 1.5a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0L13 9.207l-.646.647a.5.5 0 0 1-.708 0L11 9.207l-.646.647a.5.5 0 0 1-.708 0L9 9.207l-.646.647A.5.5 0 0 1 8 10h-.535A4 4 0 0 1 0 8zm4-3a3 3 0 1 0 2.959 3.5H8a.5.5 0 0 0 .354-.146l.646-.647.646.647a.5.5 0 0 0 .708 0l.646-.647.646.647a.5.5 0 0 0 .708 0l.646-.647.646.647a.5.5 0 0 0 .708 0l1.146-1.147-1.146-1.147a.5.5 0 0 0-.354-.146h-6.46A3 3 0 0 0 4 5z"/>
@@ -1038,12 +1038,12 @@ class XaresAICoder {
                                 <path d="M3 3h7v1H3V3zm0 2h7v1H3V5zm0 2h5v1H3V7z"/>
                             </svg>
                         </button>` : ''}
-                        ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup('${project.group || 'Uncategorized'}')" title="Click to filter by group: ${project.group || 'Uncategorized'}" style="margin-left: 12px;">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
+                        ${!this.selectedGroup && project.group ? `<span class="project-group-badge" onclick="app.selectGroup(${this.jsArg(project.group || 'Uncategorized')})" title="Click to filter by group: ${this.escapeHtml(project.group || 'Uncategorized')}" style="margin-left: 12px;">${this.escapeHtml(project.group || 'Uncategorized')}</span>` : ''}
                     </h4>
                     <div class="project-meta">
                         <span class="project-status ${this.getStatusClass(project.status, project.workspaceUrl)}">${this.getStatusLabel(project.status, project.workspaceUrl)}</span>
-                        ${this.getProjectTypeLabel(project.projectType) ? `<span>${this.getProjectTypeLabel(project.projectType)}</span>` : ''}
-                        ${project.gitUrl ? `<a href="${this.escapeHtml(project.gitUrl)}" target="_blank" class="git-url-info" title="Cloned from: ${this.escapeHtml(project.gitUrl)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>${this.getShortGitUrl(project.gitUrl)}</a>` : ''}
+                        ${this.getProjectTypeLabel(project.projectType) ? `<span>${this.escapeHtml(this.getProjectTypeLabel(project.projectType))}</span>` : ''}
+                        ${project.gitUrl ? `<a href="${this.safeHref(project.gitUrl)}" target="_blank" rel="noopener" class="git-url-info" title="Cloned from: ${this.escapeHtml(project.gitUrl)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>${this.escapeHtml(this.getShortGitUrl(project.gitUrl))}</a>` : ''}
                         <span>${this.getMemoryLimitLabel(project.memoryLimit)}</span>
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
                         ${this.getDiskUsageLabel(project.diskUsage) ? `<span class="disk-usage">${this.getDiskUsageLabel(project.diskUsage)}</span>` : ''}
@@ -1248,7 +1248,7 @@ class XaresAICoder {
             `;
         } else if (isRunning && project.workspaceUrl) {
             buttons += `
-                <button class="btn-open" onclick="app.openWorkspace('${project.projectId}', '${project.workspaceUrl}')">
+                <button class="btn-open" onclick="app.openWorkspace('${project.projectId}', ${this.jsArg(project.workspaceUrl)})">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
                         <path d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
@@ -1293,7 +1293,7 @@ class XaresAICoder {
                     </svg>
                     Clone
                 </button>
-                <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', '${this.escapeHtml(project.projectName)}')">
+                <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', ${this.jsArg(project.projectName)})">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
                         <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
@@ -1701,10 +1701,27 @@ class XaresAICoder {
         }
     }
 
+    // Escapes for HTML text *and* quoted attribute values.
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // A JS string literal that is safe inside an inline event handler
+    // attribute, e.g. onclick="app.selectGroup(${this.jsArg(name)})".
+    // escapeHtml alone is not enough there: the browser decodes &#39; back
+    // to ' before the handler code runs.
+    jsArg(value) {
+        return this.escapeHtml(JSON.stringify(String(value ?? '')));
+    }
+
+    // href value for http(s) URLs only (blocks javascript: and similar).
+    safeHref(url) {
+        return /^https?:\/\//i.test(String(url || '')) ? this.escapeHtml(url) : '#';
     }
 
     // Local storage methods for offline support
@@ -2247,11 +2264,11 @@ class XaresAICoder {
                             ${list.map(a => `
                                 <tr style="border-bottom: 1px solid var(--vscode-border);">
                                     <td style="padding:6px 4px; font-family: monospace;">${this.escapeHtml(a.subdomain)}</td>
-                                    <td>${a.port}</td>
+                                    <td>${Number(a.port) || ''}</td>
                                     <td>${a.authProtected ? '🔒 ' + this.escapeHtml(a.authUsername || '') : '—'}</td>
-                                    <td><a href="${a.url}" target="_blank" rel="noopener" style="color: var(--vscode-accent);">${this.escapeHtml(a.url)}</a></td>
+                                    <td><a href="${this.safeHref(a.url)}" target="_blank" rel="noopener" style="color: var(--vscode-accent);">${this.escapeHtml(a.url)}</a></td>
                                     <td style="text-align:right;">
-                                        <button class="btn-icon" onclick="app.deleteAlias('${this.escapeHtml(a.subdomain)}')" title="Delete alias">✕</button>
+                                        <button class="btn-icon" onclick="app.deleteAlias(${this.jsArg(a.subdomain)})" title="Delete alias">✕</button>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -2275,7 +2292,10 @@ class XaresAICoder {
             const ports = (data && data.success) ? (data.ports || []) : [];
 
             const options = ['<option value="">— Select port —</option>'];
-            for (const p of ports) options.push(`<option value="${p}">${p}</option>`);
+            for (const p of ports) {
+                const port = Number(p);
+                if (Number.isInteger(port)) options.push(`<option value="${port}">${port}</option>`);
+            }
             options.push('<option value="__custom__">Custom…</option>');
             select.innerHTML = options.join('');
         } catch (err) {
@@ -2870,7 +2890,8 @@ class XaresAICoder {
                             ${data.count === 0 ? '<p>No AI conversations recorded yet for this workspace.</p>' : ''}
                             <div class="conversation-list" style="margin-top: 20px;">
                                 ${data.conversations.map((conv, idx) => {
-                                    const model = conv.parsed_request?.model || 'Unknown';
+                                    // model comes from captured request bodies (attacker-controlled)
+                                    const model = this.escapeHtml(conv.parsed_request?.model || 'Unknown');
                                     const time = new Date(conv.timestamp).toLocaleString();
                                     // Server sends the capture file name; WebSocket captures end in -ws
                                     const timestamp = conv._file || conv.timestamp.replace(/:/g, '-').replace(/\./g, '-');
@@ -2880,7 +2901,7 @@ class XaresAICoder {
                                                 <div style="cursor: pointer; font-weight: bold; flex: 1;" onclick="document.getElementById('conv-${idx}').style.display = document.getElementById('conv-${idx}').style.display === 'none' ? 'block' : 'none'">
                                                     <span>#${idx + 1}</span> ${model} - ${time}
                                                 </div>
-                                                <button class="btn-danger" style="font-size: 11px; padding: 2px 6px;" onclick="app.deleteConversation('${projectId}', '${timestamp}', ${idx})" title="Delete this conversation">Delete</button>
+                                                <button class="btn-danger" style="font-size: 11px; padding: 2px 6px;" onclick="app.deleteConversation('${projectId}', ${this.jsArg(timestamp)}, ${idx})" title="Delete this conversation">Delete</button>
                                             </div>
                                             <div id="conv-${idx}" class="conversation-body" style="display: none;">
                                                 <pre style="background: var(--vscode-editor-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">${this.escapeHtml(JSON.stringify(conv, null, 2))}</pre>
@@ -3086,20 +3107,20 @@ class XaresAICoder {
 
         groupsList.innerHTML = this.groups.map(group => `
             <div class="group-item ${this.selectedGroup === group ? 'active' : ''}"
-                 data-group="${group}"
-                 ondrop="app.handleGroupDrop(event, '${group}')"
+                 data-group="${this.escapeHtml(group)}"
+                 ondrop="app.handleGroupDrop(event, ${this.jsArg(group)})"
                  ondragover="app.handleGroupDragOver(event)"
                  ondragenter="app.handleGroupDragEnter(event)"
                  ondragleave="app.handleGroupDragLeave(event)">
-                <span class="group-name" onclick="app.selectGroup('${group}')">${this.escapeHtml(group)}</span>
+                <span class="group-name" onclick="app.selectGroup(${this.jsArg(group)})">${this.escapeHtml(group)}</span>
                 <div class="group-actions">
                     ${group !== 'Uncategorized' ? `
-                        <button class="group-action-btn" onclick="app.handleRenameGroup('${group}')" title="Rename Group">
+                        <button class="group-action-btn" onclick="app.handleRenameGroup(${this.jsArg(group)})" title="Rename Group">
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064L11.189 6.25Z"/>
                             </svg>
                         </button>
-                        <button class="group-action-btn" onclick="app.handleDeleteGroup('${group}')" title="Delete Group">
+                        <button class="group-action-btn" onclick="app.handleDeleteGroup(${this.jsArg(group)})" title="Delete Group">
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z"/>
                                 <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z"/>
@@ -3131,9 +3152,13 @@ class XaresAICoder {
 
         const trimmedName = groupName.trim();
 
-        // Validate group name
+        // Validate group name (same rules as the server)
         if (trimmedName.length > 50) {
             this.showError('Group name must be less than 50 characters');
+            return;
+        }
+        if (!/^[a-zA-Z0-9\s\-_]+$/.test(trimmedName)) {
+            this.showError('Group name can only contain letters, numbers, spaces, hyphens, and underscores');
             return;
         }
 
@@ -3160,9 +3185,13 @@ class XaresAICoder {
 
         const trimmedName = newName.trim();
 
-        // Validate group name
+        // Validate group name (same rules as the server)
         if (trimmedName.length > 50) {
             this.showError('Group name must be less than 50 characters');
+            return;
+        }
+        if (!/^[a-zA-Z0-9\s\-_]+$/.test(trimmedName)) {
+            this.showError('Group name can only contain letters, numbers, spaces, hyphens, and underscores');
             return;
         }
 
@@ -3388,7 +3417,7 @@ class XaresAICoder {
                                 <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; cursor: pointer;">
                                     <input type="checkbox" class="domain-checkbox" value="${this.escapeHtml(d.domain)}" checked>
                                     <span style="flex: 1;">${this.escapeHtml(d.domain)}</span>
-                                    <span style="color: var(--vscode-text-muted); font-size: 11px;">${d.count} hits</span>
+                                    <span style="color: var(--vscode-text-muted); font-size: 11px;">${Number(d.count) || 0} hits</span>
                                 </label>
                             `).join('')}
                         </div>

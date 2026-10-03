@@ -340,3 +340,54 @@ Header → 401; richtiger Header mit Umlaut (percent-encoded) → 200. 20 parall
 mit verschiedenen E-Mails auf 5 Workspaces → 5× 200, 5 verschiedene Workspaces, 15× 503.
 20 parallele Claims mit **derselben** E-Mail → alter Code 5 Workspaces, neuer Code 1.
 409 enthält keine URL; Name > 100 Zeichen bzw. mit Zeilenumbruch → 400.
+
+### 1.7 XSS im Dashboard und Convo-Viewer
+
+**Problem**
+- `escapeHtml()` (via `div.textContent → innerHTML`) escaped **keine Anführungszeichen**,
+  wurde aber in Attributen und in Inline-Handlern benutzt.
+- In Inline-Handlern hilft HTML-Escaping grundsätzlich nicht: Der Browser dekodiert
+  `&#39;` vor dem Ausführen wieder zu `'`. Beispiel: Projektname
+  `x');alert(1);//` → `onclick="app.deleteProject('id', 'x');alert(1);//')"` →
+  Code läuft beim Klick auf Delete. Projektnamen sind serverseitig beim Create nicht
+  eingeschränkt → **Stored XSS** für alle, die das Dashboard öffnen.
+- Unescaped: Modellname aus mitgeschnittenem LLM-Traffic im AI-Conversations-Dialog
+  (jeder Workspace-Nutzer kann `{"model":"<img onerror=…>"}` an api.openai.com
+  schicken), `gitRepository.webUrl/name/branch`, ausgewählte Gruppe, Kurzform der
+  Git-URL (Rohtext, wenn `new URL` scheitert), Gruppennamen in Handlern,
+  `workspaceUrl` im Open-Handler, Alias-URL im `href`.
+- Convo-Viewer: `s.time` und `r.time` (aus dem Markdown der Doku-Generierung, also aus
+  Gesprächsinhalten) wurden roh eingefügt.
+
+**Änderung**
+- `app.js`:
+  - `escapeHtml()` escaped jetzt `& < > " '` (rein stringbasiert, kein DOM nötig).
+  - Neu `jsArg(value)`: `escapeHtml(JSON.stringify(String(value)))` – liefert ein
+    String-Literal, das nach dem HTML-Dekodieren des Attributs gültiges, sicheres JS
+    ist. Eingesetzt für Projektname (Delete), Workspace-URL (Open), Gruppen
+    (Filter, Drop, Rename, Delete), Alias-Subdomain, Conversation-ID.
+  - Neu `safeHref(url)`: nur `http(s)://`, sonst `#` (blockt `javascript:`); für
+    Git-URL, Repo-Web-URL, Alias-URL.
+  - Restliche Stellen escaped; Port- und Zählerwerte per `Number()` erzwungen.
+  - Lokal angelegte/umbenannte Gruppen nutzen dieselbe Zeichenregel wie der Server
+    (vorher wurde z. B. „WS 25/26“ lokal akzeptiert, beim Verschieben aber vom
+    Server abgelehnt).
+- `convo-viewer.html`: `esc()` escaped zusätzlich `'`; Zeitfelder werden escaped.
+
+**Entscheidungen**
+- **Minimal-invasiv statt Umbau**: Die saubere Lösung (Event-Delegation mit
+  `data-action`, keine Inline-Handler, dann strikte CSP) ist ein größerer Refactor
+  von `app.js` und gehört zur geplanten Modularisierung. `jsArg()` schließt die
+  Lücke jetzt mit kleinem Diff.
+- `projectId` bleibt unverändert in Handlern: serverseitig generierte UUID.
+- Im Convo-Viewer kann ein präparierter Gesprächsinhalt weiterhin die *Statistik*
+  verfälschen (der Markdown-Parser kennt keine Code-Fences) – das betrifft nur die
+  Anzeige der eigenen Mitschnitte, kein Code läuft mehr.
+
+**Test**: `renderProjects()` in einer VM mit DOM-Stub, Projekt mit bösartigem Namen,
+Gruppe, Workspace-URL, `javascript:`-Git-URL und Repo-Daten; das erzeugte HTML wurde
+mit Pythons `html.parser` geprüft (echte Attribut-Dekodierung).
+Neu: keine eingeschleusten Tags/Handler, `href` = `#` für `javascript:`, Handler
+enthalten den Namen als *ein* String-Argument; `jsArg()`-Roundtrip liefert exakt den
+Originalstring. **Gegenprobe mit dem alten `app.js` (main)**: 7× eingeschleustes
+`<img onerror>`, Handler brechen aus (`app.deleteProject('p1', 'x');alert(1);//`).
