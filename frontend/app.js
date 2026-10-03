@@ -9,6 +9,8 @@ class XaresAICoder {
         this.creatingProjects = new Set(); // Track projects being created
         this.config = null; // Store app configuration
         this.deferredPrompt = null; // PWA install prompt
+        this.workspacePasswords = new Map(); // projectId -> password (memory only)
+        this.passwordPrompts = new Map(); // projectId -> pending prompt promise
         this.init();
     }
 
@@ -1106,6 +1108,7 @@ class XaresAICoder {
             const data = await response.json();
 
             if (response.ok) {
+                this.workspacePasswords.delete(projectId);
                 this.removeProjectFromStorage(projectId);
                 this.loadProjects();
                 this.hidePasswordModal();
@@ -1153,6 +1156,7 @@ class XaresAICoder {
             const data = await response.json();
 
             if (response.ok) {
+                if (password) this.workspacePasswords.set(projectId, password);
                 this.loadProjects(); // Refresh the list to show updated status
                 this.hidePasswordModal();
             } else {
@@ -1204,6 +1208,7 @@ class XaresAICoder {
             const data = await response.json();
 
             if (response.ok) {
+                if (password) this.workspacePasswords.set(projectId, password);
                 this.loadProjects(); // Refresh the list to show updated status
                 this.hidePasswordModal();
             } else {
@@ -1461,7 +1466,7 @@ class XaresAICoder {
         this.pendingPasswordAction = { action, projectId, projectName };
         
         // Set the message based on action
-        const actionText = action === 'delete' ? 'delete' : action === 'stop' ? 'stop' : 'start';
+        const actionText = ['delete', 'stop', 'start', 'access'].includes(action) ? action : 'start';
         messageElement.textContent = `Enter the password for "${projectName}" to ${actionText} this protected workspace:`;
         
         // Clear previous input and errors
@@ -1479,7 +1484,62 @@ class XaresAICoder {
         const errorElement = document.getElementById('passwordVerifyError');
         modal.style.display = 'none';
         errorElement.style.display = 'none';
+        // A pending access prompt that gets closed counts as cancelled
+        if (this.pendingPasswordAction && this.pendingPasswordAction.resolve) {
+            this.pendingPasswordAction.resolve(null);
+        }
         this.pendingPasswordAction = null;
+    }
+
+    // Shows the password modal and resolves with the entered password,
+    // or null if the user cancels.
+    promptWorkspacePassword(projectId, projectName, errorMessage = null) {
+        return new Promise((resolve) => {
+            this.showPasswordModal('access', projectId, projectName);
+            this.pendingPasswordAction.resolve = resolve;
+            if (errorMessage) this.showPasswordError(errorMessage);
+        });
+    }
+
+    // Returns '' for unprotected workspaces, the remembered password for
+    // protected ones, or prompts for it. Resolves null if the user cancels.
+    // Passwords are kept in memory only (never in localStorage).
+    async getWorkspacePassword(projectId, { errorMessage = null, force = false } = {}) {
+        const project = this.projects.find(p => p.projectId === projectId);
+        if (!force && !(project && project.passwordProtected)) return '';
+        if (!force && this.workspacePasswords.has(projectId)) return this.workspacePasswords.get(projectId);
+
+        // Concurrent callers (e.g. two requests when a modal opens) share one prompt
+        if (!this.passwordPrompts.has(projectId)) {
+            const name = project ? project.projectName : projectId;
+            const prompt = this.promptWorkspacePassword(projectId, name, errorMessage)
+                .finally(() => this.passwordPrompts.delete(projectId));
+            this.passwordPrompts.set(projectId, prompt);
+        }
+        const password = await this.passwordPrompts.get(projectId);
+        if (password) this.workspacePasswords.set(projectId, password);
+        return password;
+    }
+
+    // fetch() for routes guarded by the workspace password. Sends the
+    // X-Workspace-Password header and re-prompts on 401. Returns null if
+    // the user cancels the prompt.
+    async protectedFetch(projectId, url, options = {}) {
+        let errorMessage = null;
+        let force = false;
+        for (;;) {
+            const password = await this.getWorkspacePassword(projectId, { errorMessage, force });
+            if (password === null) return null;
+
+            const headers = { ...(options.headers || {}) };
+            if (password) headers['X-Workspace-Password'] = encodeURIComponent(password);
+            const response = await fetch(url, { ...options, headers });
+
+            if (response.status !== 401) return response;
+            this.workspacePasswords.delete(projectId);
+            errorMessage = 'Invalid password. Please try again.';
+            force = true;
+        }
     }
 
     showPasswordError(message) {
@@ -1502,7 +1562,15 @@ class XaresAICoder {
         }
         
         const { action, projectId, projectName } = this.pendingPasswordAction;
-        
+
+        if (action === 'access') {
+            const { resolve } = this.pendingPasswordAction;
+            this.pendingPasswordAction = null; // resolved here, not as cancel
+            this.hidePasswordModal();
+            resolve(password);
+            return;
+        }
+
         if (action === 'delete') {
             // Show confirmation dialog before executing delete
             if (confirm(`Are you sure you want to delete the project "${projectName}"? This action cannot be undone.`)) {
@@ -2093,6 +2161,7 @@ class XaresAICoder {
             this.showError('Project not found');
             return;
         }
+        if (await this.getWorkspacePassword(projectId) === null) return;
         this.currentAliasesProjectId = projectId;
 
         document.getElementById('aliasesModalTitle').textContent = `Subdomain Aliases — ${project.projectName}`;
@@ -2157,7 +2226,11 @@ class XaresAICoder {
 
         container.innerHTML = '<div style="color: var(--vscode-text-muted); font-size: 12px;">Loading…</div>';
         try {
-            const res = await fetch(`${this.apiBase}/projects/${projectId}/aliases`);
+            const res = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/aliases`);
+            if (!res) {
+                container.innerHTML = '<div style="color: var(--vscode-text-muted); font-size: 12px;">Password required.</div>';
+                return;
+            }
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to load aliases');
 
@@ -2197,8 +2270,8 @@ class XaresAICoder {
 
         select.innerHTML = '<option value="">Loading…</option>';
         try {
-            const res = await fetch(`${this.apiBase}/projects/${projectId}/ports`);
-            const data = await res.json();
+            const res = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/ports`);
+            const data = res ? await res.json() : null;
             const ports = (data && data.success) ? (data.ports || []) : [];
 
             const options = ['<option value="">— Select port —</option>'];
@@ -2239,11 +2312,12 @@ class XaresAICoder {
         const orig = btn.textContent;
         btn.textContent = 'Adding…';
         try {
-            const res = await fetch(`${this.apiBase}/projects/${projectId}/aliases`, {
+            const res = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/aliases`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
+            if (!res) return;
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to add alias');
 
@@ -2277,7 +2351,8 @@ class XaresAICoder {
         if (!projectId) return;
         if (!confirm(`Delete alias "${subdomain}"?`)) return;
         try {
-            const res = await fetch(`${this.apiBase}/projects/${projectId}/aliases/${encodeURIComponent(subdomain)}`, { method: 'DELETE' });
+            const res = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/aliases/${encodeURIComponent(subdomain)}`, { method: 'DELETE' });
+            if (!res) return;
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to delete alias');
 
@@ -2511,12 +2586,14 @@ class XaresAICoder {
     }
 
     // Clone Modal Methods
-    openCloneModal(projectId) {
+    async openCloneModal(projectId) {
         const project = this.projects.find(p => p.projectId === projectId);
         if (!project) {
             this.showError('Project not found');
             return;
         }
+        // Cloning copies the whole workspace, so the source password is required
+        if (await this.getWorkspacePassword(projectId) === null) return;
 
         this.cloneSourceProjectId = projectId;
 
@@ -2603,11 +2680,12 @@ class XaresAICoder {
         if (password) body.password = password;
 
         try {
-            const response = await fetch(`${this.apiBase}/projects/${projectId}/clone`, {
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/clone`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
+            if (!response) return;
 
             const data = await response.json();
 
@@ -2646,6 +2724,8 @@ class XaresAICoder {
                 return;
             }
 
+            if (await this.getWorkspacePassword(projectId) === null) return;
+
             // Set current project ID
             this.currentLogsProjectId = projectId;
 
@@ -2673,7 +2753,18 @@ class XaresAICoder {
                 document.getElementById('logsContent').textContent = 'Loading logs...';
             }
 
-            const response = await fetch(`${this.apiBase}/projects/${projectId}/squid-logs?lines=50`);
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/squid-logs?lines=50`);
+            if (!response) {
+                // Password prompt cancelled: close the viewer and stop auto-refresh
+                if (this.logsRefreshInterval) {
+                    clearInterval(this.logsRefreshInterval);
+                    this.logsRefreshInterval = null;
+                }
+                document.getElementById('autoRefreshLogs').checked = false;
+                document.getElementById('logsModal').style.display = 'none';
+                this.currentLogsProjectId = null;
+                return;
+            }
             const data = await response.json();
 
             if (response.ok) {
@@ -2754,7 +2845,8 @@ class XaresAICoder {
             }
 
             // Fetch conversations
-            const response = await fetch(`${this.apiBase}/projects/${projectId}/llm-conversations?limit=50`);
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/llm-conversations?limit=50`);
+            if (!response) return;
             const data = await response.json();
 
             if (!response.ok || !data.success) {
@@ -2839,11 +2931,12 @@ class XaresAICoder {
                 return;
             }
 
-            const response = await fetch(`${this.apiBase}/projects/${projectId}/generate-documentation`, {
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/generate-documentation`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ format: 'markdown', type })
             });
+            if (!response) return;
 
             const data = await response.json();
 
@@ -2884,9 +2977,10 @@ class XaresAICoder {
                 return;
             }
 
-            const response = await fetch(`${this.apiBase}/projects/${projectId}/llm-conversations`, {
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/llm-conversations`, {
                 method: 'DELETE'
             });
+            if (!response) return;
 
             const data = await response.json();
 
@@ -2913,9 +3007,10 @@ class XaresAICoder {
                 return;
             }
 
-            const response = await fetch(`${this.apiBase}/projects/${projectId}/llm-conversations/${timestamp}`, {
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/llm-conversations/${encodeURIComponent(timestamp)}`, {
                 method: 'DELETE'
             });
+            if (!response) return;
 
             const data = await response.json();
 
@@ -3268,7 +3363,8 @@ class XaresAICoder {
                 return;
             }
 
-            const response = await fetch(`${this.apiBase}/projects/${projectId}/recorded-domains`);
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/recorded-domains`);
+            if (!response) return;
             const data = await response.json();
 
             if (!response.ok || !data.success) {

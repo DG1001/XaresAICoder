@@ -475,22 +475,31 @@ class WorkspaceService {
     };
   }
 
+  // Throws 'Project not found' or 'Invalid password for protected workspace'.
+  // Resolves silently for unprotected workspaces.
+  async verifyWorkspacePassword(projectId, providedPassword) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+    if (!project.passwordProtected) return;
+
+    if (!providedPassword || typeof providedPassword !== 'string' || !project.passwordHash) {
+      throw new Error('Invalid password for protected workspace');
+    }
+    const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
+    if (!passwordMatch) {
+      throw new Error('Invalid password for protected workspace');
+    }
+  }
+
   async startProject(projectId, providedPassword = null) {
     const project = this.projects.get(projectId);
     if (!project) {
       throw new Error('Project not found');
     }
 
-    // Check password if workspace is protected
-    if (project.passwordProtected) {
-      if (!providedPassword) {
-        throw new Error('Invalid password for protected workspace');
-      }
-      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
-      if (!passwordMatch) {
-        throw new Error('Invalid password for protected workspace');
-      }
-    }
+    await this.verifyWorkspacePassword(projectId, providedPassword);
 
     // Check concurrent workspace limit before starting
     if (this.limits.enableResourceLimits) {
@@ -525,16 +534,7 @@ class WorkspaceService {
       throw new Error('Project not found');
     }
 
-    // Check password if workspace is protected
-    if (project.passwordProtected) {
-      if (!providedPassword) {
-        throw new Error('Invalid password for protected workspace');
-      }
-      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
-      if (!passwordMatch) {
-        throw new Error('Invalid password for protected workspace');
-      }
-    }
+    await this.verifyWorkspacePassword(projectId, providedPassword);
 
     try {
       const result = await dockerService.stopWorkspaceContainer(projectId);
@@ -557,16 +557,7 @@ class WorkspaceService {
       throw new Error('Project not found');
     }
 
-    // Check password if workspace is protected
-    if (project.passwordProtected) {
-      if (!providedPassword) {
-        throw new Error('Invalid password for protected workspace');
-      }
-      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
-      if (!passwordMatch) {
-        throw new Error('Invalid password for protected workspace');
-      }
-    }
+    await this.verifyWorkspacePassword(projectId, providedPassword);
 
     try {
       await dockerService.stopWorkspace(projectId);
@@ -881,13 +872,12 @@ class WorkspaceService {
       }
     }
 
+    // Update the container first: if that fails, the stored hash must keep
+    // matching what code-server actually uses.
     if (removePassword) {
-      // Remove password protection
+      await dockerService.updateWorkspacePassword(projectId, null);
       project.passwordProtected = false;
       project.passwordHash = null;
-
-      // Update running container
-      await dockerService.updateWorkspacePassword(projectId, null);
     } else if (newPassword) {
       // Validate new password
       if (newPassword.length < 8) {
@@ -897,12 +887,10 @@ class WorkspaceService {
         throw new Error('Password must be less than 50 characters');
       }
 
-      // Set/update password
-      project.passwordProtected = true;
-      project.passwordHash = await bcrypt.hash(newPassword, 10);
-
-      // Update running container
+      const newHash = await bcrypt.hash(newPassword, 10);
       await dockerService.updateWorkspacePassword(projectId, newPassword);
+      project.passwordProtected = true;
+      project.passwordHash = newHash;
     } else {
       throw new Error('Either newPassword or removePassword must be provided');
     }

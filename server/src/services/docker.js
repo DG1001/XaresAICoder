@@ -1282,10 +1282,13 @@ fi`.trim();
 
       if (containerInfo.State.Running) {
         // Running container: update config.yaml and auth override file via exec, then stop+start
+        // Both files are passed base64-encoded so no password content ever
+        // reaches the shell (a heredoc could be terminated by the password).
         const b64Config = Buffer.from(configContent).toString('base64');
+        const b64Override = Buffer.from(overrideContent).toString('base64');
         const writeCmd = [
           `echo '${b64Config}' | base64 -d > ${configPath}`,
-          `cat > /home/coder/.code-server-auth << 'AUTHEOF'\n${overrideContent}AUTHEOF`
+          `echo '${b64Override}' | base64 -d > /home/coder/.code-server-auth`
         ].join(' && ');
         const exec = await container.exec({
           Cmd: ['bash', '-c', writeCmd],

@@ -71,3 +71,64 @@ Container-Layout, Git-Workflow) umzubauen. Jedes Thema ist ein eigener Commit au
 **Test**: Node-Skript mit gemocktem Docker-Service – Liste, Detail und Start-Antwort
 enthalten weder `passwordHash`, `{SHA}`, `internalCloneUrl`, Admin-Passwort noch
 Token aus der Git-URL.
+
+### 1.2 Workspace-Passwort auf allen sensiblen Routen
+
+**Problem**
+- Nur Start, Stop und Delete prüften das Workspace-Passwort. Clone, Aliases,
+  Port-Erkennung, Proxy-Logs, Recorded Domains, LLM-Conversations (lesen/löschen)
+  und die Doku-Generierung waren für geschützte Workspaces offen.
+- Besonders kritisch: `POST /:id/clone` mit `{count: 1}` lieferte eine **ungeschützte
+  Kopie** eines geschützten Workspace (inkl. Dateien, Dotfiles, Git-Credentials).
+- Das neue Passwort wurde bei `updatePassword` erst im Speicher gesetzt und dann
+  erst im Container – schlug der Container-Teil fehl, passte der gespeicherte Hash
+  nicht mehr zum tatsächlichen code-server-Passwort.
+- `updateWorkspacePassword` schrieb die Auth-Override-Datei per Heredoc
+  (`<< 'AUTHEOF'`). Ein Passwort mit einer Zeile `AUTHEOF` hätte den Heredoc
+  beendet und den Rest als Shell ausgeführt.
+
+**Änderung**
+- `workspaceService.verifyWorkspacePassword()` – eine zentrale Prüfung statt drei
+  Kopien in start/stop/delete.
+- Express-Middleware `requireWorkspacePassword` (`routes/projects.js`) auf: clone,
+  ports, aliases (GET/POST/PUT/DELETE), squid-logs, recorded-domains,
+  llm-conversations (GET/DELETE/DELETE :timestamp), generate-documentation.
+- Passwort kommt im Header **`X-Workspace-Password`**, percent-encoded
+  (`encodeURIComponent`). Start/Stop/Delete akzeptieren zusätzlich weiterhin
+  `body.password` (Abwärtskompatibilität).
+- Gemeinsame Validierung `validateNewPassword()` (8–50 Zeichen, **keine
+  Steuerzeichen**) für Create, Clone und Passwortänderung.
+- `updatePassword`: erst Container aktualisieren, dann Hash übernehmen.
+- `updateWorkspacePassword`: Override-Datei wird wie die config.yaml base64-kodiert
+  geschrieben – kein Passwortinhalt erreicht mehr die Shell.
+- `lines`/`limit`/`offset` der Log-Routen werden auf sinnvolle Bereiche begrenzt
+  (sie landen in Shell-Pipelines im Container).
+- Frontend (`app.js`): `getWorkspacePassword()` + `protectedFetch()`. Beim Öffnen
+  von Clone-, Aliases-, Logs-, AI-Conversations- und Domains-Dialog wird bei
+  geschützten Workspaces einmal nach dem Passwort gefragt; danach bleibt es **nur im
+  Speicher** des Tabs (nie localStorage). Bei 401 wird erneut gefragt, Abbrechen
+  bricht die Aktion ab. Parallele Requests teilen sich einen Prompt. Erfolgreiche
+  Start/Stop-Aktionen merken sich das Passwort ebenfalls.
+- Passwort-Dialog liegt per `z-index` über den anderen Modals.
+- Convo-Viewer (`convo-viewer.html`) fragt bei 401 per `prompt()` nach dem Passwort.
+- Doku: `docs/API.md` (Abschnitt Authentication + Clone), `CLAUDE.md`.
+
+**Entscheidungen**
+- **Header statt Body**: GET-Routen haben keinen Body, und beim Clone ist
+  `body.password` bereits das Passwort der *neuen* Klone – ein eigener Header
+  vermeidet die Doppeldeutigkeit.
+- **Percent-Encoding** im Header: HTTP-Header sind faktisch ASCII/Latin-1, deutsche
+  Passwörter mit Umlauten würden in `fetch()` sonst einen TypeError werfen. ASCII-
+  Passwörter ohne `%` können per curl unverändert geschickt werden.
+- **Name, Gruppe, Notizen bleiben ohne Passwort änderbar.** Das sind organisatorische
+  Metadaten (Drag & Drop zwischen Gruppen soll nicht ständig nach Passwörtern
+  fragen). Notizen sind über die Projektliste ohnehin lesbar.
+- Das ist **keine Plattform-Authentifizierung** – ungeschützte Workspaces bleiben
+  über die API steuerbar. Ein echter Login mit Rollen ist als Feature vorgemerkt.
+
+**Test**: Express-Integrationstest mit gemocktem Docker-Service –
+geschützter Workspace ohne/mit falschem Passwort → 401 (clone, ports, llm, aliases),
+mit Umlaut-Passwort (percent-encoded) → 200, ungeschützt → 200, unbekannt → 404,
+Stop per Header → 200, Passwort mit Zeilenumbruch → 400, `lines=99999` → auf 500
+begrenzt. Frontend-Logik per VM-Test: zwei parallele Requests → ein Prompt,
+falsches Passwort → erneuter Prompt mit Fehlermeldung, Abbruch → `null`.

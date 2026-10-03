@@ -39,15 +39,33 @@ Currently, XaresAICoder uses **workspace-level password protection** rather than
 
 ### Password-Protected Operations
 
-Workspace passwords are required for:
-- Stopping password-protected workspaces
-- Deleting password-protected workspaces
+For password-protected workspaces, the workspace password is required for:
+- Starting, stopping and deleting the workspace
+- Cloning it (`POST /:projectId/clone`)
+- Subdomain aliases and port detection (`/:projectId/aliases*`, `/:projectId/ports`)
+- Proxy logs, recorded domains, LLM conversations and documentation generation
+  (`/:projectId/squid-logs`, `/:projectId/recorded-domains`,
+  `/:projectId/llm-conversations*`, `/:projectId/generate-documentation`)
+
+Send it in the `X-Workspace-Password` header, percent-encoded (JavaScript:
+`encodeURIComponent(password)`), so non-ASCII passwords survive HTTP header
+encoding. Plain ASCII passwords without `%` can be sent as is:
+
+```bash
+curl -H "X-Workspace-Password: my-password" \
+  http://localhost/api/projects/<id>/llm-conversations
+```
+
+Start, stop and delete also still accept the password in the JSON body:
 
 ```json
 {
   "password": "workspace-password"
 }
 ```
+
+A missing or wrong password returns `401`. Organizational metadata (name, group,
+notes) can be changed without the workspace password.
 
 ## Project Management
 
@@ -607,6 +625,9 @@ Creates multiple identical copies of an existing workspace using Docker filesyst
   "password": "optional-student-password"
 }
 ```
+
+**Headers**: `X-Workspace-Password` – required if the *source* workspace is
+password-protected (see [Authentication](#authentication)).
 
 **Parameters**:
 - `count` (integer, required): Number of clones to create (1–50)

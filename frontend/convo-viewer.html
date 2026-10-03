@@ -310,13 +310,26 @@ if (location.hash === "#test") fetch("testdata.md").then(r=>r.text()).then(rende
 //  AI-Conversations-Modal geöffnet — kein Datei-Download nötig)
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
+// Passwortgeschützte Workspaces antworten mit 401 → Passwort abfragen und erneut
+// versuchen (nur im Speicher dieses Tabs, wird nirgends abgelegt).
+async function loadDocumentation(password){
+  const headers = { "Content-Type": "application/json" };
+  if (password) headers["X-Workspace-Password"] = encodeURIComponent(password);
+  const r = await fetch(`/api/projects/${encodeURIComponent(projectId)}/generate-documentation`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ format: "markdown", type: params.get("type") || "detailed" })
+  });
+  if (r.status === 401){
+    const pw = prompt(password ? "Falsches Passwort. Workspace-Passwort:" : "Workspace-Passwort:");
+    if (pw === null) throw new Error("Passwort erforderlich");
+    return loadDocumentation(pw);
+  }
+  return r;
+}
 if (projectId){
   drop.innerHTML = "<b>Lade Conversations aus der App …</b>";
-  fetch(`/api/projects/${encodeURIComponent(projectId)}/generate-documentation`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ format: "markdown", type: params.get("type") || "detailed" })
-  })
+  loadDocumentation(null)
     .then(r => r.json().then(d => ({ ok: r.ok, d })))
     .then(({ ok, d }) => {
       if (!ok || !d.success) throw new Error(d.message || d.error || "unbekannter Fehler");

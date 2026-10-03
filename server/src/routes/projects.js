@@ -18,6 +18,58 @@ function aliasErrorStatus(code) {
   }
 }
 
+// The workspace password for protected workspaces is sent in the
+// X-Workspace-Password header, percent-encoded (encodeURIComponent) so that
+// non-ASCII passwords survive header encoding. Plain ASCII passwords without
+// '%' can be sent as is.
+function readWorkspacePasswordHeader(req) {
+  const raw = req.get('X-Workspace-Password');
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+// Guards routes that expose workspace content or create new access paths
+// (clone, aliases, logs, captured conversations). Unprotected workspaces pass.
+async function requireWorkspacePassword(req, res, next) {
+  try {
+    await workspaceService.verifyWorkspacePassword(req.params.projectId, readWorkspacePasswordHeader(req));
+    next();
+  } catch (error) {
+    if (error.message === 'Project not found') {
+      return res.status(404).json({ error: 'Project not found', message: error.message });
+    }
+    if (error.message === 'Invalid password for protected workspace') {
+      return res.status(401).json({ error: 'Unauthorized', message: error.message });
+    }
+    console.error('Workspace password check error:', error);
+    res.status(500).json({ error: 'Internal server error', message: 'Password check failed' });
+  }
+}
+
+// Returns an error message for an invalid new password, or null if valid.
+function validateNewPassword(password) {
+  if (typeof password !== 'string' || password.length < 8) {
+    return 'Password must be at least 8 characters long';
+  }
+  if (password.length > 50) {
+    return 'Password must be less than 50 characters';
+  }
+  if (/[\x00-\x1f\x7f]/.test(password)) {
+    return 'Password must not contain control characters';
+  }
+  return null;
+}
+
+function clampInt(value, fallback, min, max) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, min), max);
+}
+
 // Create new project
 router.post('/create', async (req, res) => {
   try {
@@ -80,18 +132,9 @@ router.post('/create', async (req, res) => {
 
     // Validate password if protection is enabled
     if (passwordProtected) {
-      if (!password || password.length < 8) {
-        return res.status(400).json({
-          error: 'Invalid password',
-          message: 'Password must be at least 8 characters long'
-        });
-      }
-      
-      if (password.length > 50) {
-        return res.status(400).json({
-          error: 'Invalid password',
-          message: 'Password must be less than 50 characters'
-        });
+      const passwordError = validateNewPassword(password);
+      if (passwordError) {
+        return res.status(400).json({ error: 'Invalid password', message: passwordError });
       }
     }
 
@@ -166,7 +209,7 @@ router.get('/:projectId', async (req, res) => {
 router.delete('/:projectId', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { password } = req.body;
+    const password = (req.body && req.body.password) || readWorkspacePasswordHeader(req);
     const result = await workspaceService.deleteProject(projectId, password);
     
     res.json({
@@ -211,7 +254,7 @@ router.get('/', async (req, res) => {
 router.post('/:projectId/start', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { password } = req.body;
+    const password = (req.body && req.body.password) || readWorkspacePasswordHeader(req);
     const result = await workspaceService.startProject(projectId, password);
     
     res.json(result);
@@ -233,7 +276,7 @@ router.post('/:projectId/start', async (req, res) => {
 router.post('/:projectId/stop', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { password } = req.body;
+    const password = (req.body && req.body.password) || readWorkspacePasswordHeader(req);
     const result = await workspaceService.stopProject(projectId, password);
     
     res.json(result);
@@ -251,8 +294,10 @@ router.post('/:projectId/stop', async (req, res) => {
   }
 });
 
-// Clone project (create multiple workspaces from a source)
-router.post('/:projectId/clone', async (req, res) => {
+// Clone project (create multiple workspaces from a source).
+// The source workspace's password goes in X-Workspace-Password; body.password
+// is the password for the new clones.
+router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
     const { count, password } = req.body;
@@ -275,17 +320,9 @@ router.post('/:projectId/clone', async (req, res) => {
 
     // Validate password if provided
     if (password) {
-      if (password.length < 8) {
-        return res.status(400).json({
-          error: 'Invalid password',
-          message: 'Password must be at least 8 characters long'
-        });
-      }
-      if (password.length > 50) {
-        return res.status(400).json({
-          error: 'Invalid password',
-          message: 'Password must be less than 50 characters'
-        });
+      const passwordError = validateNewPassword(password);
+      if (passwordError) {
+        return res.status(400).json({ error: 'Invalid password', message: passwordError });
       }
     }
 
@@ -445,17 +482,9 @@ router.put('/:projectId/password', async (req, res) => {
 
     // Validate new password if provided
     if (newPassword) {
-      if (newPassword.length < 8) {
-        return res.status(400).json({
-          error: 'Invalid password',
-          message: 'Password must be at least 8 characters long'
-        });
-      }
-      if (newPassword.length > 50) {
-        return res.status(400).json({
-          error: 'Invalid password',
-          message: 'Password must be less than 50 characters'
-        });
+      const passwordError = validateNewPassword(newPassword);
+      if (passwordError) {
+        return res.status(400).json({ error: 'Invalid password', message: passwordError });
       }
     }
 
@@ -515,10 +544,10 @@ router.get('/:projectId/disk-usage', async (req, res) => {
 });
 
 // Get squid proxy logs for a project
-router.get('/:projectId/squid-logs', async (req, res) => {
+router.get('/:projectId/squid-logs', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { lines = 50 } = req.query;
+    const lines = clampInt(req.query.lines, 50, 1, 500);
 
     // Get workspace IP address
     const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
@@ -530,7 +559,7 @@ router.get('/:projectId/squid-logs', async (req, res) => {
     }
 
     // Get squid logs filtered by IP
-    const logs = await dockerService.getSquidLogsForWorkspace(ipAddress, parseInt(lines));
+    const logs = await dockerService.getSquidLogsForWorkspace(ipAddress, lines);
 
     res.json({
       success: true,
@@ -549,7 +578,7 @@ router.get('/:projectId/squid-logs', async (req, res) => {
 });
 
 // Get LLM conversations for a project
-router.get('/:projectId/llm-conversations', async (req, res) => {
+router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
     const {
@@ -570,8 +599,8 @@ router.get('/:projectId/llm-conversations', async (req, res) => {
 
     const conversations = await dockerService.getLLMConversationsForWorkspace(
       ipAddress,
-      parseInt(limit),
-      parseInt(offset),
+      clampInt(limit, 100, 1, 1000),
+      clampInt(offset, 0, 0, 100000),
       { model, dateFrom, dateTo }
     );
 
@@ -593,7 +622,7 @@ router.get('/:projectId/llm-conversations', async (req, res) => {
 });
 
 // Get recorded domains for a workspace (for whitelist generation)
-router.get('/:projectId/recorded-domains', async (req, res) => {
+router.get('/:projectId/recorded-domains', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
 
@@ -627,7 +656,7 @@ router.get('/:projectId/recorded-domains', async (req, res) => {
 });
 
 // Generate documentation from LLM conversations
-router.post('/:projectId/generate-documentation', async (req, res) => {
+router.post('/:projectId/generate-documentation', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
     const { format = 'markdown', type = 'clean' } = req.body;
@@ -668,7 +697,7 @@ router.post('/:projectId/generate-documentation', async (req, res) => {
 });
 
 // Delete all LLM conversations for a project
-router.delete('/:projectId/llm-conversations', async (req, res) => {
+router.delete('/:projectId/llm-conversations', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
 
@@ -698,7 +727,7 @@ router.delete('/:projectId/llm-conversations', async (req, res) => {
 });
 
 // Delete a specific LLM conversation
-router.delete('/:projectId/llm-conversations/:timestamp', async (req, res) => {
+router.delete('/:projectId/llm-conversations/:timestamp', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId, timestamp } = req.params;
 
@@ -730,7 +759,7 @@ router.delete('/:projectId/llm-conversations/:timestamp', async (req, res) => {
 // ---- Workspace port aliases (custom subdomains) ----
 
 // Auto-detected listening TCP ports inside the workspace container
-router.get('/:projectId/ports', async (req, res) => {
+router.get('/:projectId/ports', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
     const project = workspaceService.projects.get(projectId);
@@ -745,7 +774,7 @@ router.get('/:projectId/ports', async (req, res) => {
 });
 
 // List aliases for a project
-router.get('/:projectId/aliases', async (req, res) => {
+router.get('/:projectId/aliases', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
     const aliases = aliasesService.listForProject(workspaceService, projectId);
@@ -756,7 +785,7 @@ router.get('/:projectId/aliases', async (req, res) => {
 });
 
 // Create alias
-router.post('/:projectId/aliases', async (req, res) => {
+router.post('/:projectId/aliases', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
     const { subdomain, port, authProtected, authUsername, authPassword } = req.body || {};
@@ -771,7 +800,7 @@ router.post('/:projectId/aliases', async (req, res) => {
 });
 
 // Update alias (change port and/or auth)
-router.put('/:projectId/aliases/:subdomain', async (req, res) => {
+router.put('/:projectId/aliases/:subdomain', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId, subdomain } = req.params;
     const { port, authProtected, authUsername, authPassword } = req.body || {};
@@ -786,7 +815,7 @@ router.put('/:projectId/aliases/:subdomain', async (req, res) => {
 });
 
 // Delete alias
-router.delete('/:projectId/aliases/:subdomain', async (req, res) => {
+router.delete('/:projectId/aliases/:subdomain', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId, subdomain } = req.params;
     await aliasesService.removeAlias(workspaceService, projectId, subdomain);
