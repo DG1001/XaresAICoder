@@ -867,6 +867,14 @@ Replaces the Security Proxy whitelist with the provided domains. Merges with bas
 - Domains are normalized to `.domain` format (squid convention: matches both bare domain and all subdomains)
 - Redundant subdomains are automatically removed (e.g., `.api.anthropic.com` removed when `.anthropic.com` exists)
 - Changes take effect immediately via `squid -k reconfigure`
+- Only plain domain names are accepted (`example.com`, `.example.com`, `*.example.com`).
+  IP addresses, URLs, single-label names (e.g. `.com`) and entries containing
+  whitespace are rejected with `400` and a list of the invalid entries
+- The generated config is checked with `squid -k parse` before it replaces the live
+  `squid.conf` (`422` if invalid); if `squid -k reconfigure` fails, the previous
+  config is restored
+- The change lives in the running squid container only – recreating the container
+  restores the default whitelist baked into the image
 
 ### Generate Documentation from LLM Conversations
 

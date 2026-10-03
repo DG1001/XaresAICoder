@@ -132,3 +132,48 @@ mit Umlaut-Passwort (percent-encoded) → 200, ungeschützt → 200, unbekannt �
 Stop per Header → 200, Passwort mit Zeilenumbruch → 400, `lines=99999` → auf 500
 begrenzt. Frontend-Logik per VM-Test: zwei parallele Requests → ein Prompt,
 falsches Passwort → erneuter Prompt mit Fehlermeldung, Abbruch → `null`.
+
+### 1.3 Whitelist: Validierung, Parse-Check, Rollback
+
+**Problem**
+- `PUT /api/whitelist` prüfte nur, ob `domains` ein Array ist; `_normalizeDomains`
+  trimmte nur. Die Liste landete mit Leerzeichen verbunden in **einer** squid.conf-
+  Zeile. Ein Eintrag wie `"x.com\nhttp_access allow all"` fügte eine eigene Direktive
+  vor `deny all` ein → Security Proxy komplett ausgehebelt.
+- Nicht-Strings führten zu einem TypeError (500).
+- Exit-Codes von `squid -k reconfigure` wurden ignoriert, es gab keinen Parse-Check
+  und keinen Rollback – ein kaputter Eintrag konnte squid für alle Studierenden
+  lahmlegen.
+- squid.conf wurde per `printf '%s' '<ganze Datei>'` mit Shell-Quoting geschrieben.
+
+**Änderung** (`server/src/services/whitelist.js`, `server/src/index.js`)
+- Strenge Validierung je Eintrag: nur Hostnamen (Labels aus `a-z0-9-_`, max. 63/253
+  Zeichen, **mindestens zwei Labels**). Erlaubte Schreibweisen: `example.com`,
+  `.example.com`, `*.example.com`, `example.com.`. Ungültige Einträge →
+  `400` mit Liste (max. 10 angezeigt). Maximal 5000 Einträge pro Request.
+- `_execInSquid` arbeitet jetzt mit argv statt `bash -c` und liefert
+  `{stdout, stderr, exitCode}`; `_execInSquidChecked` wirft bei Exit ≠ 0.
+- Schreiben per base64 (`printf %s "$1" | base64 -d > "$2"` mit Positionsargumenten).
+- Ablauf beim Anwenden: Kandidat nach `squid.conf.new` → `squid -k parse -f` →
+  bei Fehler `422`, Live-Config unberührt → sonst Backup `squid.conf.bak`, `mv`,
+  `squid -k reconfigure` → schlägt das fehl, Backup zurückspielen und erneut
+  reconfigure.
+- Doku: `docs/API.md` (Apply Whitelist).
+
+**Entscheidungen**
+- **Ablehnen statt still überspringen**: Ein Injection-Versuch oder ein Tippfehler
+  soll sichtbar sein. Das Frontend zeigt die Server-Meldung an, der Nutzer kann die
+  betroffenen Einträge abwählen.
+- **IP-Adressen werden abgelehnt**: `dstdomain` matcht Hostnamen; für IPs bräuchte
+  es eine `dst`-ACL. Falls „Select All“ in Recorded Domains IP-Literale enthält, muss
+  man sie abwählen. Eine eigene `dst`-ACL für IPs wäre ein mögliches Folge-Feature.
+- **Einzel-Labels wie `.com` werden abgelehnt**, weil sie faktisch alles freigeben.
+- **Offen (Paket 2/3)**: Die Whitelist lebt nur im laufenden squid-Container und geht
+  beim Neuerstellen verloren; das Subnetz `172.30.0.0/16` ist weiterhin fest
+  eingetragen. Sauberer wäre eine per `include` eingebundene Datei auf einem Volume.
+
+**Test**: Node-Test mit simuliertem squid-Container: gültige Schreibweisen werden
+normalisiert und dedupliziert; Newline-Injection, Leerzeichen, IP, `.com`, URL und
+Nicht-String → `INVALID`. Erfolgreiches Apply ersetzt nur den Markerbereich; Parse-
+Fehler → Live-Config unverändert, Kandidat gelöscht; Reconfigure-Fehler → Rollback.
+Der base64-Schreibbefehl wurde lokal mit identischem argv ausgeführt.

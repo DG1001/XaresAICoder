@@ -1,5 +1,20 @@
 const Docker = require('dockerode');
 
+const SQUID_CONF = '/etc/squid/squid.conf';
+
+// One hostname label: letters, digits, hyphens (not at the ends); underscores
+// are tolerated because some real-world hostnames use them.
+const LABEL = '[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?';
+// At least two labels, so a bare TLD like ".com" cannot whitelist everything.
+const DOMAIN_RE = new RegExp(`^(?:${LABEL}\\.)+${LABEL}$`);
+const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+function whitelistError(message, code) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
 class WhitelistService {
   constructor() {
     this.docker = new Docker();
@@ -29,28 +44,54 @@ class WhitelistService {
     return this.docker.getContainer(squidContainerInfo.Id);
   }
 
-  async _execInSquid(cmd) {
+  // Runs an argv command in the squid container and returns
+  // { stdout, stderr, exitCode }. Never goes through a shell.
+  async _execInSquid(argv) {
     const container = await this._getSquidContainer();
     const exec = await container.exec({
-      Cmd: ['bash', '-c', cmd],
+      Cmd: argv,
       AttachStdout: true,
       AttachStderr: true
     });
     const stream = await exec.start();
-    return new Promise((resolve, reject) => {
-      const stdout = [];
-      const stderr = [];
+    const { stdout, stderr } = await new Promise((resolve, reject) => {
+      const out = [];
+      const err = [];
       this.docker.modem.demuxStream(stream,
-        { write: (chunk) => stdout.push(chunk) },
-        { write: (chunk) => stderr.push(chunk) }
+        { write: (chunk) => out.push(chunk) },
+        { write: (chunk) => err.push(chunk) }
       );
-      stream.on('end', () => {
-        const stderrStr = Buffer.concat(stderr).toString('utf8');
-        if (stderrStr) console.error('squid exec stderr:', stderrStr);
-        resolve(Buffer.concat(stdout).toString('utf8'));
-      });
+      stream.on('end', () => resolve({
+        stdout: Buffer.concat(out).toString('utf8'),
+        stderr: Buffer.concat(err).toString('utf8')
+      }));
       stream.on('error', reject);
     });
+    const { ExitCode } = await exec.inspect();
+    return { stdout, stderr, exitCode: ExitCode };
+  }
+
+  // Like _execInSquid, but throws if the command exits non-zero.
+  async _execInSquidChecked(argv, what) {
+    const result = await this._execInSquid(argv);
+    if (result.exitCode !== 0) {
+      const detail = (result.stderr || result.stdout).trim().split('\n').slice(-5).join('\n');
+      throw new Error(`${what} failed (exit ${result.exitCode})${detail ? ': ' + detail : ''}`);
+    }
+    return result.stdout;
+  }
+
+  async _readSquidConf() {
+    return this._execInSquidChecked(['cat', SQUID_CONF], 'Reading squid.conf');
+  }
+
+  async _writeFileInSquid(path, content) {
+    // base64 keeps the file content out of shell parsing entirely
+    const b64 = Buffer.from(content, 'utf8').toString('base64');
+    await this._execInSquidChecked(
+      ['sh', '-c', 'printf %s "$1" | base64 -d > "$2"', 'sh', b64, path],
+      `Writing ${path}`
+    );
   }
 
   /**
@@ -58,7 +99,7 @@ class WhitelistService {
    */
   async getWhitelist() {
     try {
-      const confContent = await this._execInSquid('cat /etc/squid/squid.conf');
+      const confContent = await this._readSquidConf();
 
       const startIdx = confContent.indexOf(this.WHITELIST_START);
       const endIdx = confContent.indexOf(this.WHITELIST_END);
@@ -108,14 +149,37 @@ class WhitelistService {
    * .example.com exists) causes fatal errors.
    */
   _normalizeDomains(rawDomains) {
-    // Convert all domains to .domain format
+    // Validate and convert all domains to .domain format. Anything that is not
+    // a plain hostname is rejected – entries end up verbatim in squid.conf, so
+    // a newline or space would otherwise inject arbitrary squid directives.
     const dotDomains = new Set();
+    const invalid = [];
     for (const d of rawDomains) {
-      const clean = d.trim().toLowerCase();
+      if (typeof d !== 'string') {
+        invalid.push(String(d));
+        continue;
+      }
+      let clean = d.trim().toLowerCase();
       if (!clean) continue;
-      // Normalize to .domain format
-      const dotForm = clean.startsWith('.') ? clean : '.' + clean;
-      dotDomains.add(dotForm);
+      if (clean.startsWith('*.')) clean = clean.slice(1); // *.example.com → .example.com
+      if (clean.endsWith('.')) clean = clean.slice(0, -1); // fully qualified form
+      const bare = clean.startsWith('.') ? clean.slice(1) : clean;
+      if (bare.length > 253 || !DOMAIN_RE.test(bare) || IPV4_RE.test(bare)) {
+        invalid.push(d.trim());
+        continue;
+      }
+      dotDomains.add('.' + bare);
+    }
+
+    if (invalid.length > 0) {
+      const shown = invalid.slice(0, 10).map(d => JSON.stringify(d.slice(0, 80))).join(', ');
+      const more = invalid.length > 10 ? ` (+${invalid.length - 10} more)` : '';
+      throw whitelistError(
+        `Invalid whitelist entries: ${shown}${more}. Only domain names are allowed ` +
+        `(e.g. example.com, .example.com, *.example.com); IP addresses, URLs and ` +
+        `single-label names are not supported.`,
+        'INVALID'
+      );
     }
 
     // Remove subdomains that are already covered by a parent .domain entry
@@ -141,7 +205,7 @@ class WhitelistService {
 
   async applyWhitelist(domains) {
     try {
-      // Merge with base defaults and normalize
+      // Merge with base defaults and normalize (throws code INVALID)
       const allRaw = [...this.BASE_DOMAINS, ...domains];
       const domainList = this._normalizeDomains(allRaw);
 
@@ -149,7 +213,7 @@ class WhitelistService {
       const newSection = this._generateWhitelistSection(domainList);
 
       // Read current squid.conf
-      const confContent = await this._execInSquid('cat /etc/squid/squid.conf');
+      const confContent = await this._readSquidConf();
 
       const startIdx = confContent.indexOf(this.WHITELIST_START);
       const endIdx = confContent.indexOf(this.WHITELIST_END);
@@ -161,12 +225,28 @@ class WhitelistService {
       // Replace whitelist section
       const newConf = confContent.substring(0, startIdx) + newSection + confContent.substring(endIdx);
 
-      // Write back via squid container (escape single quotes for bash)
-      const escaped = newConf.replace(/'/g, "'\\''");
-      await this._execInSquid(`printf '%s' '${escaped}' > /etc/squid/squid.conf`);
+      // Validate the candidate config before touching the live one
+      const candidate = `${SQUID_CONF}.new`;
+      await this._writeFileInSquid(candidate, newConf);
+      const parse = await this._execInSquid(['squid', '-k', 'parse', '-f', candidate]);
+      if (parse.exitCode !== 0) {
+        await this._execInSquid(['rm', '-f', candidate]);
+        const detail = (parse.stderr || parse.stdout).trim().split('\n').slice(-5).join('\n');
+        throw whitelistError(`Generated squid configuration is invalid: ${detail}`, 'PARSE');
+      }
 
-      // Reconfigure squid to apply changes
-      await this._execInSquid('squid -k reconfigure');
+      // Swap in the new config, keeping a backup for rollback
+      await this._execInSquidChecked(['cp', SQUID_CONF, `${SQUID_CONF}.bak`], 'Backing up squid.conf');
+      await this._execInSquidChecked(['mv', candidate, SQUID_CONF], 'Installing squid.conf');
+
+      try {
+        await this._execInSquidChecked(['squid', '-k', 'reconfigure'], 'squid reconfigure');
+      } catch (reconfigureError) {
+        console.error('squid reconfigure failed, restoring previous config:', reconfigureError.message);
+        await this._execInSquid(['cp', `${SQUID_CONF}.bak`, SQUID_CONF]);
+        await this._execInSquid(['squid', '-k', 'reconfigure']);
+        throw reconfigureError;
+      }
 
       console.log(`Whitelist updated with ${domainList.length} domains`);
 
