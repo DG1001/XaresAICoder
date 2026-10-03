@@ -76,6 +76,191 @@ class DockerService {
     };
   }
 
+  // Single source of truth for workspace container settings. Used by both
+  // createWorkspaceContainer and createCloneContainer, so security and
+  // resource settings cannot drift apart between the two paths.
+  // Returns { containerName, useProxy, spec } where spec is the
+  // docker.createContainer() payload.
+  buildContainerSpec(projectId, {
+    image,
+    projectType,
+    memoryLimit = '2g',
+    cpuCores = '2',
+    passwordProtected = false,
+    password = null,
+    proxyMode = 'none',
+    gitRepository = null,
+    gitUrl = null,
+    gitUsername = null,
+    gitToken = null
+  }) {
+    const containerName = `workspace-${projectId}`;
+    const useProxy = proxyMode !== 'none';
+    const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
+    const hostSuffix = this.basePort !== '80' ? ':' + this.basePort : '';
+    let authFlag = 'none'; // Default to no auth
+    const envVars = [
+      `PROJECT_TYPE=${projectType}`,
+      `PROJECT_ID=${projectId}`,
+      `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${hostSuffix}/`,
+      `PROXY_DOMAIN=${projectId}.${this.baseDomain}${hostSuffix}`
+    ];
+
+    // Add proxy environment variables if THIS workspace uses proxy
+    if (useProxy) {
+      // Uppercase (used by some tools)
+      envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
+      envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
+      envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
+      // Lowercase (used by curl and many CLI tools)
+      envVars.push(`http_proxy=http://${activeProxyHost}`);
+      envVars.push(`https_proxy=http://${activeProxyHost}`);
+      envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
+      // Tell Node.js to trust the proxy CA certificate
+      envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
+    }
+
+    if (passwordProtected && password) {
+      authFlag = 'password';
+      envVars.push(`PASSWORD=${password}`);
+    }
+
+    // Add Git server URL to all containers when Git server is enabled
+    // This allows setup_local_remote script to work in any workspace
+    if (process.env.ENABLE_GIT_SERVER === 'true') {
+      const protocol = process.env.PROTOCOL || 'http';
+      const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+      const basePort = process.env.BASE_PORT || '80';
+      const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
+      const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
+
+      // Build Git server URL (accessible from inside Docker network)
+      envVars.push(`GIT_SERVER_ENABLED=true`);
+      envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
+      envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
+      envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
+
+      // Build external Git server URL for display
+      let externalGitUrl;
+      if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
+        externalGitUrl = `${protocol}://${baseDomain}/git`;
+      } else {
+        externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
+      }
+      envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
+    }
+
+    // Add Git repository configuration to environment if available
+    if (gitRepository) {
+      envVars.push(`GIT_REPO_NAME=${gitRepository.name}`);
+      envVars.push(`GIT_REMOTE_URL=${gitRepository.internalCloneUrl}`);
+      envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
+    }
+
+    // Add Git clone configuration if available
+    if (gitUrl) {
+      envVars.push(`GIT_CLONE_URL=${gitUrl}`);
+      if (gitUsername) {
+        envVars.push(`GIT_USERNAME=${gitUsername}`);
+      }
+      if (gitToken) {
+        envVars.push(`GIT_ACCESS_TOKEN=${gitToken}`);
+      }
+    }
+
+    // Add GPU environment variables only if GPU is enabled
+    const enableGpu = process.env.ENABLE_GPU === 'true';
+    if (enableGpu) {
+      envVars.push('NVIDIA_VISIBLE_DEVICES=all');
+      envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
+    }
+
+    // Use internal network when THIS workspace uses proxy, otherwise use default network
+    const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
+
+    const spec = {
+      Image: image,
+      name: containerName,
+      Env: envVars,
+      ExposedPorts: {
+        '8082/tcp': {}, // code-server
+        '3000/tcp': {}, // Node.js apps
+        '5000/tcp': {}, // Flask/Python apps
+        '8000/tcp': {}, // Django/other Python apps
+        '8080/tcp': {}, // Spring Boot apps
+        '4200/tcp': {}, // Angular
+        '3001/tcp': {}, // React dev server alt
+        '9000/tcp': {}  // Various apps
+      },
+      HostConfig: {
+        Memory: this.parseMemoryLimit(memoryLimit),
+        CpuShares: this.parseCpuCores(cpuCores),
+        NetworkMode: workspaceNetwork,
+        PidMode: '', // Isolated PID namespace (default, but explicit for security)
+        IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
+        PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
+        // Run docker-init (tini) as PID 1 so orphaned processes get reaped.
+        // code-server is a node process and does not call waitpid() for
+        // children it did not spawn itself, so every orphaned grandchild --
+        // AI tool helpers, headless browsers, dev servers -- stays behind as a
+        // zombie. Those consume PID slots and count against PidsLimit; long
+        // running workspaces accumulate dozens of them.
+        Init: true,
+        SecurityOpt: [
+          // Conditionally prevent privilege escalation based on sudo configuration
+          ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
+          'seccomp=unconfined' // Allow system calls needed for development tools (debuggers, etc.)
+        ],
+        // Drop all capabilities, then add back only what's needed for development
+        CapDrop: ['ALL'],
+        CapAdd: [
+          'CHOWN',           // Change file ownership
+          'DAC_OVERRIDE',    // Bypass file permission checks (needed for some dev tools)
+          'FOWNER',          // Bypass permission checks on file operations
+          'SETGID',          // Set GID (needed for some installers)
+          'SETUID',          // Set UID (needed for some installers)
+          'NET_BIND_SERVICE', // Bind to ports < 1024 (useful for web servers)
+          'AUDIT_WRITE'      // Write to audit logs (suppresses sudo audit warnings)
+        ],
+        // Resource limits to prevent abuse
+        // Note: nproc (RLIMIT_NPROC) is NOT used here because it counts threads per-UID
+        // system-wide across ALL containers sharing UID 1000, causing cross-container
+        // interference. Per-container process isolation is handled by PidsLimit (cgroup).
+        Ulimits: [
+          { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
+        ],
+        RestartPolicy: {
+          Name: 'unless-stopped'
+        },
+        // Add DNS server when THIS workspace uses proxy (use dnsmasq on internal network)
+        ...(useProxy && {
+          Dns: [process.env.DNSMASQ_IP || '172.30.0.2']  // dnsmasq container IP
+        }),
+        // Only request GPU access if GPU is enabled
+        ...(enableGpu && {
+          DeviceRequests: [{
+            Driver: '',
+            Count: -1, // Request all available GPUs
+            Capabilities: [['gpu']]
+          }]
+        })
+      },
+      NetworkingConfig: {
+        EndpointsConfig: {
+          [workspaceNetwork]: {
+            Aliases: [containerName]
+          }
+        }
+      },
+      // Explicit, because snapshots imported via export/import lose the image's USER
+      User: 'coder',
+      WorkingDir: '/workspace',
+      Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${hostSuffix}`, '/workspace']
+    };
+
+    return { containerName, useProxy, spec };
+  }
+
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
     try {
       const containerName = `workspace-${projectId}`;
@@ -84,172 +269,13 @@ class DockerService {
       // Build the code-server image if it doesn't exist
       await this.ensureCodeServerImage();
 
-      // Setup authentication and Git configuration
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitUsername = null, gitToken = null, proxyMode = 'none' } = authOptions;
-      const useProxy = proxyMode !== 'none';
-      const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
-      let authFlag = 'none'; // Default to no auth
-      const envVars = [
-        `PROJECT_TYPE=${projectType}`,
-        `PROJECT_ID=${projectId}`,
-        `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
-        `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
-      ];
-
-      // Add proxy environment variables if THIS workspace uses proxy
-      if (useProxy) {
-        // Uppercase (used by some tools)
-        envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
-        envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
-        envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
-        // Lowercase (used by curl and many CLI tools)
-        envVars.push(`http_proxy=http://${activeProxyHost}`);
-        envVars.push(`https_proxy=http://${activeProxyHost}`);
-        envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
-        // Tell Node.js to trust the proxy CA certificate
-        envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
-      }
-
-      if (passwordProtected && password) {
-        authFlag = 'password';
-        envVars.push(`PASSWORD=${password}`);
-      }
-
-      // Add Git server URL to all containers when Git server is enabled
-      // This allows setup_local_remote script to work in any workspace
-      const gitServerEnabled = process.env.ENABLE_GIT_SERVER === 'true';
-      if (gitServerEnabled) {
-        const protocol = process.env.PROTOCOL || 'http';
-        const baseDomain = process.env.BASE_DOMAIN || 'localhost';
-        const basePort = process.env.BASE_PORT || '80';
-        const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
-        const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
-
-        // Build Git server URL (accessible from inside Docker network)
-        envVars.push(`GIT_SERVER_ENABLED=true`);
-        envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
-        envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
-        envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
-
-        // Build external Git server URL for display
-        let externalGitUrl;
-        if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
-          externalGitUrl = `${protocol}://${baseDomain}/git`;
-        } else {
-          externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
-        }
-        envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
-      }
-
-      // Add Git repository configuration to environment if available
-      if (gitRepository) {
-        envVars.push(`GIT_REPO_NAME=${gitRepository.name}`);
-        envVars.push(`GIT_REMOTE_URL=${gitRepository.internalCloneUrl}`);
-        envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
-      }
-
-      // Add Git clone configuration if available
-      if (gitUrl) {
-        envVars.push(`GIT_CLONE_URL=${gitUrl}`);
-        if (gitUsername) {
-          envVars.push(`GIT_USERNAME=${gitUsername}`);
-        }
-        if (gitToken) {
-          envVars.push(`GIT_ACCESS_TOKEN=${gitToken}`);
-        }
-      }
-
-      // Convert memory limit to bytes and CPU cores to shares
-      const memoryBytes = this.parseMemoryLimit(memoryLimit);
-      const cpuShares = this.parseCpuCores(cpuCores);
-
-      // Add GPU environment variables only if GPU is enabled
-      const enableGpu = process.env.ENABLE_GPU === 'true';
-      if (enableGpu) {
-        envVars.push('NVIDIA_VISIBLE_DEVICES=all');
-        envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
-      }
-
-      // Use internal network when THIS workspace uses proxy, otherwise use default network
-      const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      const container = await this.docker.createContainer({
-        Image: this.codeServerImage,
-        name: containerName,
-        Env: envVars,
-        ExposedPorts: {
-          '8082/tcp': {}, // code-server
-          '3000/tcp': {}, // Node.js apps
-          '5000/tcp': {}, // Flask/Python apps
-          '8000/tcp': {}, // Django/other Python apps
-          '8080/tcp': {}, // Spring Boot apps
-          '4200/tcp': {}, // Angular
-          '3001/tcp': {}, // React dev server alt
-          '9000/tcp': {}  // Various apps
-        },
-        HostConfig: {
-          Memory: memoryBytes,
-          CpuShares: cpuShares,
-          NetworkMode: workspaceNetwork,
-          PidMode: '', // Isolated PID namespace (default, but explicit for security)
-          IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
-          PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
-          // Run docker-init (tini) as PID 1 so orphaned processes get reaped.
-          // code-server is a node process and does not call waitpid() for
-          // children it did not spawn itself, so every orphaned grandchild --
-          // AI tool helpers, headless browsers, dev servers -- stays behind as a
-          // zombie. Those consume PID slots and count against PidsLimit; long
-          // running workspaces accumulate dozens of them.
-          Init: true,
-          SecurityOpt: [
-            // Conditionally prevent privilege escalation based on sudo configuration
-            ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
-            'seccomp=unconfined' // Allow system calls needed for development tools (debuggers, etc.)
-          ],
-          // Drop all capabilities, then add back only what's needed for development
-          CapDrop: ['ALL'],
-          CapAdd: [
-            'CHOWN',           // Change file ownership
-            'DAC_OVERRIDE',    // Bypass file permission checks (needed for some dev tools)
-            'FOWNER',          // Bypass permission checks on file operations
-            'SETGID',          // Set GID (needed for some installers)
-            'SETUID',          // Set UID (needed for some installers)
-            'NET_BIND_SERVICE', // Bind to ports < 1024 (useful for web servers)
-            'AUDIT_WRITE'      // Write to audit logs (suppresses sudo audit warnings)
-          ],
-          // Resource limits to prevent abuse
-          // Note: nproc (RLIMIT_NPROC) is NOT used here because it counts threads per-UID
-          // system-wide across ALL containers sharing UID 1000, causing cross-container
-          // interference. Per-container process isolation is handled by PidsLimit (cgroup).
-          Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
-          ],
-          RestartPolicy: {
-            Name: 'unless-stopped'
-          },
-          // Add DNS server when THIS workspace uses proxy (use dnsmasq on internal network)
-          ...(useProxy && {
-            Dns: [process.env.DNSMASQ_IP || '172.30.0.2']  // dnsmasq container IP
-          }),
-          // Only request GPU access if GPU is enabled
-          ...(enableGpu && {
-            DeviceRequests: [{
-              Driver: '',
-              Count: -1, // Request all available GPUs
-              Capabilities: [['gpu']]
-            }]
-          })
-        },
-        NetworkingConfig: {
-          EndpointsConfig: {
-            [workspaceNetwork]: {
-              Aliases: [containerName]
-            }
-          }
-        },
-        WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
+      const { proxyMode = 'none' } = authOptions;
+      const { useProxy, spec } = this.buildContainerSpec(projectId, {
+        ...authOptions,
+        image: this.codeServerImage,
+        projectType
       });
+      const container = await this.docker.createContainer(spec);
 
       await container.start();
       console.log(`Container ${containerName} started`);
@@ -1480,124 +1506,12 @@ fi`.trim();
       const containerName = `workspace-${projectId}`;
       const port = await this.findAvailablePort(8080);
 
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, proxyMode = 'none' } = options;
-      const useProxy = proxyMode !== 'none';
-      const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
-      let authFlag = 'none';
-      const envVars = [
-        `PROJECT_TYPE=clone`,
-        `PROJECT_ID=${projectId}`,
-        `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
-        `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
-      ];
-
-      // Proxy environment variables
-      if (useProxy) {
-        envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
-        envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
-        envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
-        envVars.push(`http_proxy=http://${activeProxyHost}`);
-        envVars.push(`https_proxy=http://${activeProxyHost}`);
-        envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
-        envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
-      }
-
-      if (passwordProtected && password) {
-        authFlag = 'password';
-        envVars.push(`PASSWORD=${password}`);
-      }
-
-      // Add Git server env vars (same as createWorkspaceContainer)
-      const gitServerEnabled = process.env.ENABLE_GIT_SERVER === 'true';
-      if (gitServerEnabled) {
-        const protocol = process.env.PROTOCOL || 'http';
-        const baseDomain = process.env.BASE_DOMAIN || 'localhost';
-        const basePort = process.env.BASE_PORT || '80';
-        const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
-        const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
-
-        envVars.push(`GIT_SERVER_ENABLED=true`);
-        envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
-        envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
-        envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
-
-        let externalGitUrl;
-        if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
-          externalGitUrl = `${protocol}://${baseDomain}/git`;
-        } else {
-          externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
-        }
-        envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
-      }
-
-      const memoryBytes = this.parseMemoryLimit(memoryLimit);
-      const cpuShares = this.parseCpuCores(cpuCores);
-
-      const enableGpu = process.env.ENABLE_GPU === 'true';
-      if (enableGpu) {
-        envVars.push('NVIDIA_VISIBLE_DEVICES=all');
-        envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
-      }
-
-      const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      const container = await this.docker.createContainer({
-        Image: snapshotImage,
-        name: containerName,
-        Env: envVars,
-        ExposedPorts: {
-          '8082/tcp': {},
-          '3000/tcp': {},
-          '5000/tcp': {},
-          '8000/tcp': {},
-          '8080/tcp': {},
-          '4200/tcp': {},
-          '3001/tcp': {},
-          '9000/tcp': {}
-        },
-        HostConfig: {
-          Memory: memoryBytes,
-          CpuShares: cpuShares,
-          NetworkMode: workspaceNetwork,
-          PidMode: '',
-          IpcMode: 'private',
-          PidsLimit: this.securityConfig.pidsLimit,
-          Init: true, // reap orphaned processes -- see createWorkspaceContainer
-          SecurityOpt: [
-            ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
-            'seccomp=unconfined'
-          ],
-          CapDrop: ['ALL'],
-          CapAdd: [
-            'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID',
-            'NET_BIND_SERVICE', 'AUDIT_WRITE'
-          ],
-          Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
-          ],
-          RestartPolicy: { Name: 'unless-stopped' },
-          ...(useProxy && {
-            Dns: [process.env.DNSMASQ_IP || '172.30.0.2']
-          }),
-          ...(enableGpu && {
-            DeviceRequests: [{
-              Driver: '',
-              Count: -1,
-              Capabilities: [['gpu']]
-            }]
-          })
-        },
-        NetworkingConfig: {
-          EndpointsConfig: {
-            [workspaceNetwork]: {
-              Aliases: [containerName]
-            }
-          }
-        },
-        User: 'coder',
-        WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
+      const { useProxy, spec } = this.buildContainerSpec(projectId, {
+        ...options,
+        image: snapshotImage,
+        projectType: 'clone'
       });
+      const container = await this.docker.createContainer(spec);
 
       await container.start();
       console.log(`Clone container ${containerName} started`);

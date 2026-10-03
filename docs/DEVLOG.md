@@ -629,3 +629,19 @@ Branch `security/paket-2`, aufgesetzt auf `security/paket-1` (PR #3 noch offen).
 | 2.5 | Feste IPs für Proxy-Workspaces → Mitschnitte bleiben dauerhaft beim richtigen Projekt | 2.4 |
 | 2.6 | Forgejo: eigener Nutzer + Token pro Workspace, kein `GIT_ADMIN_PASSWORD` mehr in Workspaces; Klone bekommen einen **Fork** statt eines Branches im gemeinsamen Repo (Vorschlag, siehe dort) | 2.4 |
 | 2.7 | Doku, Upgrade-Hinweise, Live-Test | alle |
+
+### 2.1 Ein Container-Bauplan für Create und Clone
+
+**Problem**: `createWorkspaceContainer` und `createCloneContainer` enthielten je ~130
+Zeilen fast identischer Env- und HostConfig-Logik, die bereits auseinanderliefen (nur
+Clone setzte `User`, Docker-init kam im Upstream nachträglich in beide Kopien). Jede
+Härtung aus Paket 2 hätte doppelt gebaut werden müssen.
+
+**Änderung** (`server/src/services/docker.js`): `buildContainerSpec(projectId, opts)`
+liefert `{ containerName, useProxy, spec }`; beide Pfade rufen nur noch diese Methode
+auf. `User: 'coder'` gilt jetzt für beide (das Image nutzt ohnehin `coder`; nötig, weil
+per export/import erzeugte Snapshots den `USER` verlieren).
+
+**Test**: Vorher/Nachher-Vergleich der `createContainer`-Payloads für 24 Fälle (Create/
+Clone × kein/Security/Logging-Proxy × mit/ohne Passwort × mit/ohne GPU): Clone
+identisch, Create unterscheidet sich ausschließlich durch `User: 'coder'`.
