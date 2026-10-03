@@ -444,3 +444,32 @@ einem fehlschlagenden Asset → übrige Assets inkl. `offline.html` gecacht,
 `skipWaiting` aufgerufen; `/api/config`, `/api/workshop/claims`, POST und
 Cross-Origin werden nicht abgefangen; `/app.js` geht trotz Cache ans Netz; Icon kommt
 aus dem Cache; offline → `app.js` aus dem Cache, Workshop-Seite → `offline.html`.
+
+### 1.9 CA-Private-Key nur für den Eigentümer lesbar
+
+**Problem**
+- `deploy.sh` erzeugte `squid/certs/mitmproxy-ca.pem` (privater CA-Schlüssel +
+  Zertifikat) per `cat … > …` mit Standardrechten **0644**. Allen Workspaces wird diese
+  CA 10 Jahre lang vertraut – wer den Schlüssel lesen kann, kann deren TLS-Verkehr
+  abfangen. (Lokal geprüft: die Datei lag mit `-rw-r--r--` auf der Platte, während
+  `squid-ca-key.pem` korrekt 0600 hatte.)
+- `generate-ca-cert.sh` verließ sich auf den Default von `openssl genrsa` (0600 erst ab
+  neueren OpenSSL-Versionen).
+
+**Änderung**
+- `deploy.sh`: `mitmproxy-ca.pem` wird unter `umask 077` erzeugt; zusätzlich setzt jeder
+  Deploy `chmod 600` auf `squid-ca-key.pem` und `mitmproxy-ca.pem` (repariert auch
+  bestehende Installationen).
+- `squid/generate-ca-cert.sh`: Schlüssel unter `umask 077` erzeugen, danach `chmod 600`.
+- Lokale Datei in diesem Checkout direkt auf 0600 gesetzt.
+
+**Entscheidungen**
+- Kein Risiko für den Betrieb: mitmproxy läuft als root und liest die Datei weiterhin;
+  squid nutzt den Schlüssel laut `squid.conf` gar nicht (kein SSL-Bump).
+- `if … fi` statt `[ -f ] && chmod` in der Schleife: Unter `set -e` hätte die
+  `&&`-Variante als letzte Anweisung der Funktion einen Exit-Code 1 liefern können.
+
+**Test**: Der geänderte Block aus `deploy.sh` wurde isoliert unter `set -e` in einem
+Temp-Verzeichnis mit Test-Zertifikaten (Ausgangsrechte 0644) ausgeführt → beide
+Schlüsseldateien 0600, Zertifikate unverändert 0644, Funktion endet mit Exit 0 – auch
+wenn die Dateien fehlen.

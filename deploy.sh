@@ -853,10 +853,20 @@ generate_proxy_cert() {
     # mitmproxy expects mitmproxy-ca.pem in its confdir; without it, it auto-generates a different CA
     if [ -f "./squid/certs/squid-ca-cert.pem" ] && [ -f "./squid/certs/squid-ca-key.pem" ]; then
         print_status "Generating mitmproxy-compatible CA from squid CA..."
-        cat ./squid/certs/squid-ca-key.pem ./squid/certs/squid-ca-cert.pem > ./squid/certs/mitmproxy-ca.pem
+        # mitmproxy-ca.pem contains the CA private key: create it owner-only
+        # (mitmproxy runs as root and can still read it). Every workspace
+        # trusts this CA, so a readable key would allow intercepting their TLS.
+        (umask 077 && cat ./squid/certs/squid-ca-key.pem ./squid/certs/squid-ca-cert.pem > ./squid/certs/mitmproxy-ca.pem)
         cp ./squid/certs/squid-ca-cert.pem ./squid/certs/mitmproxy-ca-cert.pem
         print_success "mitmproxy CA generated from squid CA"
     fi
+
+    # Also tighten keys created by earlier versions of this script
+    for key_file in ./squid/certs/squid-ca-key.pem ./squid/certs/mitmproxy-ca.pem; do
+        if [ -f "$key_file" ]; then
+            chmod 600 "$key_file"
+        fi
+    done
 }
 
 # Function to show usage
