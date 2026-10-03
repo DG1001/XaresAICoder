@@ -208,8 +208,17 @@ setup_environment() {
             current_subnet="172.30.0.0/16"
         fi
 
-        local suggested_subnet=$(check_internal_network_subnet "$current_subnet")
-        if [ $? -eq 0 ] && [ "$suggested_subnet" != "$current_subnet" ]; then
+        # Assign separately from the declaration: `local x=$(...)` would make $?
+        # the exit status of `local` (always 0), not of the command substitution.
+        local suggested_subnet
+        suggested_subnet=$(check_internal_network_subnet "$current_subnet")
+        local subnet_check_rc=$?
+
+        if [ $subnet_check_rc -ne 0 ] || [ -z "$suggested_subnet" ]; then
+            # No usable subnet determined — keep the existing configuration
+            # rather than writing an empty value into .env.
+            print_warning "Keeping configured internal subnet: $current_subnet"
+        elif [ "$suggested_subnet" != "$current_subnet" ]; then
             print_warning "Using alternative subnet: $suggested_subnet"
             if grep -q "^INTERNAL_NETWORK_SUBNET=" .env; then
                 sed_inplace "s|^INTERNAL_NETWORK_SUBNET=.*|INTERNAL_NETWORK_SUBNET=$suggested_subnet|" .env
@@ -286,8 +295,10 @@ check_internal_network_subnet() {
 
     print_status "Checking internal network subnet: $requested_subnet" >&2
 
-    # Get all existing network subnets
-    local existing_subnets=$(docker network ls --format "{{.Name}}" | while read network; do
+    # Get all existing network subnets, excluding our own internal network:
+    # on a re-deploy it already exists with exactly the requested subnet and
+    # would otherwise be reported as a conflict with itself.
+    local existing_subnets=$(docker network ls --format "{{.Name}}" | grep -v 'xares-internal' | while read network; do
         docker network inspect "$network" --format '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | grep -v ": $" || true
     done)
 
@@ -326,7 +337,9 @@ if conflicts:
                 # Suggest alternative
                 local alternatives=("172.31.0.0/16" "172.25.0.0/16" "10.100.0.0/16")
                 for alt in "${alternatives[@]}"; do
-                    if ! echo "$existing_subnets" | python3 -c "
+                    # The snippet exits 1 on overlap, 0 when the candidate is
+                    # free — so a zero status is what qualifies an alternative.
+                    if echo "$existing_subnets" | python3 -c "
 import sys
 import ipaddress
 requested = ipaddress.IPv4Network('$alt', strict=False)
@@ -373,6 +386,9 @@ setup_git_server() {
         local PROTOCOL=$(grep "^PROTOCOL=" .env | cut -d'=' -f2)
         local GIT_ADMIN_USER=$(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2)
         local GIT_ADMIN_PASSWORD=$(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)
+        # Password used only to CREATE the Forgejo account. Kept separate because
+        # GIT_ADMIN_PASSWORD is shipped into every workspace and may hold a token.
+        local GIT_ADMIN_BOOTSTRAP_PASSWORD=$(grep "^GIT_ADMIN_BOOTSTRAP_PASSWORD=" .env | cut -d'=' -f2)
         local GIT_ADMIN_EMAIL=$(grep "^GIT_ADMIN_EMAIL=" .env | cut -d'=' -f2)
         local GIT_SITE_NAME=$(grep "^GIT_SITE_NAME=" .env | cut -d'=' -f2)
         
@@ -382,11 +398,12 @@ setup_git_server() {
         PROTOCOL=${PROTOCOL:-http}
         GIT_ADMIN_USER=${GIT_ADMIN_USER:-developer}
         GIT_ADMIN_PASSWORD=${GIT_ADMIN_PASSWORD:-admin123!}
+        GIT_ADMIN_BOOTSTRAP_PASSWORD=${GIT_ADMIN_BOOTSTRAP_PASSWORD:-$GIT_ADMIN_PASSWORD}
         GIT_ADMIN_EMAIL=${GIT_ADMIN_EMAIL:-gitadmin@xaresaicoder.local}
         GIT_SITE_NAME=${GIT_SITE_NAME:-XaresAICoder Git Server}
         
         # Export variables for the setup script
-        export BASE_DOMAIN BASE_PORT PROTOCOL GIT_ADMIN_USER GIT_ADMIN_PASSWORD GIT_ADMIN_EMAIL GIT_SITE_NAME
+        export BASE_DOMAIN BASE_PORT PROTOCOL GIT_ADMIN_USER GIT_ADMIN_PASSWORD GIT_ADMIN_BOOTSTRAP_PASSWORD GIT_ADMIN_EMAIL GIT_SITE_NAME
         export FORGEJO_CONTAINER_NAME="xaresaicoder-forgejo"
         
         # Check if setup script exists
@@ -429,7 +446,7 @@ setup_git_server() {
         if docker exec -u git "$FORGEJO_CONTAINER_NAME" forgejo admin user create \
             --admin \
             --username "$GIT_ADMIN_USER" \
-            --password "$GIT_ADMIN_PASSWORD" \
+            --password "$GIT_ADMIN_BOOTSTRAP_PASSWORD" \
             --email "$GIT_ADMIN_EMAIL" 2>/dev/null; then
             print_success "Admin user '$GIT_ADMIN_USER' created successfully!"
         else
@@ -695,7 +712,8 @@ show_deployment_info() {
     if [ "$GIT_SERVER_ENABLED" = "true" ]; then
         echo "  🗂️  Git Server (Forgejo):"
         echo "     $MAIN_URL/git/"
-        echo "     Admin: $(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2) / $(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2)"
+        # Prefer the bootstrap password here: GIT_ADMIN_PASSWORD may hold a token.
+        echo "     Admin: $(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2) / $(grep -m1 -E "^GIT_ADMIN_(BOOTSTRAP_)?PASSWORD=" .env | cut -d'=' -f2-)"
         echo
     fi
     

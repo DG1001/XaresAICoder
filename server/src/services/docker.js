@@ -194,6 +194,13 @@ class DockerService {
           PidMode: '', // Isolated PID namespace (default, but explicit for security)
           IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
           PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
+          // Run docker-init (tini) as PID 1 so orphaned processes get reaped.
+          // code-server is a node process and does not call waitpid() for
+          // children it did not spawn itself, so every orphaned grandchild --
+          // AI tool helpers, headless browsers, dev servers -- stays behind as a
+          // zombie. Those consume PID slots and count against PidsLimit; long
+          // running workspaces accumulate dozens of them.
+          Init: true,
           SecurityOpt: [
             // Conditionally prevent privilege escalation based on sudo configuration
             ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
@@ -1555,6 +1562,7 @@ fi`.trim();
           PidMode: '',
           IpcMode: 'private',
           PidsLimit: this.securityConfig.pidsLimit,
+          Init: true, // reap orphaned processes -- see createWorkspaceContainer
           SecurityOpt: [
             ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
             'seccomp=unconfined'

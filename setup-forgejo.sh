@@ -10,8 +10,16 @@ BASE_URL="${PROTOCOL:-http}://${BASE_DOMAIN:-localhost}:${BASE_PORT:-80}/git"
 FORGEJO_INTERNAL_URL="http://${FORGEJO_CONTAINER_NAME}:3000"
 
 # Git server admin configuration
+#
+# GIT_ADMIN_PASSWORD is handed to every workspace container as an environment
+# variable, so it may hold a Forgejo access token instead of the account
+# password. A token must never be used to *create* the account -- it would
+# become that account's password and would then allow web login.
+#
+# GIT_ADMIN_BOOTSTRAP_PASSWORD therefore takes precedence here: set it to the
+# real account password and keep the token in GIT_ADMIN_PASSWORD.
 ADMIN_USER="${GIT_ADMIN_USER:-developer}"
-ADMIN_PASSWORD="${GIT_ADMIN_PASSWORD:-admin123!}"
+ADMIN_PASSWORD="${GIT_ADMIN_BOOTSTRAP_PASSWORD:-${GIT_ADMIN_PASSWORD:-admin123!}}"
 ADMIN_EMAIL="${GIT_ADMIN_EMAIL:-gitadmin@xaresaicoder.local}"
 SITE_NAME="${GIT_SITE_NAME:-XaresAICoder Git Server}"
 SITE_DESCRIPTION="${GIT_SITE_DESCRIPTION:-Integrated Git server for XaresAICoder development environment}"
