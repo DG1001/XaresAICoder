@@ -177,3 +177,66 @@ normalisiert und dedupliziert; Newline-Injection, Leerzeichen, IP, `.com`, URL u
 Nicht-String → `INVALID`. Erfolgreiches Apply ersetzt nur den Markerbereich; Parse-
 Fehler → Live-Config unverändert, Kandidat gelöscht; Reconfigure-Fehler → Rollback.
 Der base64-Schreibbefehl wurde lokal mit identischem argv ausgeführt.
+
+### 1.4 LLM-Logging: Credentials redigieren, IP-Wiederverwendung, Pfade
+
+**Problem**
+- Das mitmproxy-Addon schrieb alle Request-Header (`Authorization`, `x-api-key`,
+  ChatGPT-OAuth-Bearer) und die URL (Gemini: `?key=AIza…`) unverändert auf die Platte.
+  Die API lieferte diese Dateien roh aus, das Frontend zeigte sie im JSON-Dump an.
+- Gespräche werden pro **Container-IP** abgelegt und beim Löschen eines Workspace nicht
+  entfernt. Docker vergibt freie IPs neu → ein neuer Workspace sah die Gespräche (inkl.
+  Keys) seines Vorgängers.
+- `_flush_all_domains` schrieb alle IPs im Speicher zurück und stellte damit Domain-
+  Dateien wieder her, die der Server gerade gelöscht hatte.
+- Jeder Flow wurde in `request()` **und** `response()` gezählt (Hit-Counts doppelt).
+- Domain- und HTTP-Capture-Dateien wurden nicht atomar geschrieben (der Server konnte
+  halbe JSON-Dateien lesen).
+- `DELETE …/llm-conversations/:timestamp`: Express dekodiert `%2F`, der Wert ging
+  ungeprüft in einen `rm -f`-Pfad im (root-)mitmproxy-Container → Path Traversal.
+- Squid-Logs wurden per `grep "<ip>"` gefiltert: `172.30.0.1` traf auch `.10`–`.19`
+  und `.100+` (und `.` ist ein Regex-Wildcard) → Logs anderer Workspaces sichtbar.
+- WebSocket-Captures (Codex) heißen `<ts>-ws.json`, das Frontend löschte aber
+  `<ts>.json` → Löschen einzelner WS-Gespräche lief ins Leere.
+
+**Änderung**
+- `mitmproxy/llm-logger.py`: `redact_headers()` / `redact_url()` für Request-,
+  Response- und WebSocket-Header; `atomic_write_json()` für alle Dateien; Flush
+  verwirft IPs, deren Datei extern gelöscht wurde; Domain-Tracking einmal pro Flow.
+- `server/src/services/docker.js`:
+  - dieselben Redaction-Regeln beim **Lesen** (`redactConversation`) – schützt auch
+    Captures, die vor diesem Fix geschrieben wurden; gilt damit auch für die
+    Doku-Generierung.
+  - `resetProxyLogsForWorkspace()` löscht Domains **und** Gespräche unter der neuen
+    IP – direkt nach `container.start()` (Create und Clone), also bevor der neue
+    Workspace Traffic erzeugt. Nebeneffekt: Domains aus der Initialisierung (z. B.
+    `git clone`) werden jetzt mit aufgezeichnet statt danach gelöscht.
+  - jede Conversation bekommt `_file` (Dateiname ohne `.json`); das Frontend nutzt
+    das zum Löschen.
+  - Squid-Filter: `awk -v ip="$1" '$3 == ip'` (exakter Vergleich des Client-Felds im
+    `detailed`-Logformat), Argumente positionsbasiert statt interpoliert; Fenster
+    von 500 auf 5000 Logzeilen vergrößert, damit bei vielen Workspaces genug Treffer
+    bleiben.
+- `routes/projects.js`: Conversation-ID muss `^[0-9A-Za-z-]{1,64}$` sein, sonst 400.
+- Doku: `docs/LLM_CONVERSATION_LOGGING.md` (Data Captured, API Key Exposure, IP-Reuse).
+
+**Entscheidungen**
+- **Header-Allowlist vs. -Blocklist**: Blocklist per Muster (`authorization`,
+  `cookie`, `*api-key*`, `*token*`, `*secret*`, `*session*`). Eine Allowlist wäre
+  strenger, würde aber nützliche Diagnose-Header (`anthropic-version`, `openai-beta`,
+  Rate-Limit-Header) verstecken.
+- **Löschen beim Erstellen, nicht beim Löschen** eines Workspace: Lehrkräfte wollen
+  Mitschnitte ggf. nach dem Löschen noch auswerten (sie bleiben auf der Platte, bis
+  die IP wiederverwendet wird). Die eigentliche Lösung – Zuordnung per Projekt-ID statt
+  IP (Proxy-Auth pro Workspace) – gehört zu **Paket 2**.
+- Request-**Bodies** werden nicht redigiert (dort steckt der eigentliche Inhalt).
+
+**Test**
+- Addon mit mitmproxy-Stub: Anthropic- und Gemini-Flow → keine Secrets auf der Platte
+  (`x-api-key`, `Authorization`, `?key=`, `x-goog-api-key`, `set-cookie`),
+  `anthropic-version` und `alt=sse` bleiben; Domain-Counts = 1 pro Flow; extern
+  gelöschte Domain-Datei wird beim Flush nicht wiederhergestellt.
+- Server mit gemocktem Docker: alte, unredigierte Capture wird beim Lesen redigiert,
+  `_file` enthält `-ws`; der awk-Filter (lokal mit identischem Skript ausgeführt)
+  liefert für `172.30.0.1` nur dessen Zeilen, nicht `172.30.0.10`.
+- ID-Regex: `../domains/…`, `a/b`, `x.json` abgelehnt; echte Dateinamen erlaubt.

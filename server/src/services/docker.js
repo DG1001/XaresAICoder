@@ -2,6 +2,48 @@ const Docker = require('dockerode');
 const { v4: uuidv4 } = require('uuid');
 const dns = require('dns').promises;
 
+// Header names whose values are credentials. Captures written before the
+// mitmproxy addon redacted them still contain raw keys, so they are also
+// redacted when read.
+const SENSITIVE_HEADER_RE = /^(authorization|proxy-authorization|cookie|set-cookie)$|api[-_]?key|token|secret|session/i;
+const SENSITIVE_QUERY_PARAMS = new Set(['key', 'api_key', 'apikey', 'access_token', 'token']);
+
+function redactHeaders(headers) {
+  if (!headers || typeof headers !== 'object') return headers;
+  const out = {};
+  for (const [name, value] of Object.entries(headers)) {
+    out[name] = SENSITIVE_HEADER_RE.test(name) ? '[REDACTED]' : value;
+  }
+  return out;
+}
+
+function redactUrl(url) {
+  if (typeof url !== 'string' || !url.includes('?')) return url;
+  try {
+    const parsed = new URL(url);
+    let changed = false;
+    for (const name of [...parsed.searchParams.keys()]) {
+      if (SENSITIVE_QUERY_PARAMS.has(name.toLowerCase())) {
+        parsed.searchParams.set(name, 'REDACTED');
+        changed = true;
+      }
+    }
+    return changed ? parsed.toString() : url;
+  } catch {
+    return url;
+  }
+}
+
+function redactConversation(conv) {
+  if (!conv || typeof conv !== 'object') return conv;
+  conv.headers = redactHeaders(conv.headers);
+  conv.url = redactUrl(conv.url);
+  if (conv.response && typeof conv.response === 'object') {
+    conv.response.headers = redactHeaders(conv.response.headers);
+  }
+  return conv;
+}
+
 class DockerService {
   constructor() {
     this.docker = new Docker();
@@ -204,6 +246,10 @@ class DockerService {
       await container.start();
       console.log(`Container ${containerName} started`);
 
+      // Docker reuses IPs: drop proxy logs left by a previous workspace at this
+      // address before this one generates traffic (also keeps init domains).
+      if (useProxy) await this.resetProxyLogsForWorkspace(projectId);
+
       // Wait for code-server to be ready first
       await this.waitForWorkspaceReady(containerName);
       console.log(`Workspace ${containerName} is ready, now initializing project`);
@@ -211,14 +257,6 @@ class DockerService {
       // Initialize git repository and project structure after container is ready
       await this.initializeProject(container, projectType, proxyMode);
       console.log(`Initialization completed for ${containerName}`);
-
-      // Clear any stale domain data from a previous workspace at this IP
-      if (useProxy) {
-        try {
-          const ip = await this.getWorkspaceIPAddress(projectId);
-          if (ip) await this.clearRecordedDomains(ip);
-        } catch (e) { /* non-fatal */ }
-      }
 
       this.activeContainers.set(projectId, {
         container,
@@ -791,6 +829,19 @@ fi`.trim();
     }
   }
 
+  // Clears recorded domains and captured LLM conversations stored under the
+  // workspace's current IP. Non-fatal: logging must never block creation.
+  async resetProxyLogsForWorkspace(projectId) {
+    try {
+      const ip = await this.getWorkspaceIPAddress(projectId);
+      if (!ip) return;
+      await this.clearRecordedDomains(ip);
+      await this.deleteAllLLMConversations(ip);
+    } catch (e) {
+      console.warn(`Could not reset proxy logs for ${projectId}: ${e.message}`);
+    }
+  }
+
   /**
    * Get LLM conversations for workspace by IP address
    * Reads JSON conversation logs from mitmproxy logger
@@ -835,7 +886,10 @@ fi`.trim();
         const content = await this.streamToString(readStream);
 
         try {
-          const conversation = JSON.parse(content);
+          const conversation = redactConversation(JSON.parse(content));
+          // File name (without .json) – needed to delete WebSocket captures,
+          // whose file name differs from their timestamp.
+          conversation._file = file.split('/').pop().replace(/\.json$/, '');
 
           // Apply filters if provided
           if (filters.model && conversation.parsed_request?.model !== filters.model) {
@@ -1134,8 +1188,11 @@ fi`.trim();
       const squidContainer = this.docker.getContainer(squidContainerInfo.Id);
 
       // Execute command to read and filter logs
+      // Field 3 of the 'detailed' logformat is the client IP. Exact match, so
+      // 172.30.0.1 does not also return 172.30.0.10–19 and 172.30.0.100+.
       const exec = await squidContainer.exec({
-        Cmd: ['bash', '-c', `tail -n 500 /var/log/squid/access.log | grep "${ipAddress}" | tail -n ${lines}`],
+        Cmd: ['sh', '-c', 'tail -n 5000 /var/log/squid/access.log | awk -v ip="$1" \'$3 == ip\' | tail -n "$2"',
+          'sh', ipAddress, String(lines)],
         AttachStdout: true,
         AttachStderr: true
       });
@@ -1510,17 +1567,12 @@ fi`.trim();
       await container.start();
       console.log(`Clone container ${containerName} started`);
 
+      // Docker reuses IPs: drop proxy logs left by a previous workspace at this address
+      if (useProxy) await this.resetProxyLogsForWorkspace(projectId);
+
       // Wait for code-server to be ready (no project initialization needed — filesystem is cloned)
       await this.waitForWorkspaceReady(containerName);
       console.log(`Clone workspace ${containerName} is ready`);
-
-      // Clear any stale domain data from a previous workspace at this IP
-      if (useProxy) {
-        try {
-          const ip = await this.getWorkspaceIPAddress(projectId);
-          if (ip) await this.clearRecordedDomains(ip);
-        } catch (e) { /* non-fatal */ }
-      }
 
       this.activeContainers.set(projectId, {
         container,

@@ -2872,7 +2872,8 @@ class XaresAICoder {
                                 ${data.conversations.map((conv, idx) => {
                                     const model = conv.parsed_request?.model || 'Unknown';
                                     const time = new Date(conv.timestamp).toLocaleString();
-                                    const timestamp = conv.timestamp.replace(/:/g, '-').replace(/\./g, '-');
+                                    // Server sends the capture file name; WebSocket captures end in -ws
+                                    const timestamp = conv._file || conv.timestamp.replace(/:/g, '-').replace(/\./g, '-');
                                     return `
                                         <div class="conversation-item" id="conv-item-${idx}" style="margin-bottom: 15px; border: 1px solid var(--vscode-panel-border); padding: 10px; border-radius: 4px;">
                                             <div class="conversation-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">

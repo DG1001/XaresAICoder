@@ -731,6 +731,13 @@ router.delete('/:projectId/llm-conversations/:timestamp', requireWorkspacePasswo
   try {
     const { projectId, timestamp } = req.params;
 
+    // The value becomes a file name inside the mitmproxy container. Express
+    // has already decoded %2F, so allow only the characters capture file
+    // names use (e.g. 2026-01-01T12-00-00-123456 or ...-ws).
+    if (!/^[0-9A-Za-z-]{1,64}$/.test(timestamp)) {
+      return res.status(400).json({ success: false, message: 'Invalid conversation id' });
+    }
+
     const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
     if (!ipAddress) {
       return res.status(404).json({
