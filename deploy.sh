@@ -499,8 +499,10 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 EOF
     
-    # Generate service worker from template
-    local safe_version=$(echo "$version" | sed 's/[^a-zA-Z0-9]/_/g')
+    # Generate service worker from template. The cache version changes on
+    # every deploy (tag + commit + build time), so browsers always pick up the
+    # new service worker and drop the old caches – also for untagged deploys.
+    local safe_version=$(echo "${version}-${git_hash}-${build_date}" | sed 's/[^a-zA-Z0-9]/_/g')
     
     print_status "Generating service worker from template..."
     
@@ -869,10 +871,20 @@ generate_proxy_cert() {
     # mitmproxy expects mitmproxy-ca.pem in its confdir; without it, it auto-generates a different CA
     if [ -f "./squid/certs/squid-ca-cert.pem" ] && [ -f "./squid/certs/squid-ca-key.pem" ]; then
         print_status "Generating mitmproxy-compatible CA from squid CA..."
-        cat ./squid/certs/squid-ca-key.pem ./squid/certs/squid-ca-cert.pem > ./squid/certs/mitmproxy-ca.pem
+        # mitmproxy-ca.pem contains the CA private key: create it owner-only
+        # (mitmproxy runs as root and can still read it). Every workspace
+        # trusts this CA, so a readable key would allow intercepting their TLS.
+        (umask 077 && cat ./squid/certs/squid-ca-key.pem ./squid/certs/squid-ca-cert.pem > ./squid/certs/mitmproxy-ca.pem)
         cp ./squid/certs/squid-ca-cert.pem ./squid/certs/mitmproxy-ca-cert.pem
         print_success "mitmproxy CA generated from squid CA"
     fi
+
+    # Also tighten keys created by earlier versions of this script
+    for key_file in ./squid/certs/squid-ca-key.pem ./squid/certs/mitmproxy-ca.pem; do
+        if [ -f "$key_file" ]; then
+            chmod 600 "$key_file"
+        fi
+    done
 }
 
 # Function to show usage

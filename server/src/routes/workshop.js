@@ -1,6 +1,7 @@
 const express = require('express');
-const fs = require('fs').promises;
+const crypto = require('crypto');
 const path = require('path');
+const { writeJsonAtomic, readJson } = require('../services/persistence');
 
 const router = express.Router();
 
@@ -15,26 +16,20 @@ const history = [];        // released claims (append-only)
 
 async function loadClaims() {
   try {
-    const data = await fs.readFile(CLAIMS_FILE, 'utf8');
-    const parsed = JSON.parse(data);
+    const parsed = await readJson(CLAIMS_FILE);
+    if (!parsed) return;
     for (const [projectId, claim] of Object.entries(parsed)) {
       claims.set(projectId, claim);
     }
     console.log(`Workshop: loaded ${claims.size} active claim(s) from disk`);
   } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error('Workshop: failed to load claims:', err.message);
-    }
+    console.error('Workshop: failed to load claims:', err.message);
   }
 }
 
 async function saveClaims() {
   try {
-    const obj = {};
-    for (const [projectId, claim] of claims) {
-      obj[projectId] = claim;
-    }
-    await fs.writeFile(CLAIMS_FILE, JSON.stringify(obj, null, 2), 'utf8');
+    await writeJsonAtomic(CLAIMS_FILE, Object.fromEntries(claims));
   } catch (err) {
     console.error('Workshop: failed to save claims:', err.message);
   }
@@ -42,20 +37,18 @@ async function saveClaims() {
 
 async function loadHistory() {
   try {
-    const data = await fs.readFile(HISTORY_FILE, 'utf8');
-    const parsed = JSON.parse(data);
+    const parsed = await readJson(HISTORY_FILE);
+    if (!Array.isArray(parsed)) return;
     history.push(...parsed);
     console.log(`Workshop: loaded ${history.length} history entry/entries from disk`);
   } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error('Workshop: failed to load history:', err.message);
-    }
+    console.error('Workshop: failed to load history:', err.message);
   }
 }
 
 async function saveHistory() {
   try {
-    await fs.writeFile(HISTORY_FILE, JSON.stringify(history, null, 2), 'utf8');
+    await writeJsonAtomic(HISTORY_FILE, history);
   } catch (err) {
     console.error('Workshop: failed to save history:', err.message);
   }
@@ -66,15 +59,40 @@ loadHistory();
 
 // --- Auth helper ---
 
+// Constant-time comparison (hashing first makes the lengths equal).
+function safeEqual(a, b) {
+  const ha = crypto.createHash('sha256').update(a, 'utf8').digest();
+  const hb = crypto.createHash('sha256').update(b, 'utf8').digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+// Admin endpoints expose participant names and emails, so they fail closed:
+// without WORKSHOP_ADMIN_PASSWORD they are disabled. The password is only
+// accepted in the X-Admin-Password header (percent-encoded), never in the URL,
+// where it would end up in access logs and caches.
 function requireAdmin(req, res) {
   const adminPassword = (process.env.WORKSHOP_ADMIN_PASSWORD || '').trim();
-  if (!adminPassword) return true; // no password configured → open
-  const provided = (req.query.password || req.headers['x-admin-password'] || '').trim();
-  if (provided !== adminPassword) {
+  if (!adminPassword) {
+    res.status(503).json({ error: 'Workshop admin is disabled. Set WORKSHOP_ADMIN_PASSWORD to enable it.' });
+    return false;
+  }
+  let provided = req.get('X-Admin-Password') || '';
+  try { provided = decodeURIComponent(provided); } catch { /* use raw value */ }
+  if (!safeEqual(provided.trim(), adminPassword)) {
     res.status(401).json({ error: 'Unauthorized' });
     return false;
   }
   return true;
+}
+
+// Claims are processed one at a time: the duplicate-email check, picking a
+// free workspace and recording the claim must not interleave, otherwise two
+// participants can be handed the same workspace.
+let claimQueue = Promise.resolve();
+function withClaimLock(fn) {
+  const run = claimQueue.then(fn, fn);
+  claimQueue = run.catch(() => {});
+  return run;
 }
 
 // --- Workshop project helpers ---
@@ -116,59 +134,89 @@ router.get('/status', async (req, res) => {
 // POST /api/workshop/claim
 router.post('/claim', async (req, res) => {
   try {
-    const { name, email } = req.body;
+    const { name, email } = req.body || {};
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: 'Name ist erforderlich.' });
     }
+    if (name.trim().length > 100 || /[\x00-\x1f\x7f]/.test(name)) {
+      return res.status(400).json({ error: 'Der Name darf höchstens 100 Zeichen lang sein und keine Steuerzeichen enthalten.' });
+    }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || typeof email !== 'string' || !emailRegex.test(email.trim())) {
+    if (!email || typeof email !== 'string' || email.trim().length > 254 || !emailRegex.test(email.trim())) {
       return res.status(400).json({ error: 'Bitte eine gültige E-Mail-Adresse eingeben.' });
     }
 
     const trimmedName  = name.trim();
     const trimmedEmail = email.trim().toLowerCase();
 
-    for (const claim of claims.values()) {
-      if (claim.email.toLowerCase() === trimmedEmail) {
-        return res.status(409).json({
-          error: 'Diese E-Mail-Adresse ist bereits registriert.',
-          workspaceUrl: claim.workspaceUrl,
-          projectName:  claim.projectName
-        });
+    const result = await withClaimLock(async () => {
+      for (const claim of claims.values()) {
+        if (claim.email.toLowerCase() === trimmedEmail) {
+          // No workspace URL here: otherwise anyone who knows a participant's
+          // email address could look up their workspace.
+          return { status: 409, body: {
+            error: 'Diese E-Mail-Adresse ist bereits registriert. Falls du den Link zu deinem Workspace verloren hast, wende dich bitte an die Workshop-Leitung.'
+          } };
+        }
       }
-    }
 
-    const projects = await getWorkshopProjects();
-    const claimedProjectIds = new Set(claims.keys());
-    const freeProject = projects.find(
-      p => p.status === 'running' && !claimedProjectIds.has(p.projectId) && p.workspaceUrl
-    );
+      const projects = await getWorkshopProjects();
+      const freeProject = projects.find(
+        p => p.status === 'running' && !claims.has(p.projectId) && p.workspaceUrl
+      );
 
-    if (!freeProject) {
-      return res.status(503).json({
-        error: 'Leider sind keine Workspaces mehr verfügbar. Bitte wenden Sie sich an den Workshop-Leiter.'
-      });
-    }
+      if (!freeProject) {
+        return { status: 503, body: {
+          error: 'Leider sind keine Workspaces mehr verfügbar. Bitte wenden Sie sich an den Workshop-Leiter.'
+        } };
+      }
 
-    const claim = {
-      name:         trimmedName,
-      email:        trimmedEmail,
-      projectName:  freeProject.projectName || freeProject.name,
-      workspaceUrl: freeProject.workspaceUrl,
-      group:        getWorkshopGroup(),
-      claimedAt:    new Date().toISOString()
-    };
+      const claim = {
+        name:         trimmedName,
+        email:        trimmedEmail,
+        projectName:  freeProject.projectName || freeProject.name,
+        workspaceUrl: freeProject.workspaceUrl,
+        group:        getWorkshopGroup(),
+        claimedAt:    new Date().toISOString(),
+        // Secret handed only to this participant's browser, so the landing
+        // page can show the workspace again later (see POST /my-claim)
+        token:        crypto.randomBytes(16).toString('hex')
+      };
 
-    claims.set(freeProject.projectId, claim);
-    saveClaims();
+      claims.set(freeProject.projectId, claim);
+      await saveClaims();
 
-    res.json({ workspaceUrl: freeProject.workspaceUrl, projectName: claim.projectName });
+      return { status: 200, body: {
+        workspaceUrl: freeProject.workspaceUrl,
+        projectName:  claim.projectName,
+        claimToken:   claim.token
+      } };
+    });
+
+    res.status(result.status).json(result.body);
   } catch (error) {
     console.error('Workshop claim error:', error);
     res.status(500).json({ error: 'Interner Fehler. Bitte versuche es erneut.' });
   }
+});
+
+// POST /api/workshop/my-claim
+// Returns the workspace for a claim token issued by /claim, as long as the
+// claim is still active. 404 once it was released, so a browser never keeps
+// showing a workspace that may already belong to someone else.
+router.post('/my-claim', (req, res) => {
+  const { token } = req.body || {};
+  if (typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token)) {
+    return res.status(400).json({ error: 'Ungültiges Token.' });
+  }
+  for (const claim of claims.values()) {
+    if (claim.token && safeEqual(claim.token, token)) {
+      return res.json({ workspaceUrl: claim.workspaceUrl, projectName: claim.projectName });
+    }
+  }
+  res.status(404).json({ error: 'Keine aktive Zuordnung gefunden.' });
 });
 
 // GET /api/workshop/claims  (admin)
@@ -200,7 +248,8 @@ router.post('/claims/:projectId/release', async (req, res) => {
       return res.status(404).json({ error: 'Claim nicht gefunden.' });
     }
 
-    const claim = claims.get(projectId);
+    // The token is only useful while the claim is active
+    const { token, ...claim } = claims.get(projectId);
 
     // Move to history log
     history.push({
@@ -211,9 +260,7 @@ router.post('/claims/:projectId/release', async (req, res) => {
 
     claims.delete(projectId);
 
-    // Persist both asynchronously
-    saveClaims();
-    saveHistory();
+    await Promise.all([saveClaims(), saveHistory()]);
 
     res.json({ success: true, released: claim });
   } catch (error) {

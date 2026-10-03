@@ -39,15 +39,33 @@ Currently, XaresAICoder uses **workspace-level password protection** rather than
 
 ### Password-Protected Operations
 
-Workspace passwords are required for:
-- Stopping password-protected workspaces
-- Deleting password-protected workspaces
+For password-protected workspaces, the workspace password is required for:
+- Starting, stopping and deleting the workspace
+- Cloning it (`POST /:projectId/clone`)
+- Subdomain aliases and port detection (`/:projectId/aliases*`, `/:projectId/ports`)
+- Proxy logs, recorded domains, LLM conversations and documentation generation
+  (`/:projectId/squid-logs`, `/:projectId/recorded-domains`,
+  `/:projectId/llm-conversations*`, `/:projectId/generate-documentation`)
+
+Send it in the `X-Workspace-Password` header, percent-encoded (JavaScript:
+`encodeURIComponent(password)`), so non-ASCII passwords survive HTTP header
+encoding. Plain ASCII passwords without `%` can be sent as is:
+
+```bash
+curl -H "X-Workspace-Password: my-password" \
+  http://localhost/api/projects/<id>/llm-conversations
+```
+
+Start, stop and delete also still accept the password in the JSON body:
 
 ```json
 {
   "password": "workspace-password"
 }
 ```
+
+A missing or wrong password returns `401`. Organizational metadata (name, group,
+notes) can be changed without the workspace password.
 
 ## Project Management
 
@@ -608,6 +626,9 @@ Creates multiple identical copies of an existing workspace using Docker filesyst
 }
 ```
 
+**Headers**: `X-Workspace-Password` – required if the *source* workspace is
+password-protected (see [Authentication](#authentication)).
+
 **Parameters**:
 - `count` (integer, required): Number of clones to create (1–50)
 - `password` (string, optional): Password for all cloned workspaces (min 8, max 50 chars)
@@ -846,6 +867,14 @@ Replaces the Security Proxy whitelist with the provided domains. Merges with bas
 - Domains are normalized to `.domain` format (squid convention: matches both bare domain and all subdomains)
 - Redundant subdomains are automatically removed (e.g., `.api.anthropic.com` removed when `.anthropic.com` exists)
 - Changes take effect immediately via `squid -k reconfigure`
+- Only plain domain names are accepted (`example.com`, `.example.com`, `*.example.com`).
+  IP addresses, URLs, single-label names (e.g. `.com`) and entries containing
+  whitespace are rejected with `400` and a list of the invalid entries
+- The generated config is checked with `squid -k parse` before it replaces the live
+  `squid.conf` (`422` if invalid); if `squid -k reconfigure` fails, the previous
+  config is restored
+- The change lives in the running squid container only – recreating the container
+  restores the default whitelist baked into the image
 
 ### Generate Documentation from LLM Conversations
 
@@ -944,18 +973,25 @@ Assigns the next free workspace to a participant.
 ```json
 {
   "workspaceUrl": "http://workshop-1.localhost/",
-  "projectName": "Workshop 1"
+  "projectName": "Workshop 1",
+  "claimToken": "9f2c4e0b7a1d4c3e8b6a5f4e3d2c1b0a"
 }
 ```
 
-**Response** (Duplicate - 409):
+`claimToken` is a secret for this participant only; the landing page stores it
+in `localStorage` to show the workspace again later (see My Claim).
+
+**Response** (Duplicate - 409): no workspace URL is returned, so knowing a
+participant's email address does not reveal their workspace.
 ```json
 {
-  "error": "Diese E-Mail-Adresse ist bereits registriert.",
-  "workspaceUrl": "http://workshop-1.localhost/",
-  "projectName": "Workshop 1"
+  "error": "Diese E-Mail-Adresse ist bereits registriert. Falls du den Link zu deinem Workspace verloren hast, wende dich bitte an die Workshop-Leitung."
 }
 ```
+
+**Validation**: `name` 1–100 characters without control characters, `email` max.
+254 characters. Claims are processed one at a time, so one email can only ever
+hold one workspace and no workspace is handed out twice.
 
 **Response** (No workspaces available - 503):
 ```json
@@ -964,11 +1000,28 @@ Assigns the next free workspace to a participant.
 }
 ```
 
+### My Claim
+
+Returns the workspace for a claim token from `POST /claim` while the claim is
+active. Used by the landing page to show a participant's workspace again.
+
+**Endpoint**: `POST /api/workshop/my-claim`
+
+**Request Body**: `{ "token": "<claimToken>" }`
+
+**Response**: `200` with `{ "workspaceUrl", "projectName" }`; `404` if the claim
+was released (or the token is unknown); `400` for a malformed token.
+
 ### List Claims (Admin)
 
 Returns all active claims and release history. Requires admin password.
 
-**Endpoint**: `GET /api/workshop/claims?password=<WORKSHOP_ADMIN_PASSWORD>`
+**Endpoint**: `GET /api/workshop/claims`
+
+**Headers**: `X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (percent-encoded;
+plain ASCII passwords without `%` can be sent as is). The password is not
+accepted as a query parameter. Returns `401` for a wrong password and `503` if
+`WORKSHOP_ADMIN_PASSWORD` is not set (admin endpoints are disabled then).
 
 **Response**:
 ```json
@@ -991,7 +1044,9 @@ Returns all active claims and release history. Requires admin password.
 
 Releases a claimed workspace back to the pool. Requires admin password.
 
-**Endpoint**: `POST /api/workshop/claims/:projectId/release?password=<WORKSHOP_ADMIN_PASSWORD>`
+**Endpoint**: `POST /api/workshop/claims/:projectId/release`
+
+**Headers**: `X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (see List Claims)
 
 **Response**:
 ```json

@@ -275,15 +275,54 @@
         <button class="btn-action btn-open" id="btn-open">Workspace öffnen</button>
       </div>
       <p class="result-hint">Speichere diese URL – sie gehört dir für den gesamten Workshop.</p>
+      <p class="result-hint"><a href="#" id="link-forget">Nicht dein Workspace? Hier neu registrieren</a></p>
     </div>
   </div>
 
   <script>
     let workspaceUrl = '';
 
+    // The server does not hand out a workspace URL again for an already
+    // registered email (that would let anyone look up others' workspaces).
+    // Instead this browser keeps the secret claim token it received and asks
+    // the server whether that claim is still active.
+    const CLAIM_KEY = 'workshopClaimToken';
+
+    function showResult(projectName, url) {
+      workspaceUrl = url;
+      document.getElementById('result-project-name').textContent = projectName || 'Dein Workspace';
+      document.getElementById('result-url').textContent = url;
+      document.getElementById('claim-form').style.display = 'none';
+      document.getElementById('result').style.display = 'block';
+    }
+
+    function forgetClaim() {
+      try { localStorage.removeItem(CLAIM_KEY); } catch { /* storage unavailable */ }
+    }
+
+    async function restoreClaim() {
+      let token = null;
+      try { token = localStorage.getItem(CLAIM_KEY); } catch { /* storage unavailable */ }
+      if (!token) return;
+      try {
+        const res = await fetch('/api/workshop/my-claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          showResult(data.projectName, data.workspaceUrl);
+        } else if (res.status === 404 || res.status === 400) {
+          forgetClaim(); // released or from an earlier workshop
+        }
+      } catch { /* offline: keep the token, show the form */ }
+    }
+
     async function loadStatus() {
       try {
-        const res = await fetch('/api/workshop/status');
+        const res = await fetch('/api/workshop/status', { cache: 'no-store' });
         const data = await res.json();
         const dot = document.getElementById('avail-dot');
         const text = document.getElementById('avail-text');
@@ -335,17 +374,6 @@
 
         const data = await res.json();
 
-        if (res.status === 409) {
-          // Already registered
-          workspaceUrl = data.workspaceUrl;
-          document.getElementById('result-project-name').textContent = data.projectName || 'Dein Workspace';
-          document.getElementById('result-url').textContent = data.workspaceUrl;
-          document.getElementById('claim-form').style.display = 'none';
-          document.getElementById('result').style.display = 'block';
-          clearError();
-          return;
-        }
-
         if (!res.ok) {
           showError(data.error || 'Ein unbekannter Fehler ist aufgetreten.');
           btn.disabled = false;
@@ -354,11 +382,10 @@
         }
 
         // Success
-        workspaceUrl = data.workspaceUrl;
-        document.getElementById('result-project-name').textContent = data.projectName;
-        document.getElementById('result-url').textContent = data.workspaceUrl;
-        document.getElementById('claim-form').style.display = 'none';
-        document.getElementById('result').style.display = 'block';
+        try {
+          if (data.claimToken) localStorage.setItem(CLAIM_KEY, data.claimToken);
+        } catch { /* storage unavailable */ }
+        showResult(data.projectName, data.workspaceUrl);
         loadStatus();
 
       } catch (err) {
@@ -388,10 +415,26 @@
       });
     });
 
+    // Shared computers: let the next person register instead
+    document.getElementById('link-forget').addEventListener('click', function(e) {
+      e.preventDefault();
+      forgetClaim();
+      workspaceUrl = '';
+      document.getElementById('result').style.display = 'none';
+      document.getElementById('claim-form').style.display = '';
+      document.getElementById('name').value = '';
+      document.getElementById('email').value = '';
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = false;
+      btn.textContent = 'Workspace erhalten';
+      loadStatus();
+    });
+
     document.getElementById('btn-open').addEventListener('click', function() {
       if (workspaceUrl) window.open(workspaceUrl, '_blank');
     });
 
+    restoreClaim();
     loadStatus();
   </script>
 </body>

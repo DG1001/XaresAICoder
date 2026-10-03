@@ -660,19 +660,22 @@ container's IP. Two workspaces running at the same time have different IPs and
 stay cleanly separated — but Docker assigns IPs dynamically from the subnet pool
 and the logs are never pruned automatically. Two consequences:
 
-- **Cross-workspace mixing:** if a workspace is deleted and its IP is later
-  reused by a new workspace, the new workspace inherits the old directory, and
-  its conversation/domain views will include the earlier workspace's recordings.
-  In effect the data is no longer strictly per-workspace.
+- **IP reuse:** when a proxy workspace (or clone) is created, the server clears
+  the domain records stored under its new IP and moves any conversations stored
+  there to `llm_conversations/_archive/<ip>-<UTC timestamp>/` right after the
+  container starts. A new workspace therefore never sees recordings left by an
+  earlier workspace at the same address, and the earlier recordings are not lost
+  (they are no longer shown in the UI/API, but stay on disk).
+- **Known gap:** a workspace that is *restarted* and happens to receive an IP
+  previously used by another workspace still sees that workspace's recordings.
+  Fixing this properly requires keying logs on the project instead of the IP.
 - **Orphaned history:** if a workspace restarts and gets a different IP, its
   earlier conversations remain under the old IP and no longer appear in the
   API/UI for that project (see Troubleshooting → "IP Address Changed, Lost
   Conversations").
 
-For workshop-style use with many short-lived workspaces this is worth keeping in
-mind. Deleting a workspace's conversations before its IP is recycled, or keying
-logs on the project ID instead of the IP (see Future Enhancements → Static IP
-Assignment), would avoid it.
+Keying logs on the project ID instead of the IP (see Future Enhancements →
+Static IP Assignment) would avoid the orphaned-history case.
 
 ### Session Grouping & Filtering
 
@@ -704,11 +707,14 @@ conversation prefix, **not** by workspace.
 **What's logged:**
 - ✅ User prompts and questions
 - ✅ AI responses and code suggestions
-- ✅ API keys in request headers (if sent)
 - ✅ Model parameters and settings
 - ✅ Token usage and costs
 
 **What's NOT logged:**
+- ❌ Credentials: `Authorization`, `Proxy-Authorization`, `Cookie`/`Set-Cookie` and
+  any header whose name contains `api-key`/`apikey`, `token` (but not `tokens`, so
+  rate-limit headers stay), `secret` or `session` are stored as `[REDACTED]`; URL query parameters `key`, `api_key`, `apikey`,
+  `access_token` and `token` (e.g. Gemini's `?key=`) are replaced with `REDACTED`
 - ❌ Workspace file contents (unless sent to AI)
 - ❌ Terminal commands (unless sent to AI)
 - ❌ Git credentials
@@ -716,12 +722,16 @@ conversation prefix, **not** by workspace.
 
 ### API Key Exposure
 
-**Risk:** API keys appear in request headers and are logged in JSON files.
+**Risk:** API keys could leak if a provider sends them somewhere other than the
+redacted headers/query parameters (e.g. inside a request body).
 
 **Mitigation:**
+- Credential headers and query parameters are redacted before writing (see above).
+  Captures written before this redaction existed are redacted by the server when
+  they are read through the API
 - Logs stored in Docker volume (not exposed to network)
-- Only accessible via backend API (requires project access)
-- Consider encrypting log files (future enhancement)
+- For password-protected workspaces the API requires the workspace password
+  (`X-Workspace-Password`) to read or delete conversations
 
 **Best practice:**
 - Use API keys with minimal scopes
@@ -889,7 +899,7 @@ docker-compose up -d
 ### Planned Features
 
 1. **Log Encryption**
-   - Encrypt JSON files to protect API keys
+   - Encrypt JSON files at rest (prompts/responses may contain sensitive data)
    - Decrypt on-demand during documentation generation
 
 2. **Automated Retention**

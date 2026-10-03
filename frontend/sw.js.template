@@ -3,9 +3,9 @@
 
 const CACHE_NAME = 'xaresaicoder-{{CACHE_VERSION}}';
 const STATIC_CACHE_NAME = 'xaresaicoder-static-{{CACHE_VERSION}}';
-const DYNAMIC_CACHE_NAME = 'xaresaicoder-dynamic-{{CACHE_VERSION}}';
 
-// Assets to cache immediately (shell)
+// App shell, precached so the offline page and last-known UI work offline.
+// Paths are matched exactly against the request pathname.
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -26,56 +26,42 @@ const STATIC_ASSETS = [
   '/icons/icon-152x152.png',
   '/icons/icon-192x192.png',
   '/icons/icon-384x384.png',
-  '/icons/icon-512x512.png',
-  // Google Fonts
-  'https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600;700&display=swap'
+  '/icons/icon-512x512.png'
 ];
-
-// API endpoints that should use network-first strategy
-const API_ENDPOINTS = [
-  '/api/projects',
-  '/api/health',
-  '/api/workspace'
-];
+const STATIC_PATHS = new Set(STATIC_ASSETS);
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
-  
+
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME)
-      .then((cache) => {
-        console.log('[SW] Caching static assets');
-        return cache.addAll(STATIC_ASSETS);
+      // Cache assets individually: one missing file must not leave the whole
+      // shell (including offline.html) uncached, as cache.addAll() would.
+      .then((cache) => Promise.allSettled(STATIC_ASSETS.map((asset) => cache.add(asset))))
+      .then((results) => {
+        const failed = results.filter((r) => r.status === 'rejected').length;
+        if (failed) console.warn(`[SW] ${failed} static asset(s) could not be cached`);
       })
-      .then(() => {
-        console.log('[SW] Static assets cached successfully');
-        // Skip waiting to activate immediately
-        return self.skipWaiting();
-      })
-      .catch((error) => {
-        console.error('[SW] Failed to cache static assets:', error);
-      })
+      // Activate immediately; the page reloads on controllerchange
+      .then(() => self.skipWaiting())
   );
 });
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...');
-  
+
   event.waitUntil(
     caches.keys()
-      .then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            // Delete old caches
-            if (cacheName !== STATIC_CACHE_NAME && cacheName !== DYNAMIC_CACHE_NAME) {
-              console.log('[SW] Deleting old cache:', cacheName);
-              return caches.delete(cacheName);
-            }
+      .then((cacheNames) => Promise.all(
+        cacheNames
+          .filter((cacheName) => cacheName !== STATIC_CACHE_NAME)
+          .map((cacheName) => {
+            console.log('[SW] Deleting old cache:', cacheName);
+            return caches.delete(cacheName);
           })
-        );
-      })
+      ))
       .then(() => {
         console.log('[SW] Service worker activated');
         // Take control of all clients immediately
@@ -89,109 +75,75 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-HTTP requests
-  if (!request.url.startsWith('http')) {
+  // Only same-origin GET requests are handled; everything else goes straight
+  // to the network untouched.
+  if (request.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
 
-  // Skip service worker for Forgejo Git server - always go to network
-  // This prevents caching of Git pages and ensures fresh data
-  if (url.pathname.startsWith('/git/')) {
-    event.respondWith(fetch(request));
+  // Never cache API responses: they carry live state (status, whitelist,
+  // workshop claims) and sensitive data (logs, captured conversations).
+  // Forgejo pages are always fetched fresh as well.
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/git/')) {
     return;
   }
 
-  // Handle API requests with network-first strategy
-  if (isApiRequest(request.url)) {
-    event.respondWith(networkFirstStrategy(request));
-    return;
-  }
-
-  // Handle static assets with cache-first strategy
-  if (isStaticAsset(request.url)) {
+  // Icons and images rarely change: cache-first
+  if (STATIC_PATHS.has(url.pathname) && /\.(png|ico)$/.test(url.pathname)) {
     event.respondWith(cacheFirstStrategy(request));
     return;
   }
 
-  // Handle navigation requests with network-first, fallback to offline page
-  if (request.mode === 'navigate') {
-    event.respondWith(navigationStrategy(request));
+  // App shell (HTML/JS/CSS/manifest): network-first so a deploy is picked up
+  // immediately, cached copy only when offline
+  if (STATIC_PATHS.has(url.pathname)) {
+    event.respondWith(networkFirstStrategy(request));
     return;
   }
 
-  // Default: try network first, then cache
-  event.respondWith(networkFirstStrategy(request));
+  // Other pages (workshop, convo viewer): network, offline page as fallback
+  if (request.mode === 'navigate') {
+    event.respondWith(navigationStrategy(request));
+  }
 });
-
-// Check if request is for an API endpoint
-function isApiRequest(url) {
-  return API_ENDPOINTS.some(endpoint => url.includes(endpoint));
-}
-
-// Check if request is for a static asset
-function isStaticAsset(url) {
-  return STATIC_ASSETS.some(asset => {
-    if (asset.startsWith('http')) {
-      return url === asset;
-    }
-    return url.endsWith(asset) || url.includes(asset);
-  });
-}
 
 // Cache-first strategy (good for static assets)
 async function cacheFirstStrategy(request) {
+  const cacheResponse = await caches.match(request);
+  if (cacheResponse) {
+    return cacheResponse;
+  }
+
+  const networkResponse = await fetch(request);
+  if (networkResponse.ok) {
+    const cache = await caches.open(STATIC_CACHE_NAME);
+    cache.put(request, networkResponse.clone());
+  }
+  return networkResponse;
+}
+
+// Network-first strategy: fresh when online, refreshes the cached copy
+async function networkFirstStrategy(request) {
   try {
-    const cacheResponse = await caches.match(request);
-    if (cacheResponse) {
-      return cacheResponse;
-    }
-    
     const networkResponse = await fetch(request);
-    
-    // Cache successful responses
     if (networkResponse.ok) {
       const cache = await caches.open(STATIC_CACHE_NAME);
       cache.put(request, networkResponse.clone());
     }
-    
     return networkResponse;
   } catch (error) {
     console.log('[SW] Network failed, trying cache:', error);
-    
-    const cacheResponse = await caches.match(request);
-    if (cacheResponse) {
-      return cacheResponse;
-    }
-    
-    throw error;
-  }
-}
 
-// Network-first strategy (good for API calls and dynamic content)
-async function networkFirstStrategy(request) {
-  try {
-    const networkResponse = await fetch(request);
-    
-    // Cache successful responses for dynamic content
-    if (networkResponse.ok && request.method === 'GET') {
-      const cache = await caches.open(DYNAMIC_CACHE_NAME);
-      cache.put(request, networkResponse.clone());
-    }
-    
-    return networkResponse;
-  } catch (error) {
-    console.log('[SW] Network failed, trying cache:', error);
-    
     const cacheResponse = await caches.match(request);
     if (cacheResponse) {
       return cacheResponse;
     }
-    
+
     // Return offline page for navigation requests
     if (request.mode === 'navigate') {
       return caches.match('/offline.html');
     }
-    
+
     throw error;
   }
 }
@@ -199,8 +151,7 @@ async function networkFirstStrategy(request) {
 // Navigation strategy (for page requests)
 async function navigationStrategy(request) {
   try {
-    const networkResponse = await fetch(request);
-    return networkResponse;
+    return await fetch(request);
   } catch (error) {
     console.log('[SW] Navigation failed, showing offline page');
     return caches.match('/offline.html');

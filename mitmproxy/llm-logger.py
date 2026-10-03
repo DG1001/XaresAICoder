@@ -7,8 +7,10 @@ Logs request/response bodies to per-workspace JSON files.
 
 import json
 import os
+import re
 import time
 from datetime import datetime
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from mitmproxy import ctx, http
 
 LOG_DIR = "/var/log/mitmproxy/llm_conversations"
@@ -28,6 +30,43 @@ LLM_DOMAINS = [
     'openrouter.ai',
     'chatgpt.com',  # Codex CLI with ChatGPT login (streams via WebSocket)
 ]
+
+# Credentials must never be written to disk: captures are readable through the
+# API and survive the workspace. Header values and URL query parameters that
+# carry keys/tokens are replaced (the server applies the same rules on read).
+# 'token(?!s)' keeps rate-limit headers such as anthropic-ratelimit-tokens-remaining.
+SENSITIVE_HEADER_RE = re.compile(
+    r'^(authorization|proxy-authorization|cookie|set-cookie)$|api[-_]?key|token(?!s)|secret|session',
+    re.IGNORECASE)
+SENSITIVE_QUERY_PARAMS = {'key', 'api_key', 'apikey', 'access_token', 'token'}
+REDACTED = '[REDACTED]'
+
+
+def redact_headers(headers):
+    return {k: (REDACTED if SENSITIVE_HEADER_RE.search(k) else v) for k, v in headers.items()}
+
+
+def redact_url(url):
+    """Redact credential query parameters, e.g. Gemini's ?key=..."""
+    if '?' not in url:
+        return url
+    try:
+        parts = urlsplit(url)
+        query = parse_qsl(parts.query, keep_blank_values=True)
+        if not any(k.lower() in SENSITIVE_QUERY_PARAMS for k, _ in query):
+            return url
+        query = [(k, 'REDACTED' if k.lower() in SENSITIVE_QUERY_PARAMS else v) for k, v in query]
+        return urlunsplit(parts._replace(query=urlencode(query)))
+    except ValueError:
+        return url
+
+
+def atomic_write_json(path, data, **kwargs):
+    """Write-then-rename so readers never see a half-written JSON file."""
+    with open(path + '.tmp', 'w') as f:
+        json.dump(data, f, **kwargs)
+    os.replace(path + '.tmp', path)
+
 
 # Local and self-hosted model servers cannot be matched by host name: they run
 # on host.docker.internal, a LAN IP or any private hostname. They are therefore
@@ -215,6 +254,11 @@ class LLMConversationLogger:
     def _track_domain(self, flow):
         """Track domain from any request, keyed by client IP."""
         try:
+            # request() and response() both call this; count each flow once
+            if flow.metadata.get('domain_tracked'):
+                return
+            flow.metadata['domain_tracked'] = True
+
             client_ip = flow.client_conn.peername[0]
             domain = flow.request.host
             now = datetime.utcnow().isoformat()
@@ -254,14 +298,18 @@ class LLMConversationLogger:
         """Write domain data for a specific client IP to disk."""
         try:
             filepath = os.path.join(DOMAINS_DIR, f"{client_ip}.json")
-            with open(filepath, 'w') as f:
-                json.dump(self.domain_tracker[client_ip], f, indent=2)
+            atomic_write_json(filepath, self.domain_tracker[client_ip], indent=2)
         except Exception as e:
             ctx.log.warn(f"Error writing domain data for {client_ip}: {e}")
 
     def _flush_all_domains(self):
         """Flush all domain data to disk."""
-        for client_ip in self.domain_tracker:
+        for client_ip in list(self.domain_tracker):
+            # New domains are written immediately, so a missing file means the
+            # server cleared it (workspace reset/IP reuse) – don't resurrect it.
+            if not os.path.exists(os.path.join(DOMAINS_DIR, f"{client_ip}.json")):
+                del self.domain_tracker[client_ip]
+                continue
             self._write_domains(client_ip)
 
     def request(self, flow: http.HTTPFlow):
@@ -278,8 +326,8 @@ class LLMConversationLogger:
             'client_ip': client_ip,
             'timestamp': datetime.utcnow().isoformat(),
             'method': flow.request.method,
-            'url': flow.request.pretty_url,
-            'headers': dict(flow.request.headers),
+            'url': redact_url(flow.request.pretty_url),
+            'headers': redact_headers(flow.request.headers),
             'body': flow.request.text if flow.request.text else None
         }
 
@@ -296,7 +344,7 @@ class LLMConversationLogger:
         # Add response
         log_data['response'] = {
             'status_code': flow.response.status_code,
-            'headers': dict(flow.response.headers),
+            'headers': redact_headers(flow.response.headers),
             'body': flow.response.text if flow.response.text else None,
             'timestamp': datetime.utcnow().isoformat()
         }
@@ -447,8 +495,7 @@ class LLMConversationLogger:
         timestamp = log_data['timestamp'].replace(':', '-').replace('.', '-')
         filename = f"{timestamp}.json"
 
-        with open(os.path.join(workspace_dir, filename), 'w') as f:
-            json.dump(log_data, f, indent=2, ensure_ascii=False)
+        atomic_write_json(os.path.join(workspace_dir, filename), log_data, indent=2, ensure_ascii=False)
 
         ctx.log.info(f"Logged LLM conversation: {client_ip} -> {log_data['url']}")
 
@@ -477,17 +524,13 @@ class LLMConversationLogger:
             'last_updated': datetime.utcnow().isoformat(),
             'in_progress': in_progress,
             'method': 'WEBSOCKET',
-            'url': flow.request.pretty_url,
-            'headers': dict(flow.request.headers),
+            'url': redact_url(flow.request.pretty_url),
+            'headers': redact_headers(flow.request.headers),
             'websocket_messages': msgs,
         }
         workspace_dir = os.path.join(LOG_DIR, client_ip)
         os.makedirs(workspace_dir, exist_ok=True)
-        # write-then-rename so readers never see a half-written JSON file
-        path = os.path.join(workspace_dir, filename)
-        with open(path + '.tmp', 'w') as f:
-            json.dump(entry, f, indent=2, ensure_ascii=False)
-        os.replace(path + '.tmp', path)
+        atomic_write_json(os.path.join(workspace_dir, filename), entry, indent=2, ensure_ascii=False)
         flow.metadata['ws_last_flush'] = time.time()
         flow.metadata['ws_flushed_count'] = len(msgs)
 
