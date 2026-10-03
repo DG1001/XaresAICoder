@@ -1,6 +1,6 @@
 const express = require('express');
-const fs = require('fs').promises;
 const path = require('path');
+const { writeJsonAtomic, readJson } = require('../services/persistence');
 
 const router = express.Router();
 
@@ -15,26 +15,20 @@ const history = [];        // released claims (append-only)
 
 async function loadClaims() {
   try {
-    const data = await fs.readFile(CLAIMS_FILE, 'utf8');
-    const parsed = JSON.parse(data);
+    const parsed = await readJson(CLAIMS_FILE);
+    if (!parsed) return;
     for (const [projectId, claim] of Object.entries(parsed)) {
       claims.set(projectId, claim);
     }
     console.log(`Workshop: loaded ${claims.size} active claim(s) from disk`);
   } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error('Workshop: failed to load claims:', err.message);
-    }
+    console.error('Workshop: failed to load claims:', err.message);
   }
 }
 
 async function saveClaims() {
   try {
-    const obj = {};
-    for (const [projectId, claim] of claims) {
-      obj[projectId] = claim;
-    }
-    await fs.writeFile(CLAIMS_FILE, JSON.stringify(obj, null, 2), 'utf8');
+    await writeJsonAtomic(CLAIMS_FILE, Object.fromEntries(claims));
   } catch (err) {
     console.error('Workshop: failed to save claims:', err.message);
   }
@@ -42,20 +36,18 @@ async function saveClaims() {
 
 async function loadHistory() {
   try {
-    const data = await fs.readFile(HISTORY_FILE, 'utf8');
-    const parsed = JSON.parse(data);
+    const parsed = await readJson(HISTORY_FILE);
+    if (!Array.isArray(parsed)) return;
     history.push(...parsed);
     console.log(`Workshop: loaded ${history.length} history entry/entries from disk`);
   } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error('Workshop: failed to load history:', err.message);
-    }
+    console.error('Workshop: failed to load history:', err.message);
   }
 }
 
 async function saveHistory() {
   try {
-    await fs.writeFile(HISTORY_FILE, JSON.stringify(history, null, 2), 'utf8');
+    await writeJsonAtomic(HISTORY_FILE, history);
   } catch (err) {
     console.error('Workshop: failed to save history:', err.message);
   }
@@ -162,7 +154,7 @@ router.post('/claim', async (req, res) => {
     };
 
     claims.set(freeProject.projectId, claim);
-    saveClaims();
+    await saveClaims();
 
     res.json({ workspaceUrl: freeProject.workspaceUrl, projectName: claim.projectName });
   } catch (error) {
@@ -211,9 +203,7 @@ router.post('/claims/:projectId/release', async (req, res) => {
 
     claims.delete(projectId);
 
-    // Persist both asynchronously
-    saveClaims();
-    saveHistory();
+    await Promise.all([saveClaims(), saveHistory()]);
 
     res.json({ success: true, released: claim });
   } catch (error) {

@@ -1,9 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs').promises;
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const dockerService = require('./docker');
 const gitService = require('./git');
+const { writeJsonAtomic, readJson } = require('./persistence');
 
 // Remove userinfo (user:token@) from a URL so it can be stored and returned safely.
 function stripUrlCredentials(url) {
@@ -674,22 +674,13 @@ class WorkspaceService {
   }
 
   // Persistence methods
+  // In-memory state stays the source of truth; a failed write is logged and
+  // the next successful save persists the current state. Writes are atomic,
+  // so a failure never truncates the existing file.
   async saveProjectsToDisk() {
     try {
-      // Ensure directory exists
-      const dir = path.dirname(this.persistenceFile);
-      await fs.mkdir(dir, { recursive: true });
-
-      // Convert Map to plain object for JSON serialization
-      const projectsData = {};
-      for (const [key, value] of this.projects) {
-        // Save all data including password hash (if present)
-        projectsData[key] = {
-          ...value
-        };
-      }
-
-      await fs.writeFile(this.persistenceFile, JSON.stringify(projectsData, null, 2));
+      // Save all data including password hash (if present)
+      await writeJsonAtomic(this.persistenceFile, Object.fromEntries(this.projects));
       console.log(`Saved ${this.projects.size} projects to disk`);
     } catch (error) {
       console.error('Error saving projects to disk:', error);
@@ -698,9 +689,12 @@ class WorkspaceService {
 
   async loadProjectsFromDisk() {
     try {
-      const data = await fs.readFile(this.persistenceFile, 'utf8');
-      const projectsData = JSON.parse(data);
-      
+      const projectsData = await readJson(this.persistenceFile);
+      if (!projectsData) {
+        console.log('No usable projects file found - starting fresh');
+        return;
+      }
+
       console.log(`Loading projects from disk...`);
       
       // Load projects and verify they still exist in Docker
@@ -746,11 +740,7 @@ class WorkspaceService {
       await this.saveProjectsToDisk();
       
     } catch (error) {
-      if (error.code === 'ENOENT') {
-        console.log('No existing projects file found - starting fresh');
-      } else {
-        console.error('Error loading projects from disk:', error);
-      }
+      console.error('Error loading projects from disk:', error);
     }
   }
 

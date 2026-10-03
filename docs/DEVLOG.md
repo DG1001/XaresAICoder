@@ -240,3 +240,45 @@ Der base64-Schreibbefehl wurde lokal mit identischem argv ausgeführt.
   `_file` enthält `-ws`; der awk-Filter (lokal mit identischem Skript ausgeführt)
   liefert für `172.30.0.1` nur dessen Zeilen, nicht `172.30.0.10`.
 - ID-Regex: `../domains/…`, `a/b`, `x.json` abgelehnt; echte Dateinamen erlaubt.
+
+### 1.5 Atomare, serialisierte Persistenz
+
+**Problem**
+- `projects.json` wurde per `fs.writeFile` direkt überschrieben – nicht atomar und
+  nicht serialisiert (viele parallele Saves, z. B. beim Klonen). Ein Absturz oder
+  volle Platte konnte eine **abgeschnittene Datei** hinterlassen.
+- Beim nächsten Start schlug `JSON.parse` fehl, die Projektliste startete leer, und der
+  nächste Save überschrieb die kaputte Datei mit nur einem Projekt → alle Metadaten
+  und Passwort-Hashes weg.
+- Workshop-Claims und -Historie: dasselbe Muster, Saves wurden zusätzlich nicht
+  awaited (Antwort an den Client, bevor gespeichert war).
+
+**Änderung**
+- Neues Modul `server/src/services/persistence.js`:
+  - `writeJsonAtomic(file, data)`: serialisiert zum Aufrufzeitpunkt, schreibt nach
+    `<file>.tmp` (Modus **0600**) und benennt per `rename` um; pro Datei eine
+    Promise-Kette, Schreibvorgänge laufen strikt in Aufrufreihenfolge. Ein
+    fehlgeschlagener Write blockiert die Kette nicht.
+  - `readJson(file)`: `null` bei fehlender Datei; eine nicht parsebare Datei wird nach
+    `<file>.corrupt-<timestamp>` verschoben (kann also nicht mehr überschrieben
+    werden) und `null` zurückgegeben.
+- `workspace.js` und `routes/workshop.js` nutzen beide Funktionen; Workshop-Saves
+  werden jetzt awaited.
+
+**Entscheidungen**
+- **Neue Datei** trotz „keine neuen Dateien“-Leitlinie: zwei Module brauchen exakt
+  dieselbe Logik, ein gemeinsamer Helfer vermeidet Duplikation.
+- `saveProjectsToDisk` **wirft weiterhin nicht**, sondern loggt: Der In-Memory-Zustand
+  ist führend, der nächste erfolgreiche Save persistiert ihn. Da Writes jetzt atomar
+  sind, bleibt bei einem Fehler die alte Datei intakt statt halb überschrieben.
+- Kein automatisches Wiederherstellen aus der `.corrupt`-Datei – das soll ein Mensch
+  entscheiden; sie bleibt zur manuellen Rettung liegen.
+
+**Test**: 200 parallele Saves bei gleichzeitigem Dauerlesen → nie ungültiges JSON,
+Endstand = letzter Aufruf, Modus 0600, keine `.tmp`-Reste. Fehlschlag (ENOTDIR)
+wird gemeldet, der nächste Save funktioniert. Abgeschnittene Datei → `null` und
+Quarantäne-Datei angelegt.
+
+*Randnotiz*: Node 20 hängt bei `fs.mkdir(..., {recursive: true})` unter `/proc` in
+einer Endlosschleife (fiel nur im Test auf, betrifft den Produktivpfad
+`/app/workspaces` nicht).
