@@ -482,8 +482,10 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 EOF
     
-    # Generate service worker from template
-    local safe_version=$(echo "$version" | sed 's/[^a-zA-Z0-9]/_/g')
+    # Generate service worker from template. The cache version changes on
+    # every deploy (tag + commit + build time), so browsers always pick up the
+    # new service worker and drop the old caches – also for untagged deploys.
+    local safe_version=$(echo "${version}-${git_hash}-${build_date}" | sed 's/[^a-zA-Z0-9]/_/g')
     
     print_status "Generating service worker from template..."
     

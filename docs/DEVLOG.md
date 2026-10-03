@@ -391,3 +391,56 @@ Neu: keine eingeschleusten Tags/Handler, `href` = `#` für `javascript:`, Handle
 enthalten den Namen als *ein* String-Argument; `jsArg()`-Roundtrip liefert exakt den
 Originalstring. **Gegenprobe mit dem alten `app.js` (main)**: 7× eingeschleustes
 `<img onerror>`, Handler brechen aus (`app.deleteProject('p1', 'x');alert(1);//`).
+
+### 1.8 Service Worker: keine API-Antworten im Cache, frische Deploys
+
+**Problem**
+- `'/'` stand in der Precache-Liste, und `isStaticAsset()` prüfte per
+  `url.includes(asset)` → **jede** URL galt als statisch. Alles, was nicht explizit in
+  `API_ENDPOINTS` stand (`/api/config`, `/api/limits`, `/api/whitelist`,
+  `/api/workshop/*`), wurde **cache-first für immer** ausgeliefert: Whitelist-Ansicht
+  und Workshop-Admin zeigten veraltete Daten, `ENABLE_PROXY` kam nie im UI an.
+  Teilnehmerdaten (und früher das Admin-Passwort im Cache-Key) lagen in der Cache Storage.
+- Die übrigen API-Antworten (Logs, LLM-Gespräche) landeten im Dynamic Cache.
+- `/workshop/index.html` passte per `endsWith('/index.html')` und wurde nach dem ersten
+  Laden ebenfalls cache-first ausgeliefert.
+- App-Shell (`app.js`, `style.css`) cache-first; die Cache-Version war nur der Git-Tag
+  → ungetaggte Deploys erzeugten ein byte-identisches `sw.js`, Browser behielten das
+  alte `app.js` unbegrenzt.
+- Precache enthielt eine Google-Fonts-URL für „Segoe UI“, die **HTTP 400** liefert
+  (geprüft). `cache.addAll()` ist atomar → nichts wurde gecacht, `skipWaiting()` lief
+  nie, `offline.html` war nie verfügbar.
+- „Update Now“ lud nur neu, ohne einen wartenden Worker zu aktivieren.
+
+**Änderung**
+- `frontend/sw.js.template` (Fetch-Logik neu):
+  - nur same-origin `GET` wird behandelt; `/api/*` und `/git/*` werden **nie**
+    abgefangen oder gecacht.
+  - Precache-Pfade werden **exakt** gegen `url.pathname` geprüft.
+  - Icons/Bilder: cache-first. App-Shell (HTML/JS/CSS/Manifest): **network-first**,
+    Cache nur offline. Andere Seiten (Workshop, Convo-Viewer): Netzwerk, offline →
+    `offline.html`.
+  - Install cacht Assets einzeln (`Promise.allSettled`), ein fehlendes Asset blockiert
+    nicht mehr den Rest; `skipWaiting()` läuft immer. Nur noch ein Cache, alte Caches
+    werden beim Aktivieren gelöscht.
+  - Google-Fonts-URL entfernt.
+- `deploy.sh`: Cache-Version = Tag + Commit-Hash + Build-Zeit → jeder Deploy erzeugt
+  ein neues `sw.js`.
+- `frontend/index.html`: Google-Fonts-Links (inkl. Preconnects) entfernt – die Schrift
+  existiert dort nicht, das CSS nutzt ohnehin den System-Font-Stack. Nebeneffekt: kein
+  Request mehr an Google beim Laden (DSGVO).
+- `app.js`: `applyUpdate()` schickt `SKIP_WAITING` an einen wartenden Worker und lädt
+  bei `controllerchange` neu.
+
+**Entscheidungen**
+- **API gar nicht cachen**: Offline-Anzeige der Projektliste übernimmt bereits der
+  localStorage-Cache der App; gecachte API-Antworten bringen nur veraltete Zustände
+  und sensible Daten auf die Platte.
+- **Network-first für die Shell** statt cache-first: Das Dashboard braucht ohnehin den
+  Server; Frische nach Deploys ist wichtiger als ein paar Millisekunden Ladezeit.
+
+**Test**: SW in einer VM mit Stubs für `self`, Cache-API und `fetch`: Install mit
+einem fehlschlagenden Asset → übrige Assets inkl. `offline.html` gecacht,
+`skipWaiting` aufgerufen; `/api/config`, `/api/workshop/claims`, POST und
+Cross-Origin werden nicht abgefangen; `/app.js` geht trotz Cache ans Netz; Icon kommt
+aus dem Cache; offline → `app.js` aus dem Cache, Workshop-Seite → `offline.html`.

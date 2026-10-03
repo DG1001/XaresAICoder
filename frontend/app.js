@@ -1751,6 +1751,7 @@ class XaresAICoder {
         try {
             const registration = await navigator.serviceWorker.register('/sw.js');
             console.log('[PWA] Service Worker registered successfully:', registration);
+            this.swRegistration = registration;
 
             // Check for updates
             registration.addEventListener('updatefound', () => {
@@ -1870,6 +1871,18 @@ class XaresAICoder {
         this.hideInstallButton();
     }
 
+    // Activates a waiting service worker (if any) and reloads once it controls
+    // the page, so the new version is actually used after the reload.
+    applyUpdate() {
+        const waiting = this.swRegistration && this.swRegistration.waiting;
+        if (!waiting) {
+            location.reload();
+            return;
+        }
+        navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+
     showUpdateNotification() {
         // Create update notification
         const notification = document.createElement('div');
@@ -1877,7 +1890,7 @@ class XaresAICoder {
         notification.innerHTML = `
             <div class="update-content">
                 <span>A new version of XaresAICoder is available!</span>
-                <button class="btn-secondary update-btn" onclick="this.parentElement.parentElement.remove(); location.reload();">
+                <button class="btn-secondary update-btn" onclick="this.parentElement.parentElement.remove(); app.applyUpdate();">
                     Update Now
                 </button>
                 <button class="btn-link dismiss-btn" onclick="this.parentElement.parentElement.remove();">
