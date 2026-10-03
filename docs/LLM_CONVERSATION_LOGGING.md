@@ -660,11 +660,15 @@ container's IP. Two workspaces running at the same time have different IPs and
 stay cleanly separated — but Docker assigns IPs dynamically from the subnet pool
 and the logs are never pruned automatically. Two consequences:
 
-- **IP reuse:** when a proxy workspace (or clone) is created, the server deletes
-  any conversations and domain records still stored under its new IP right after
-  the container starts, so a new workspace never sees recordings left by an
-  earlier workspace at the same address. Recordings of a deleted workspace stay
-  on disk until its IP is reused (or they are deleted via the UI/API).
+- **IP reuse:** when a proxy workspace (or clone) is created, the server clears
+  the domain records stored under its new IP and moves any conversations stored
+  there to `llm_conversations/_archive/<ip>-<UTC timestamp>/` right after the
+  container starts. A new workspace therefore never sees recordings left by an
+  earlier workspace at the same address, and the earlier recordings are not lost
+  (they are no longer shown in the UI/API, but stay on disk).
+- **Known gap:** a workspace that is *restarted* and happens to receive an IP
+  previously used by another workspace still sees that workspace's recordings.
+  Fixing this properly requires keying logs on the project instead of the IP.
 - **Orphaned history:** if a workspace restarts and gets a different IP, its
   earlier conversations remain under the old IP and no longer appear in the
   API/UI for that project (see Troubleshooting → "IP Address Changed, Lost
@@ -708,8 +712,8 @@ conversation prefix, **not** by workspace.
 
 **What's NOT logged:**
 - ❌ Credentials: `Authorization`, `Proxy-Authorization`, `Cookie`/`Set-Cookie` and
-  any header whose name contains `api-key`/`apikey`, `token`, `secret` or `session`
-  are stored as `[REDACTED]`; URL query parameters `key`, `api_key`, `apikey`,
+  any header whose name contains `api-key`/`apikey`, `token` (but not `tokens`, so
+  rate-limit headers stay), `secret` or `session` are stored as `[REDACTED]`; URL query parameters `key`, `api_key`, `apikey`,
   `access_token` and `token` (e.g. Gemini's `?key=`) are replaced with `REDACTED`
 - ❌ Workspace file contents (unless sent to AI)
 - ❌ Terminal commands (unless sent to AI)

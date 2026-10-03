@@ -34,8 +34,9 @@ LLM_DOMAINS = [
 # Credentials must never be written to disk: captures are readable through the
 # API and survive the workspace. Header values and URL query parameters that
 # carry keys/tokens are replaced (the server applies the same rules on read).
+# 'token(?!s)' keeps rate-limit headers such as anthropic-ratelimit-tokens-remaining.
 SENSITIVE_HEADER_RE = re.compile(
-    r'^(authorization|proxy-authorization|cookie|set-cookie)$|api[-_]?key|token|secret|session',
+    r'^(authorization|proxy-authorization|cookie|set-cookie)$|api[-_]?key|token(?!s)|secret|session',
     re.IGNORECASE)
 SENSITIVE_QUERY_PARAMS = {'key', 'api_key', 'apikey', 'access_token', 'token'}
 REDACTED = '[REDACTED]'

@@ -5,7 +5,8 @@ const dns = require('dns').promises;
 // Header names whose values are credentials. Captures written before the
 // mitmproxy addon redacted them still contain raw keys, so they are also
 // redacted when read.
-const SENSITIVE_HEADER_RE = /^(authorization|proxy-authorization|cookie|set-cookie)$|api[-_]?key|token|secret|session/i;
+// 'token(?!s)' keeps rate-limit headers such as anthropic-ratelimit-tokens-remaining.
+const SENSITIVE_HEADER_RE = /^(authorization|proxy-authorization|cookie|set-cookie)$|api[-_]?key|token(?!s)|secret|session/i;
 const SENSITIVE_QUERY_PARAMS = new Set(['key', 'api_key', 'apikey', 'access_token', 'token']);
 
 function redactHeaders(headers) {
@@ -829,17 +830,41 @@ fi`.trim();
     }
   }
 
-  // Clears recorded domains and captured LLM conversations stored under the
-  // workspace's current IP. Non-fatal: logging must never block creation.
+  // Gives a new workspace a clean slate at its (possibly reused) IP: clears
+  // recorded domains and archives captured LLM conversations left by an
+  // earlier workspace. Non-fatal: logging must never block creation.
   async resetProxyLogsForWorkspace(projectId) {
     try {
       const ip = await this.getWorkspaceIPAddress(projectId);
       if (!ip) return;
       await this.clearRecordedDomains(ip);
-      await this.deleteAllLLMConversations(ip);
+      await this.archiveLLMConversations(ip);
     } catch (e) {
       console.warn(`Could not reset proxy logs for ${projectId}: ${e.message}`);
     }
+  }
+
+  // Moves the conversations stored under an IP to llm_conversations/_archive/
+  // (not served by the API) instead of deleting them: the IP may have been
+  // released by a *stopped* workspace whose owner still wants its captures.
+  async archiveLLMConversations(ipAddress) {
+    const containers = await this.docker.listContainers();
+    const mitmproxyContainer = containers.find(c =>
+      c.Names.some(name => name.includes('mitmproxy-logger'))
+    );
+    if (!mitmproxyContainer) return;
+
+    const container = this.docker.getContainer(mitmproxyContainer.Id);
+    const exec = await container.exec({
+      Cmd: ['sh', '-c',
+        'd=/var/log/mitmproxy/llm_conversations; [ -d "$d/$1" ] || exit 0; ' +
+        'mkdir -p "$d/_archive" && mv "$d/$1" "$d/_archive/$1-$(date -u +%Y%m%dT%H%M%SZ)"',
+        'sh', ipAddress],
+      AttachStdout: true,
+      AttachStderr: true
+    });
+    await this.streamToString(await exec.start());
+    console.log(`Archived LLM conversations previously stored for IP ${ipAddress}`);
   }
 
   /**
