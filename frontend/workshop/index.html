@@ -281,9 +281,29 @@
   <script>
     let workspaceUrl = '';
 
+    // The server does not hand out a workspace URL again for an already
+    // registered email (that would let anyone look up others' workspaces),
+    // so this browser remembers its own claim.
+    const CLAIM_KEY = 'workshopClaim';
+
+    function showResult(projectName, url) {
+      workspaceUrl = url;
+      document.getElementById('result-project-name').textContent = projectName || 'Dein Workspace';
+      document.getElementById('result-url').textContent = url;
+      document.getElementById('claim-form').style.display = 'none';
+      document.getElementById('result').style.display = 'block';
+    }
+
+    function restoreClaim() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(CLAIM_KEY) || 'null');
+        if (saved && saved.workspaceUrl) showResult(saved.projectName, saved.workspaceUrl);
+      } catch { /* storage unavailable */ }
+    }
+
     async function loadStatus() {
       try {
-        const res = await fetch('/api/workshop/status');
+        const res = await fetch('/api/workshop/status', { cache: 'no-store' });
         const data = await res.json();
         const dot = document.getElementById('avail-dot');
         const text = document.getElementById('avail-text');
@@ -335,17 +355,6 @@
 
         const data = await res.json();
 
-        if (res.status === 409) {
-          // Already registered
-          workspaceUrl = data.workspaceUrl;
-          document.getElementById('result-project-name').textContent = data.projectName || 'Dein Workspace';
-          document.getElementById('result-url').textContent = data.workspaceUrl;
-          document.getElementById('claim-form').style.display = 'none';
-          document.getElementById('result').style.display = 'block';
-          clearError();
-          return;
-        }
-
         if (!res.ok) {
           showError(data.error || 'Ein unbekannter Fehler ist aufgetreten.');
           btn.disabled = false;
@@ -354,11 +363,10 @@
         }
 
         // Success
-        workspaceUrl = data.workspaceUrl;
-        document.getElementById('result-project-name').textContent = data.projectName;
-        document.getElementById('result-url').textContent = data.workspaceUrl;
-        document.getElementById('claim-form').style.display = 'none';
-        document.getElementById('result').style.display = 'block';
+        try {
+          localStorage.setItem(CLAIM_KEY, JSON.stringify({ projectName: data.projectName, workspaceUrl: data.workspaceUrl }));
+        } catch { /* storage unavailable */ }
+        showResult(data.projectName, data.workspaceUrl);
         loadStatus();
 
       } catch (err) {
@@ -392,6 +400,7 @@
       if (workspaceUrl) window.open(workspaceUrl, '_blank');
     });
 
+    restoreClaim();
     loadStatus();
   </script>
 </body>

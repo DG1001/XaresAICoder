@@ -977,14 +977,18 @@ Assigns the next free workspace to a participant.
 }
 ```
 
-**Response** (Duplicate - 409):
+**Response** (Duplicate - 409): no workspace URL is returned, so knowing a
+participant's email address does not reveal their workspace. The landing page
+remembers the participant's own claim in the browser (`localStorage`).
 ```json
 {
-  "error": "Diese E-Mail-Adresse ist bereits registriert.",
-  "workspaceUrl": "http://workshop-1.localhost/",
-  "projectName": "Workshop 1"
+  "error": "Diese E-Mail-Adresse ist bereits registriert. Falls du den Link zu deinem Workspace verloren hast, wende dich bitte an die Workshop-Leitung."
 }
 ```
+
+**Validation**: `name` 1–100 characters without control characters, `email` max.
+254 characters. Claims are processed one at a time, so one email can only ever
+hold one workspace and no workspace is handed out twice.
 
 **Response** (No workspaces available - 503):
 ```json
@@ -997,7 +1001,12 @@ Assigns the next free workspace to a participant.
 
 Returns all active claims and release history. Requires admin password.
 
-**Endpoint**: `GET /api/workshop/claims?password=<WORKSHOP_ADMIN_PASSWORD>`
+**Endpoint**: `GET /api/workshop/claims`
+
+**Headers**: `X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (percent-encoded;
+plain ASCII passwords without `%` can be sent as is). The password is not
+accepted as a query parameter. Returns `401` for a wrong password and `503` if
+`WORKSHOP_ADMIN_PASSWORD` is not set (admin endpoints are disabled then).
 
 **Response**:
 ```json
@@ -1020,7 +1029,9 @@ Returns all active claims and release history. Requires admin password.
 
 Releases a claimed workspace back to the pool. Requires admin password.
 
-**Endpoint**: `POST /api/workshop/claims/:projectId/release?password=<WORKSHOP_ADMIN_PASSWORD>`
+**Endpoint**: `POST /api/workshop/claims/:projectId/release`
+
+**Headers**: `X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (see List Claims)
 
 **Response**:
 ```json

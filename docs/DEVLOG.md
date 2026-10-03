@@ -282,3 +282,61 @@ Quarantäne-Datei angelegt.
 *Randnotiz*: Node 20 hängt bei `fs.mkdir(..., {recursive: true})` unter `/proc` in
 einer Endlosschleife (fiel nur im Test auf, betrifft den Produktivpfad
 `/app/workspaces` nicht).
+
+### 1.6 Workshop: Admin-Zugang, Claims, Teilnehmerdaten
+
+**Problem**
+- Ohne `WORKSHOP_ADMIN_PASSWORD` war die Admin-API **offen** (Namen und E-Mails aller
+  Teilnehmenden, Freigeben von Workspaces).
+- Admin-Passwort im Query-String (`?password=`) → landet in nginx-Logs, Browser-
+  History und Cache-Keys; Vergleich per `!==` (nicht zeitkonstant).
+- Die 409-Antwort bei bereits registrierter E-Mail lieferte die **Workspace-URL** –
+  wer eine fremde E-Mail kennt, bekam deren Workspace (bei gemeinsamem Klon-Passwort
+  vollständiger Zugriff).
+- Duplikat-Prüfung lief vor einem `await` → **eine E-Mail konnte parallel mehrere
+  Workspaces belegen** (nachgestellt: 20 parallele Requests mit derselben E-Mail →
+  5 Workspaces belegt).
+- Teilnehmername ohne Längen-/Zeichenlimit; in `admin.html` wurde er per
+  `onclick="releaseWorkspace('${esc(name)}')"` eingesetzt. Der Browser dekodiert
+  `&#39;` vor dem Ausführen wieder zu `'` → **XSS über das öffentliche Formular**,
+  ausgelöst beim Klick auf „Freigeben“; das Admin-Passwort lag in `sessionStorage`.
+- `checkPassword` wertete jede Nicht-401-Antwort (auch 500/502) als Login-Erfolg.
+- CSV-Export ohne Schutz gegen Formel-Injection (`=HYPERLINK(...)` etc.).
+
+**Änderung**
+- `server/src/routes/workshop.js`:
+  - Admin-Endpunkte **fail closed**: ohne `WORKSHOP_ADMIN_PASSWORD` → `503` mit Hinweis.
+  - Passwort nur noch im Header `X-Admin-Password` (percent-encoded), Vergleich per
+    `crypto.timingSafeEqual` über SHA-256-Digests.
+  - Claims laufen über eine Promise-Queue (`withClaimLock`): Duplikat-Check, Auswahl
+    und Eintrag sind atomar.
+  - 409 ohne URL/Projektname, mit Hinweis an die Workshop-Leitung.
+  - Name 1–100 Zeichen ohne Steuerzeichen, E-Mail max. 254 Zeichen.
+- `frontend/workshop/admin.html`: `adminFetch()` mit Header statt Query, `cache:
+  'no-store'`; „Freigeben“ per Event-Delegation mit `data-index` – keine
+  Teilnehmerdaten mehr in Inline-JS; Login nur bei `res.ok`, 503-Hinweis wird
+  angezeigt; CSV-Zellen, die mit `= + - @` (oder Tab/CR) beginnen, bekommen ein `'`.
+- `frontend/workshop/index.html`: Der eigene Claim wird in `localStorage` gemerkt und
+  beim erneuten Öffnen angezeigt (ersetzt den bisherigen „409 zeigt URL“-Weg).
+- Doku: `docs/API.md`, `docs/user-guide.md`, `CLAUDE.md`, `.env.example`.
+
+**Entscheidungen**
+- **Breaking**: Wer den Admin-Bereich bisher ohne Passwort genutzt hat, muss
+  `WORKSHOP_ADMIN_PASSWORD` setzen. Bewusst so – ein offener Admin-Bereich mit
+  personenbezogenen Daten ist auch DSGVO-relevant.
+- **Breaking**: `?password=` wird nicht mehr akzeptiert (Skripte auf Header umstellen).
+- „Link verloren“ auf einem anderen Gerät → Workshop-Leitung (Admin-Seite zeigt alle
+  Zuordnungen). Ein Self-Service per E-Mail-Bestätigung wäre ein Folge-Feature.
+- **Kein Rate-Limiting** in diesem Schritt: hinter nginx (ggf. plus äußerem Proxy) ist
+  die echte Client-IP nicht zuverlässig bekannt, das braucht eine `trust proxy`-
+  Entscheidung. Vorgemerkt für Paket 3.
+- Korrektur zum Review: Die Vergabe *desselben Workspace an zwei Personen* war im
+  alten Code nicht möglich (zwischen Auswahl und `claims.set` lag kein `await`) – die
+  reale Lücke war die Mehrfachbelegung durch dieselbe E-Mail.
+
+**Test**: Express-Test mit gemocktem Workspace-Service (künstlich verzögertes
+`listProjects`): Admin ohne konfiguriertes Passwort → 503; `?password=` → 401; falscher
+Header → 401; richtiger Header mit Umlaut (percent-encoded) → 200. 20 parallele Claims
+mit verschiedenen E-Mails auf 5 Workspaces → 5× 200, 5 verschiedene Workspaces, 15× 503.
+20 parallele Claims mit **derselben** E-Mail → alter Code 5 Workspaces, neuer Code 1.
+409 enthält keine URL; Name > 100 Zeichen bzw. mit Zeilenumbruch → 400.
