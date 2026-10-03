@@ -19,7 +19,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | Paket | Inhalt | Status |
 |-------|--------|--------|
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
-| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | offen – braucht Entscheidung zum Vertrauensmodell |
+| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | 🚧 in Arbeit (Branch `security/paket-2`, Variante 2) |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
 
 ---
@@ -602,3 +602,30 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
   API meldet bereits Erfolg.
 - Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env
   (bekannt, Paket 2).
+
+---
+
+## Paket 2 – Isolation (Variante 2: Teilnehmer gelten als nicht vertrauenswürdig)
+
+Branch `security/paket-2`, aufgesetzt auf `security/paket-1` (PR #3 noch offen).
+
+### Entscheidungen vorab (2026-10-03)
+
+| Frage | Entscheidung |
+|-------|--------------|
+| Vertrauensmodell | **Variante 2**: Wer einen Workspace bekommt, soll weder die Plattform-API, noch den Proxy, noch fremde Repos oder Zugangsdaten der Lehrkraft erreichen. |
+| AI-Tool-Logins beim Klonen | Standardmäßig **entfernen**; Häkchen im Clone-Dialog, um sie bewusst mitzukopieren (Workshop-Key). Git-Tokens, Forgejo-Zugang, Passwörter, Shell-History werden immer entfernt. |
+| sudo in Workspaces | **Pro Workspace wählbar** (Default aus `WORKSPACE_SUDO_ENABLED`), beim Erstellen und Klonen überschreibbar. |
+| Workspace ↔ Workspace | Erreichbarkeit über Ports wird **akzeptiert**, dafür **Passwortpflicht für Klone**. Ein Netz pro Workspace wäre bei vielen Workspaces nicht tragfähig. |
+
+### Plan
+
+| Schritt | Inhalt | Abhängigkeit |
+|---------|--------|--------------|
+| 2.1 | `buildContainerSpec()`: ein Container-Bauplan für Create und Clone (behebt die bereits auseinanderlaufenden Pfade) | – |
+| 2.2 | Klon-Snapshot bereinigen (Env + Dateien), Opt-in für AI-Logins, Passwortpflicht für Klone | 2.1 |
+| 2.3 | Härtung: sudo pro Workspace, echtes CPU-Limit (`NanoCpus`), seccomp-Standardprofil (konfigurierbar), Disk-Quota wo das Host-Dateisystem es kann | 2.1 |
+| 2.4 | Netzsegmentierung: API-Server nur noch im Control-Netz, getrennte interne Netze für Security- und Logging-Proxy, nginx sperrt `/api/` für Workspace-Subnetze, Migration bestehender Workspaces beim Start | 2.1 |
+| 2.5 | Feste IPs für Proxy-Workspaces → Mitschnitte bleiben dauerhaft beim richtigen Projekt | 2.4 |
+| 2.6 | Forgejo: eigener Nutzer + Token pro Workspace, kein `GIT_ADMIN_PASSWORD` mehr in Workspaces; Klone bekommen einen **Fork** statt eines Branches im gemeinsamen Repo (Vorschlag, siehe dort) | 2.4 |
+| 2.7 | Doku, Upgrade-Hinweise, Live-Test | alle |
