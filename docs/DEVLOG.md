@@ -18,7 +18,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 
 | Paket | Inhalt | Status |
 |-------|--------|--------|
-| **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet – **Deploy-Test steht aus** |
+| **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | offen – braucht Entscheidung zum Vertrauensmodell |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
 
@@ -532,19 +532,73 @@ strikt nacheinander. Alle früheren Tests gegen den Endstand erneut grün.
 6. Beim ersten Serverstart werden `projects.json`-Einträge bereinigt (kein
    `internalCloneUrl` mehr); Dateien werden ab jetzt mit Modus 0600 geschrieben.
 
-## Paket 1 – Was noch nicht verifiziert ist
+## Paket 1 – Verifikation
 
-In dieser Umgebung steht **kein Docker** zur Verfügung. Alle Tests liefen mit Node-/
-Python-Stubs, echten Shell-Befehlen auf Temp-Verzeichnissen und einem HTML-Parser –
-**nicht** gegen laufende Container. Vor dem Merge sollte ein Deploy-Test laufen:
+### 1.11 Deploy-Test gegen die laufende Umgebung (2026-10-03)
 
-- [ ] `./deploy.sh` (mit `--git-server --enable-proxy`) durchläuft, Server startet,
-      bestehende `projects.json` wird geladen.
-- [ ] Workspace mit Passwort anlegen → Clone/Aliases/Logs fragen nach dem Passwort.
-- [ ] LLM-Logging-Workspace: Gespräch erzeugen → im UI ohne Keys sichtbar; Löschen
-      einzelner (auch WebSocket-)Gespräche funktioniert.
-- [ ] Whitelist aus Recorded Domains anwenden → `squid -k parse` akzeptiert die
-      mehrzeilige ACL, Security-Proxy-Workspace erreicht nur freigegebene Domains.
-- [ ] Workshop: Claim, Reload zeigt Workspace, Admin „Freigeben“ → Reload zeigt
-      Formular; Admin-Login per Header.
-- [ ] PWA: nach Deploy lädt das Dashboard die neue Version ohne Hard-Reload.
+**Vorgehen**: Vorher Backup von `workspace_data` (`projects.json`, Workshop-Dateien) und
+`nginx_dynamic`. Deploy mit `./deploy.sh --enable-proxy --git-server --skip-build
+--skip-env --skip-network` (vorhandenes Code-Server-Image, `.env` und Netzwerke
+unverändert). Danach API-Tests per curl, Workspace-Lebenszyklus mit echten Containern
+und ein E2E-Test des Dashboards in Headless-Chrome (puppeteer-core). Alle Test-Artefakte
+wurden anschließend entfernt.
+
+**Ergebnisse**
+- `deploy.sh`: läuft durch; `mitmproxy-ca.pem` und `squid-ca-key.pem` 0600; `sw.js`
+  mit neuer Cache-Version (`v7_5_1_0c5c223_<Zeitstempel>`).
+- Migration: `projects.json` (27 Projekte) – `internalCloneUrl` 7 → 0, alle 4
+  Passwort-Hashes erhalten, Datei jetzt 0600. Bestehende Workshop-Claims (2 aktiv,
+  1 Historie) werden weiter geladen.
+- API live: keine Hashes/Admin-Credentials in Liste und Detail; geschützter Workspace
+  ohne/mit falschem Passwort → 401 (clone, aliases, delete); Whitelist-Injection → 400;
+  `?password=` → 401; Path Traversal → 400.
+- Workspace mit Passwort (Umlaut), LLM-Logging und Forgejo-Repo: in ~16 s bereit.
+  Fake-Requests an Anthropic (`x-api-key`) und Gemini (`?key=`) aus dem Workspace →
+  **0 Secrets** auf der Platte und in der API; einzelnes Gespräch per `_file` gelöscht;
+  Alias anlegen/löschen; code-server über nginx erreichbar.
+- **Archivierung hat sich direkt bewährt**: Unter den neu vergebenen IPs (`.6`, `.7`)
+  lagen Mitschnitte alter Workspaces (Juli/April). Mit altem Code hätte der Test-
+  Workspace sie gesehen, mit der ersten Fassung von 1.4 wären sie gelöscht worden.
+- Clone mit Quell-Passwort im Header und neuem Klon-Passwort: Klon in ~9 s bereit, nimmt
+  nur das neue Passwort an, Snapshot-Image aufgeräumt.
+- Passwortänderung mit `'`, `"`, Leerzeichen und Umlaut (base64-Schreibweg): neues
+  Passwort funktioniert beim Login, altes nicht.
+- Whitelist am echten Squid: ungültiger Eintrag → 400; Apply → mehrzeilige ACL besteht
+  `squid -k parse`, Backup angelegt; aus dem internen Netz pypi.org/github.com → 200,
+  example.com → 403. Squid danach per Recreate auf Standard-Config zurückgesetzt.
+- Workshop: Admin per Header → 200, falsch → 401; `my-claim` mit unbekanntem Token →
+  404; Seiten werden ausgeliefert.
+- Headless-Chrome-E2E: 29 Projekte gerendert, Projektname
+  `zz-xss x');alert(1);//<img src=x onerror=alert(2)>` → kein eingeschleuster Tag, kein
+  Dialog, Name als Text (auch im Delete-Confirm); AI-Conversations → Passwort-Prompt,
+  falsches Passwort → Fehlermeldung, XSS-Modellname literal, kein Key sichtbar; Passwort
+  wird gemerkt (Clone ohne erneute Abfrage); Service Worker: `/app.js` über den SW,
+  `/api/config` und `/api/projects/` **nicht**, genau ein Cache.
+
+**Beim Live-Test gefunden und behoben** (`fd1e624`)
+- `GET /api/whitelist` meldete Wörter aus Inline-Kommentaren der Standard-squid.conf
+  (`Bare`, `ACL`, `CDN`, …) als Domains – vorbestehend, hätte aber mit der neuen
+  Validierung einen GET→PUT-Roundtrip scheitern lassen. Kommentare werden jetzt
+  abgeschnitten (44 echte Domains statt 52).
+- Log-Meldung „Archived …“ erschien auch, wenn nichts zu archivieren war.
+
+**Nebenwirkung des Tests**: Die Domain-Aufzeichnungen, die unter den IPs `.6`/`.7`
+lagen, wurden beim Erstellen der Test-Workspaces gelöscht. Das ist das bestehende
+Verhalten beim Anlegen (nicht neu); die archivierten Gespräche wurden nach dem Test an
+ihren ursprünglichen Ort zurückverschoben, das Forgejo-Test-Repo gelöscht.
+
+**Nicht live getestet**: vollständiger Workshop-Claim (es gibt aktuell keine
+„JavaLand N“-Workspaces; per Express-Test abgedeckt), Löschen einzelner **WebSocket**-
+Captures (braucht Codex-Traffic; `_file`-Mechanik mit HTTP-Capture getestet),
+PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Images.
+
+### Beobachtete, vorbestehende Probleme (Backlog)
+
+- **Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
+  `git push` mit „src refspec … does not match any“ scheitert (Workspace ohne Commits).
+- **`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen – der Workspace
+  war trotzdem sofort über nginx erreichbar; der Check scheint nicht zu greifen.
+- **Alias direkt nach dem Anlegen** liefert kurz 404 (nginx-Reload ist asynchron); das
+  API meldet bereits Erfolg.
+- Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env
+  (bekannt, Paket 2).
