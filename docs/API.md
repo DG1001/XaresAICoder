@@ -631,7 +631,21 @@ password-protected (see [Authentication](#authentication)).
 
 **Parameters**:
 - `count` (integer, required): Number of clones to create (1–50)
-- `password` (string, optional): Password for all cloned workspaces (min 8, max 50 chars)
+- `password` (string, **required**): Password for all cloned workspaces (min 8, max 50 chars).
+  Clones are typically handed to participants and can reach each other's ports inside
+  the Docker network, so code-server must be protected.
+- `keepAiLogins` (boolean, optional, default `false`): keep the AI tool logins and
+  conversation histories of the source (e.g. to distribute a shared workshop API key).
+
+**Credential cleanup**: before the clones are created, the snapshot is sanitized once in a
+throwaway container without network. Always removed: code-server password files, git
+credentials (`~/.git-credentials`, `~/.netrc`, tokens embedded in git remote URLs), GitHub
+CLI tokens, npm auth tokens, SSH private keys (`known_hosts` is kept) and shell histories.
+Unless `keepAiLogins` is set, also removed: logins and transcripts of Claude Code, Codex,
+OpenCode, Qwen Code, Crush, Pi, Continue (API keys in `config.yaml`) and Aider (`~/.env`,
+`~/.aider.conf.yml`, chat histories). Platform environment variables of the source (e.g.
+`GIT_ACCESS_TOKEN`) are blanked in the clones. Project files and secrets the user put into
+other files (e.g. a `.env` in the project) are not touched.
 
 **Response** (Success - 202):
 ```json

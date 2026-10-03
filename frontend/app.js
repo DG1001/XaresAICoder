@@ -2681,7 +2681,9 @@ class XaresAICoder {
 
         // Reset form
         document.getElementById('cloneCount').value = 5;
-        document.getElementById('clonePassword').value = '';
+        // Pre-fill a generated password: clones are handed to participants
+        document.getElementById('clonePassword').value = this.generateSecurePasswordValue();
+        document.getElementById('cloneKeepAiLogins').checked = false;
         document.getElementById('cloneError').style.display = 'none';
         document.getElementById('cloneProgress').style.display = 'none';
         document.getElementById('confirmCloneBtn').disabled = false;
@@ -2730,8 +2732,8 @@ class XaresAICoder {
             errorEl.style.display = 'block';
             return;
         }
-        if (password && password.length < 8) {
-            errorEl.textContent = 'Password must be at least 8 characters long';
+        if (!password || password.length < 8) {
+            errorEl.textContent = 'A password with at least 8 characters is required for clones';
             errorEl.style.display = 'block';
             return;
         }
@@ -2740,8 +2742,7 @@ class XaresAICoder {
         document.getElementById('cloneProgress').style.display = 'block';
         document.getElementById('confirmCloneBtn').disabled = true;
 
-        const body = { count };
-        if (password) body.password = password;
+        const body = { count, password, keepAiLogins: document.getElementById('cloneKeepAiLogins').checked };
 
         try {
             const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/clone`, {

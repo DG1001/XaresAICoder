@@ -300,7 +300,7 @@ router.post('/:projectId/stop', async (req, res) => {
 router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { count, password } = req.body;
+    const { count, password, keepAiLogins } = req.body;
 
     // Validate count
     if (count === undefined || count === null) {
@@ -318,19 +318,22 @@ router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
       });
     }
 
-    // Validate password if provided
-    if (password) {
-      const passwordError = validateNewPassword(password);
-      if (passwordError) {
-        return res.status(400).json({ error: 'Invalid password', message: passwordError });
-      }
+    // Clones are usually handed to participants and can reach each other's
+    // ports inside the Docker network, so code-server must be protected
+    const passwordError = validateNewPassword(password);
+    if (passwordError) {
+      return res.status(400).json({
+        error: 'Invalid password',
+        message: password ? passwordError : 'A password is required for cloned workspaces'
+      });
     }
 
     // Look up source project for response metadata
     const sourceProject = await workspaceService.getProject(projectId);
 
     const clones = await workspaceService.cloneProject(projectId, cloneCount, {
-      password: password || null
+      password,
+      keepAiLogins: keepAiLogins === true
     });
 
     res.status(202).json({

@@ -45,6 +45,68 @@ function redactConversation(conv) {
   return conv;
 }
 
+// Every environment variable buildContainerSpec() may set. A clone container
+// inherits the snapshot's environment from its image, so any of these that
+// the clone does not set itself is overridden with an empty value (e.g. the
+// source's GIT_ACCESS_TOKEN or PASSWORD).
+const PLATFORM_ENV_KEYS = [
+  'PROJECT_TYPE', 'PROJECT_ID', 'VSCODE_PROXY_URI', 'PROXY_DOMAIN',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+  'NODE_EXTRA_CA_CERTS', 'PASSWORD',
+  'GIT_SERVER_ENABLED', 'GIT_SERVER_URL', 'GIT_ADMIN_USER', 'GIT_ADMIN_PASSWORD', 'GIT_SERVER_EXTERNAL_URL',
+  'GIT_REPO_NAME', 'GIT_REMOTE_URL', 'GIT_WEB_URL',
+  'GIT_CLONE_URL', 'GIT_USERNAME', 'GIT_ACCESS_TOKEN',
+  'NVIDIA_VISIBLE_DEVICES', 'NVIDIA_DRIVER_CAPABILITIES'
+];
+
+// Runs (as root, without network) in a throwaway container created from a
+// clone snapshot. Removes the source workspace's credentials and histories so
+// they are not handed to every clone. AI tool logins and transcripts are only
+// removed when KEEP_AI_LOGINS != 1 (the teacher can opt in to distributing a
+// workshop key). Paths were collected from real workspaces of this platform.
+const CLONE_CLEANUP_SCRIPT = `
+H=/home/coder
+# Platform and git credentials, shell histories (always)
+rm -rf "$H/.code-server-auth" "$H/.git-credentials" "$H/.netrc" "$H/.pypirc" \\
+  "$H/.bash_history" "$H/.zsh_history" "$H/.python_history" "$H/.node_repl_history" \\
+  "$H/.lesshst" "$H/.local/state/lesshst" "$H/.local/share/fish/fish_history" \\
+  "$H/.config/gh/hosts.yml" "$H/.local/state/gh"
+if [ -d "$H/.ssh" ]; then find "$H/.ssh" -mindepth 1 ! -name known_hosts -exec rm -rf {} +; fi
+if [ -f "$H/.npmrc" ]; then sed -i '/_authToken/d; /_auth *=/d; /_password *=/d' "$H/.npmrc"; fi
+if [ -f "$H/.config/code-server/config.yaml" ]; then
+  sed -i '/^password:/d; /^hashed-password:/d; s/^auth: password/auth: none/' "$H/.config/code-server/config.yaml"
+fi
+# Credentials embedded in git remote URLs (https://user:token@host/...)
+find /workspace "$H" -maxdepth 4 -path '*/.git/config' -type f 2>/dev/null | while read -r f; do
+  sed -i -E 's#(url = [A-Za-z][A-Za-z0-9+.-]*://)[^/@[:space:]]+@#\\1#' "$f"
+done
+if [ "\${KEEP_AI_LOGINS:-0}" != 1 ]; then
+  # Claude Code
+  rm -rf "$H/.claude/.credentials.json" "$H/.claude.json" "$H/.claude/backups" "$H/.claude/projects" \\
+    "$H/.claude/history.jsonl" "$H/.claude/file-history" "$H/.claude/paste-cache" "$H/.claude/shell-snapshots" \\
+    "$H/.claude/session-env" "$H/.claude/sessions" "$H/.claude/todos" "$H/.claude/tasks" "$H/.claude/plans" \\
+    "$H/.claude/mcp-needs-auth-cache.json"
+  # OpenAI Codex
+  rm -rf "$H/.codex/auth.json" "$H/.codex/sessions" "$H/.codex/history.jsonl" "$H/.codex/memories" \\
+    "$H/.codex/log" "$H/.codex"/state_*.sqlite*
+  # OpenCode
+  rm -rf "$H/.local/share/opencode/auth.json" "$H/.local/share/opencode/storage" "$H/.local/share/opencode/log" \\
+    "$H/.local/share/opencode/snapshot" "$H/.local/share/opencode"/opencode.db*
+  # Qwen Code, Crush, Pi, Cline
+  rm -rf "$H/.qwen/oauth_creds.json" "$H/.qwen/projects" "$H/.qwen/tmp" \\
+    "$H/.local/share/crush/crush.json" "$H/.local/share/crush/hyper.json" "$H/.config/crush/crush.json" \\
+    "$H/.pi/agent/auth.json" "$H/.pi/agent/sessions" \\
+    "$H/.cline/data/secrets.json" "$H/.cline/data/tasks"
+  # Continue: legacy JSON config and .env; strip API keys from config.yaml
+  rm -rf "$H/.continue/config.json" "$H/.continue/.env" "$H/.continue/dev_data"
+  if [ -f "$H/.continue/config.yaml" ]; then sed -i -E '/^[[:space:]]*-?[[:space:]]*apiKey:/d' "$H/.continue/config.yaml"; fi
+  # Aider (reads keys from ~/.env and ~/.aider.conf.yml; histories live in the repo)
+  rm -rf "$H/.env" "$H/.aider.conf.yml" /workspace/.aider.chat.history.md /workspace/.aider.input.history \\
+    /workspace/.aider.tags.cache.v*
+fi
+echo cleanup-done
+`;
+
 class DockerService {
   constructor() {
     this.docker = new Docker();
@@ -1453,7 +1515,10 @@ fi`.trim();
   async commitContainer(projectId) {
     const containerName = `workspace-${projectId}`;
     const snapshotRepo = `clone-snapshot-${projectId}`;
-    const imageName = `${snapshotRepo}:latest`;
+    // Unique per clone batch: concurrent batches of the same source must not
+    // share (and delete) each other's snapshot
+    const snapshotTag = `raw-${Date.now()}`;
+    const imageName = `${snapshotRepo}:${snapshotTag}`;
 
     const container = this.docker.getContainer(containerName);
 
@@ -1461,7 +1526,7 @@ fi`.trim();
     try {
       await container.commit({
         repo: snapshotRepo,
-        tag: 'latest',
+        tag: snapshotTag,
         comment: `Snapshot for cloning workspace ${projectId}`,
         pause: true
       });
@@ -1482,7 +1547,7 @@ fi`.trim();
         });
       });
       await new Promise((resolve, reject) => {
-        this.docker.importImage(tarStream, { repo: snapshotRepo, tag: 'latest' }, (err, stream) => {
+        this.docker.importImage(tarStream, { repo: snapshotRepo, tag: snapshotTag }, (err, stream) => {
           if (err) return reject(err);
           stream.resume();
           stream.on('end', resolve);
@@ -1495,6 +1560,58 @@ fi`.trim();
       console.error(`Error creating snapshot from container ${containerName}:`, error);
       throw new Error(`Failed to create snapshot: ${error.message}`);
     }
+  }
+
+  /**
+   * Remove the source workspace's credentials from a raw clone snapshot.
+   * Runs CLONE_CLEANUP_SCRIPT once in a throwaway container (as root, no
+   * network) and commits the result. The commit also restores the base
+   * image's entrypoint/cmd/user, which an export/import snapshot would lack.
+   * Removes the raw snapshot; returns the sanitized image name.
+   */
+  async sanitizeSnapshot(rawImage, { keepAiLogins = false } = {}) {
+    const [repo] = rawImage.split(':');
+    const sanitizedTag = `clean-${Date.now()}`;
+    const sanitizedImage = `${repo}:${sanitizedTag}`;
+
+    let base = {};
+    try {
+      base = (await this.docker.getImage(this.codeServerImage).inspect()).Config || {};
+    } catch (e) {
+      console.warn(`Could not inspect base image ${this.codeServerImage}: ${e.message}`);
+    }
+
+    const temp = await this.docker.createContainer({
+      Image: rawImage,
+      Entrypoint: ['/bin/sh', '-c'],
+      Cmd: [CLONE_CLEANUP_SCRIPT],
+      User: 'root',
+      Env: [`KEEP_AI_LOGINS=${keepAiLogins ? 1 : 0}`],
+      HostConfig: { NetworkMode: 'none' }
+    });
+    try {
+      await temp.start();
+      const { StatusCode } = await temp.wait();
+      const logs = (await temp.logs({ stdout: true, stderr: true })).toString('utf8');
+      if (StatusCode !== 0 || !logs.includes('cleanup-done')) {
+        throw new Error(`clone cleanup failed (exit ${StatusCode}): ${logs.slice(-500)}`);
+      }
+      // _query/_body: dockerode would otherwise send the options as query only
+      await temp.commit({
+        _query: { container: temp.id, repo, tag: sanitizedTag, comment: 'Sanitized clone snapshot' },
+        _body: {
+          Entrypoint: base.Entrypoint || ['/usr/local/bin/entrypoint.sh'],
+          Cmd: base.Cmd || ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', 'none', '/workspace'],
+          User: base.User || 'coder',
+          WorkingDir: base.WorkingDir || '/workspace'
+        }
+      });
+    } finally {
+      await temp.remove({ force: true }).catch(() => {});
+      await this.removeSnapshotImage(rawImage);
+    }
+    console.log(`Sanitized clone snapshot ${sanitizedImage} (AI logins ${keepAiLogins ? 'kept' : 'removed'})`);
+    return sanitizedImage;
   }
 
   /**
@@ -1511,6 +1628,12 @@ fi`.trim();
         image: snapshotImage,
         projectType: 'clone'
       });
+      // The snapshot's image config still carries the source's environment;
+      // container env only overrides keys it sets, so blank out the rest
+      const setKeys = new Set(spec.Env.map(e => e.split('=')[0]));
+      for (const key of PLATFORM_ENV_KEYS) {
+        if (!setKeys.has(key)) spec.Env.push(`${key}=`);
+      }
       const container = await this.docker.createContainer(spec);
 
       await container.start();

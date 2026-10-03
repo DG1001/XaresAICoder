@@ -354,12 +354,16 @@ class WorkspaceService {
     const sourceProjectId = clones[0].clonedFrom;
     let snapshotImage;
 
-    // Step 1: Commit the source container to a snapshot image
+    // Step 1: Commit the source container to a snapshot image and remove the
+    // source's credentials from it. Without a sanitized snapshot no clone is
+    // created – handing the teacher's tokens to every participant is worse
+    // than a failed clone.
     try {
-      snapshotImage = await dockerService.commitContainer(sourceProjectId);
-      console.log(`Created snapshot image: ${snapshotImage} for cloning`);
+      const rawImage = await dockerService.commitContainer(sourceProjectId);
+      console.log(`Created snapshot image: ${rawImage} for cloning`);
+      snapshotImage = await dockerService.sanitizeSnapshot(rawImage, { keepAiLogins: !!options.keepAiLogins });
     } catch (error) {
-      console.error(`Failed to snapshot source container ${sourceProjectId}:`, error);
+      console.error(`Failed to create a sanitized snapshot of ${sourceProjectId}:`, error);
       // Mark all clones as error
       for (const clone of clones) {
         const project = this.projects.get(clone.projectId);

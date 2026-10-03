@@ -645,3 +645,64 @@ per export/import erzeugte Snapshots den `USER` verlieren).
 **Test**: Vorher/Nachher-Vergleich der `createContainer`-Payloads für 24 Fälle (Create/
 Clone × kein/Security/Logging-Proxy × mit/ohne Passwort × mit/ohne GPU): Clone
 identisch, Create unterscheidet sich ausschließlich durch `User: 'coder'`.
+
+### 2.2 Klone ohne Zugangsdaten der Vorlage, Passwortpflicht
+
+**Problem**: `docker commit` übernahm Env und Dateisystem der Vorlage in jeden Klon:
+`GIT_ACCESS_TOKEN` (privates Repo der Lehrkraft), Token in `.git/config`,
+`~/.code-server-auth`, Shell-History – und die AI-Tool-Logins der Lehrkraft. Klone
+ohne Passwort waren im Docker-Netz für andere Workspaces offen. Außerdem teilten sich
+parallele Klon-Batches derselben Quelle einen Snapshot-Tag (der erste Batch löschte den
+Snapshot des zweiten), und der export/import-Fallback verlor `ENTRYPOINT`/`USER`.
+
+**Änderung**
+- `docker.js`:
+  - `commitContainer` erzeugt pro Batch einen eindeutigen Tag (`raw-<ts>`).
+  - Neu `sanitizeSnapshot(raw, { keepAiLogins })`: startet einmal pro Batch einen
+    Wegwerf-Container aus dem Snapshot (root, `NetworkMode: none`), führt
+    `CLONE_CLEANUP_SCRIPT` aus, prüft Exit-Code und Abschlussmarker, committet nach
+    `clean-<ts>` und setzt dabei Entrypoint/Cmd/User/WorkingDir aus dem Basis-Image
+    (repariert nebenbei den export/import-Fallback). Der Roh-Snapshot wird gelöscht.
+  - Klon-Container: Alle Plattform-Env-Variablen (`PLATFORM_ENV_KEYS`), die der Klon
+    nicht selbst setzt, werden mit leerem Wert überschrieben.
+- `workspace.js`: Ohne bereinigten Snapshot wird **kein** Klon erstellt (alle Klone →
+  `error`) – lieber ein fehlgeschlagener Klon als verteilte Lehrer-Tokens.
+- `routes/projects.js`: `password` ist Pflicht (400), neues Feld `keepAiLogins`.
+- Frontend: Passwort im Clone-Dialog vorbelegt (generiert) und Pflicht; Häkchen „Copy AI
+  tool logins of the source“ (Standard aus).
+- Doku: `docs/API.md` (Clone).
+
+**Was das Skript entfernt** (Pfade aus `docker diff` echter Workspaces dieser Plattform
+ermittelt, nur Dateinamen angesehen):
+- *Immer*: `~/.code-server-auth`, Passwort in code-server-`config.yaml`,
+  `~/.git-credentials`, `~/.netrc`, `~/.pypirc`, `~/.config/gh/hosts.yml`, npm-
+  `_authToken`-Zeilen, `~/.ssh/*` außer `known_hosts`, Shell-/REPL-Histories,
+  Zugangsdaten in Git-Remote-URLs (`/workspace` und `~`, Tiefe 4).
+- *Ohne Opt-in*: Claude Code (`.credentials.json`, `~/.claude.json`, Projekte/History/
+  Sessions/…), Codex (`auth.json`, Sessions, Memories, State-DB), OpenCode (`auth.json`,
+  Storage, DB), Qwen (`oauth_creds.json`), Crush (`crush.json`, `hyper.json`), Pi
+  (`auth.json`, Sessions), Continue (`config.json`, `.env`, `apiKey`-Zeilen in
+  `config.yaml`), Aider (`~/.env`, `~/.aider.conf.yml`, Histories im Repo).
+- Einstellungen ohne Geheimnisse (z. B. `~/.claude/settings.json`) bleiben erhalten.
+
+**Entscheidungen**
+- **Env leeren statt entfernen**: Beim Commit füllt Docker fehlende Env-Variablen aus
+  dem Container-Config wieder auf; entfernen lässt sich nichts. Container-Env überschreibt
+  aber Image-Env pro Schlüssel → leere Werte. Der Snapshot selbst wird nach dem Batch
+  gelöscht.
+- **Einmal pro Batch** bereinigen statt in jedem Klon: schneller, und kein Klon läuft je
+  mit ungereinigten Daten.
+- **Cline** speichert API-Keys nicht im Dateisystem (in `~/.cline/data/globalState.json`
+  stehen nur Einstellungen; vermutlich Secret Storage von code-server) – wird daher nicht
+  mitkopiert. `~/.cline/data/secrets.json` wird vorsorglich entfernt.
+- **Nicht erkannt** werden Geheimnisse in beliebigen Dateien (z. B. `.env` im Projekt);
+  das ist in der API-Doku vermerkt.
+
+**Live-Test**: Quelle mit Passwort, `GIT_ACCESS_TOKEN` und platzierten Fake-Zugangsdaten
+(Claude, Codex, OpenCode, Pi, Continue-`apiKey`, Aider-`.env`, History, Git-Credentials,
+SSH-Key, gh-Token, npm-Token, Remote mit Token). Clone ohne Passwort → 400. Zwei
+**parallele** Batches derselben Quelle (ohne/mit Opt-in) → beide erfolgreich, Snapshots
+aufgeräumt. Klon ohne Opt-in: alle Zugangsdaten weg, `settings.json`/`known_hosts`/
+Projektdatei vorhanden, Remote ohne Token, `GIT_ACCESS_TOKEN` leer, keine `FAKE`-Werte in
+der Env. Klon mit Opt-in: AI-Logins vorhanden, Rest bereinigt. Entrypoint/User korrekt,
+Login nur mit Klon-Passwort. Quelle unverändert. Test-Workspaces gelöscht.
