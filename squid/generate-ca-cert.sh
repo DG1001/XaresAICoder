@@ -23,8 +23,9 @@ fi
 
 echo "Generating SSL CA certificate for Squid HTTPS interception..."
 
-# Generate private key
-openssl genrsa -out "$CA_KEY" 4096
+# Generate private key (owner-only, regardless of the openssl version's default)
+(umask 077 && openssl genrsa -out "$CA_KEY" 4096)
+chmod 600 "$CA_KEY"
 
 # Generate self-signed certificate (valid for 10 years)
 openssl req -new -x509 -days 3650 -key "$CA_KEY" -out "$CA_CERT" \

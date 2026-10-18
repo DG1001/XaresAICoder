@@ -1386,6 +1386,11 @@ code {
     z-index: 10000;
 }
 
+/* The password prompt can open on top of other modals (clone, aliases, logs) */
+#passwordVerifyModal {
+    z-index: 10002;
+}
+
 .modal-content {
     background: var(--vscode-bg);
     border-radius: 8px;

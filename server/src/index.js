@@ -68,11 +68,15 @@ app.put('/api/whitelist', async (req, res) => {
     if (!Array.isArray(domains)) {
       return res.status(400).json({ error: 'Invalid request', message: 'domains must be an array' });
     }
+    if (domains.length > 5000) {
+      return res.status(400).json({ error: 'Invalid request', message: 'Too many domains (max 5000)' });
+    }
     const result = await whitelistService.applyWhitelist(domains);
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Apply whitelist error:', error);
-    res.status(500).json({ error: 'Failed to apply whitelist', message: error.message });
+    const status = error.code === 'INVALID' ? 400 : error.code === 'PARSE' ? 422 : 500;
+    if (status === 500) console.error('Apply whitelist error:', error);
+    res.status(status).json({ error: 'Failed to apply whitelist', message: error.message });
   }
 });
 

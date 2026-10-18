@@ -1,9 +1,68 @@
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs').promises;
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const dockerService = require('./docker');
 const gitService = require('./git');
+const { writeJsonAtomic, readJson } = require('./persistence');
+
+// Remove userinfo (user:token@) from a URL so it can be stored and returned safely.
+function stripUrlCredentials(url) {
+  if (!url || typeof url !== 'string') return url || null;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.username && !parsed.password) return url;
+    parsed.username = '';
+    parsed.password = '';
+    return parsed.toString();
+  } catch {
+    return url.replace(/^(\w+:\/\/)[^@/]*@/, '$1');
+  }
+}
+
+// Only these Git repository fields are persisted and exposed. In particular,
+// internalCloneUrl (which embeds the Forgejo admin credentials) is dropped –
+// it is only needed transiently while the container is created.
+function sanitizeGitRepository(repo) {
+  if (!repo) return null;
+  const { name, fullName, cloneUrl, webUrl, description, branch } = repo;
+  return {
+    name,
+    fullName,
+    cloneUrl: stripUrlCredentials(cloneUrl),
+    webUrl,
+    description,
+    private: !!repo.private,
+    ...(branch && { branch })
+  };
+}
+
+// Public representation of a project. Never includes passwordHash, alias
+// password hashes or Git credentials.
+function serializeProject(p) {
+  return {
+    projectId: p.projectId,
+    projectName: p.projectName,
+    projectType: p.projectType,
+    memoryLimit: p.memoryLimit || '2g',
+    cpuCores: p.cpuCores || '2',
+    passwordProtected: p.passwordProtected || false,
+    group: p.group || 'Uncategorized',
+    status: p.status,
+    workspaceUrl: p.workspaceUrl,
+    gitRepository: sanitizeGitRepository(p.gitRepository),
+    gitUrl: stripUrlCredentials(p.gitUrl),
+    createdAt: p.createdAt,
+    lastAccessed: p.lastAccessed,
+    notes: p.notes || '',
+    proxyMode: p.proxyMode || 'none',
+    ...(p.clonedFrom && { clonedFrom: p.clonedFrom }),
+    aliases: (Array.isArray(p.aliases) ? p.aliases : []).map(a => ({
+      subdomain: a.subdomain,
+      port: a.port,
+      authProtected: !!a.authProtected
+    }))
+  };
+}
 
 class WorkspaceService {
   constructor() {
@@ -90,7 +149,7 @@ class WorkspaceService {
         passwordHash: passwordHash, // Store hashed password
         createGitRepo: options.createGitRepo || false,
         gitRepository: null, // Will be set if Git repo is created
-        gitUrl: options.gitUrl || null, // Store Git URL for cloned repositories
+        gitUrl: stripUrlCredentials(options.gitUrl), // Git URL for cloned repositories (without credentials)
         proxyMode: options.proxyMode || 'none', // Per-workspace proxy mode: 'none', 'security', or 'logging'
         aliases: [],
         createdAt: new Date(),
@@ -178,9 +237,9 @@ class WorkspaceService {
       if (project) {
         project.status = 'running';
         project.workspaceUrl = workspace.workspaceUrl;
-        project.gitRepository = gitRepository;
+        project.gitRepository = sanitizeGitRepository(gitRepository);
         project.lastAccessed = new Date();
-        
+
         // Save updated project to disk
         await this.saveProjectsToDisk();
         
@@ -410,10 +469,28 @@ class WorkspaceService {
     }
 
     return {
-      ...project,
+      ...serializeProject(project),
       diskUsage: this.showDiskUsage ? (dockerStatus.diskUsage || { bytes: 0, readable: 'Unknown' }) : null,
       containerInfo: dockerStatus.containerInfo
     };
+  }
+
+  // Throws 'Project not found' or 'Invalid password for protected workspace'.
+  // Resolves silently for unprotected workspaces.
+  async verifyWorkspacePassword(projectId, providedPassword) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+    if (!project.passwordProtected) return;
+
+    if (!providedPassword || typeof providedPassword !== 'string' || !project.passwordHash) {
+      throw new Error('Invalid password for protected workspace');
+    }
+    const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
+    if (!passwordMatch) {
+      throw new Error('Invalid password for protected workspace');
+    }
   }
 
   async startProject(projectId, providedPassword = null) {
@@ -422,16 +499,7 @@ class WorkspaceService {
       throw new Error('Project not found');
     }
 
-    // Check password if workspace is protected
-    if (project.passwordProtected) {
-      if (!providedPassword) {
-        throw new Error('Invalid password for protected workspace');
-      }
-      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
-      if (!passwordMatch) {
-        throw new Error('Invalid password for protected workspace');
-      }
-    }
+    await this.verifyWorkspacePassword(projectId, providedPassword);
 
     // Check concurrent workspace limit before starting
     if (this.limits.enableResourceLimits) {
@@ -452,10 +520,7 @@ class WorkspaceService {
       return {
         success: true,
         message: result.message,
-        project: {
-          ...project,
-          status: project.status
-        }
+        project: serializeProject(project)
       };
     } catch (error) {
       console.error('Error starting project:', error);
@@ -469,28 +534,16 @@ class WorkspaceService {
       throw new Error('Project not found');
     }
 
-    // Check password if workspace is protected
-    if (project.passwordProtected) {
-      if (!providedPassword) {
-        throw new Error('Invalid password for protected workspace');
-      }
-      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
-      if (!passwordMatch) {
-        throw new Error('Invalid password for protected workspace');
-      }
-    }
+    await this.verifyWorkspacePassword(projectId, providedPassword);
 
     try {
       const result = await dockerService.stopWorkspaceContainer(projectId);
       project.status = result.status || 'stopped';
-      
+
       return {
         success: true,
         message: result.message,
-        project: {
-          ...project,
-          status: project.status
-        }
+        project: serializeProject(project)
       };
     } catch (error) {
       console.error('Error stopping project:', error);
@@ -504,16 +557,7 @@ class WorkspaceService {
       throw new Error('Project not found');
     }
 
-    // Check password if workspace is protected
-    if (project.passwordProtected) {
-      if (!providedPassword) {
-        throw new Error('Invalid password for protected workspace');
-      }
-      const passwordMatch = await bcrypt.compare(providedPassword, project.passwordHash);
-      if (!passwordMatch) {
-        throw new Error('Invalid password for protected workspace');
-      }
-    }
+    await this.verifyWorkspacePassword(projectId, providedPassword);
 
     try {
       await dockerService.stopWorkspace(projectId);
@@ -547,75 +591,27 @@ class WorkspaceService {
     const containerStatuses = await dockerService.getAllProjectStatuses();
 
     // Update status for all projects using batch results
-    const projectsWithStatus = userProjects.map((p) => {
-      try {
-        const dockerStatus = containerStatuses.get(p.projectId);
+    return userProjects.map((p) => {
+      const dockerStatus = containerStatuses.get(p.projectId);
 
-        // Special handling for creating projects:
-        // Only update to running if we have a workspaceUrl (meaning async creation completed)
-        if (p.status === 'creating' && !p.workspaceUrl) {
-          // Keep as creating until async process completes
-          // Docker might show "running" but workspace isn't ready yet
-        } else if (dockerStatus) {
-          // For non-creating projects, update status from Docker
-          p.status = dockerStatus.status;
-        } else {
-          // Container not found in Docker
-          p.status = 'not_found';
-        }
-
-        return {
-          projectId: p.projectId,
-          projectName: p.projectName,
-          projectType: p.projectType,
-          memoryLimit: p.memoryLimit || '2g',
-          cpuCores: p.cpuCores || '2',
-          passwordProtected: p.passwordProtected || false,
-          group: p.group || 'Uncategorized',
-          status: p.status,
-          workspaceUrl: p.workspaceUrl,
-          gitRepository: p.gitRepository || null,
-          gitUrl: p.gitUrl || null,
-          diskUsage: null, // Will be loaded asynchronously
-          createdAt: p.createdAt,
-          lastAccessed: p.lastAccessed,
-          notes: p.notes || '',
-          proxyMode: p.proxyMode || 'none',
-          aliases: (Array.isArray(p.aliases) ? p.aliases : []).map(a => ({
-            subdomain: a.subdomain,
-            port: a.port,
-            authProtected: !!a.authProtected
-          }))
-        };
-      } catch (error) {
-        console.error(`Error getting status for project ${p.projectId}:`, error);
-        return {
-          projectId: p.projectId,
-          projectName: p.projectName,
-          projectType: p.projectType,
-          memoryLimit: p.memoryLimit || '2g',
-          cpuCores: p.cpuCores || '2',
-          passwordProtected: p.passwordProtected || false,
-          group: p.group || 'Uncategorized',
-          status: 'error',
-          workspaceUrl: p.workspaceUrl,
-          gitRepository: p.gitRepository || null,
-          gitUrl: p.gitUrl || null,
-          diskUsage: null,
-          createdAt: p.createdAt,
-          lastAccessed: p.lastAccessed,
-          notes: p.notes || '',
-          proxyMode: p.proxyMode || 'none',
-          aliases: (Array.isArray(p.aliases) ? p.aliases : []).map(a => ({
-            subdomain: a.subdomain,
-            port: a.port,
-            authProtected: !!a.authProtected
-          }))
-        };
+      // Special handling for creating projects:
+      // Only update to running if we have a workspaceUrl (meaning async creation completed)
+      if (p.status === 'creating' && !p.workspaceUrl) {
+        // Keep as creating until async process completes
+        // Docker might show "running" but workspace isn't ready yet
+      } else if (dockerStatus) {
+        // For non-creating projects, update status from Docker
+        p.status = dockerStatus.status;
+      } else {
+        // Container not found in Docker
+        p.status = 'not_found';
       }
-    });
 
-    return projectsWithStatus;
+      return {
+        ...serializeProject(p),
+        diskUsage: null // Will be loaded asynchronously
+      };
+    });
   }
 
   // Get disk usage for a specific project
@@ -678,22 +674,13 @@ class WorkspaceService {
   }
 
   // Persistence methods
+  // In-memory state stays the source of truth; a failed write is logged and
+  // the next successful save persists the current state. Writes are atomic,
+  // so a failure never truncates the existing file.
   async saveProjectsToDisk() {
     try {
-      // Ensure directory exists
-      const dir = path.dirname(this.persistenceFile);
-      await fs.mkdir(dir, { recursive: true });
-
-      // Convert Map to plain object for JSON serialization
-      const projectsData = {};
-      for (const [key, value] of this.projects) {
-        // Save all data including password hash (if present)
-        projectsData[key] = {
-          ...value
-        };
-      }
-
-      await fs.writeFile(this.persistenceFile, JSON.stringify(projectsData, null, 2));
+      // Save all data including password hash (if present)
+      await writeJsonAtomic(this.persistenceFile, Object.fromEntries(this.projects));
       console.log(`Saved ${this.projects.size} projects to disk`);
     } catch (error) {
       console.error('Error saving projects to disk:', error);
@@ -702,9 +689,12 @@ class WorkspaceService {
 
   async loadProjectsFromDisk() {
     try {
-      const data = await fs.readFile(this.persistenceFile, 'utf8');
-      const projectsData = JSON.parse(data);
-      
+      const projectsData = await readJson(this.persistenceFile);
+      if (!projectsData) {
+        console.log('No usable projects file found - starting fresh');
+        return;
+      }
+
       console.log(`Loading projects from disk...`);
       
       // Load projects and verify they still exist in Docker
@@ -723,6 +713,10 @@ class WorkspaceService {
               proxyMode: projectData.proxyMode || (projectData.useProxy === true ? 'logging' : 'none'),
               // Initialize aliases array for older projects without the field
               aliases: Array.isArray(projectData.aliases) ? projectData.aliases : [],
+              // Older entries persisted internalCloneUrl (with admin credentials)
+              // and possibly credential-bearing Git URLs – drop them on load.
+              gitRepository: sanitizeGitRepository(projectData.gitRepository),
+              gitUrl: stripUrlCredentials(projectData.gitUrl),
               // Update status from Docker
               status: dockerStatus.status,
               lastAccessed: new Date(projectData.lastAccessed || projectData.createdAt)
@@ -746,11 +740,7 @@ class WorkspaceService {
       await this.saveProjectsToDisk();
       
     } catch (error) {
-      if (error.code === 'ENOENT') {
-        console.log('No existing projects file found - starting fresh');
-      } else {
-        console.error('Error loading projects from disk:', error);
-      }
+      console.error('Error loading projects from disk:', error);
     }
   }
 
@@ -872,13 +862,12 @@ class WorkspaceService {
       }
     }
 
+    // Update the container first: if that fails, the stored hash must keep
+    // matching what code-server actually uses.
     if (removePassword) {
-      // Remove password protection
+      await dockerService.updateWorkspacePassword(projectId, null);
       project.passwordProtected = false;
       project.passwordHash = null;
-
-      // Update running container
-      await dockerService.updateWorkspacePassword(projectId, null);
     } else if (newPassword) {
       // Validate new password
       if (newPassword.length < 8) {
@@ -888,12 +877,10 @@ class WorkspaceService {
         throw new Error('Password must be less than 50 characters');
       }
 
-      // Set/update password
-      project.passwordProtected = true;
-      project.passwordHash = await bcrypt.hash(newPassword, 10);
-
-      // Update running container
+      const newHash = await bcrypt.hash(newPassword, 10);
       await dockerService.updateWorkspacePassword(projectId, newPassword);
+      project.passwordProtected = true;
+      project.passwordHash = newHash;
     } else {
       throw new Error('Either newPassword or removePassword must be provided');
     }

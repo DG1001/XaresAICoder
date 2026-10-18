@@ -345,10 +345,23 @@
     }
   });
 
+  // The admin password goes in a header (never in the URL, where it would end
+  // up in access logs and caches), percent-encoded for non-ASCII characters.
+  function adminFetch(url, options = {}, pw = adminPassword) {
+    const headers = { ...(options.headers || {}), 'X-Admin-Password': encodeURIComponent(pw) };
+    return fetch(url, { ...options, headers, cache: 'no-store' });
+  }
+
   async function checkPassword(pw) {
     try {
-      const res = await fetch('/api/workshop/claims?password=' + encodeURIComponent(pw));
-      return res.status !== 401;
+      const res = await adminFetch('/api/workshop/claims', {}, pw);
+      if (res.status === 401) {
+        document.getElementById('login-error').textContent = 'Falsches Passwort.';
+      } else if (res.status === 503) {
+        const d = await res.json().catch(() => ({}));
+        document.getElementById('login-error').textContent = d.error || 'Admin-Bereich ist deaktiviert.';
+      }
+      return res.ok;
     } catch { return false; }
   }
 
@@ -357,8 +370,8 @@
     const btn = document.getElementById('refresh-btn');
     btn.classList.add('spinning');
     try {
-      const res = await fetch('/api/workshop/claims?password=' + encodeURIComponent(adminPassword));
-      if (res.status === 401) { location.reload(); return; }
+      const res = await adminFetch('/api/workshop/claims');
+      if (res.status === 401) { sessionStorage.removeItem('workshopAdminPw'); location.reload(); return; }
       const data = await res.json();
       claimsData  = data.claims  || [];
       historyData = data.history || [];
@@ -375,7 +388,7 @@
 
   async function loadStatus() {
     try {
-      const res = await fetch('/api/workshop/status');
+      const res = await fetch('/api/workshop/status', { cache: 'no-store' });
       const d   = await res.json();
       document.getElementById('stat-total').textContent     = d.total;
       document.getElementById('stat-claimed').textContent   = d.claimed;
@@ -399,9 +412,7 @@
         <td><a class="ws-link" href="${esc(c.workspaceUrl)}" target="_blank">${esc(c.workspaceUrl)}</a></td>
         <td class="ts">${formatDate(c.claimedAt)}</td>
         <td>
-          <button class="btn-release" onclick="releaseWorkspace('${esc(c.projectId)}', '${esc(c.name)}', '${esc(c.projectName)}')">
-            Freigeben
-          </button>
+          <button class="btn-release" data-index="${i}">Freigeben</button>
         </td>
       </tr>
     `).join('');
@@ -429,29 +440,38 @@
   }
 
   // --- Release ---
-  async function releaseWorkspace(projectId, name, projectName) {
+  // Delegated handler: participant-controlled values (name, project) are read
+  // from claimsData, never interpolated into inline JS.
+  document.getElementById('claims-tbody').addEventListener('click', function(e) {
+    const btn = e.target.closest('button.btn-release');
+    if (!btn) return;
+    const claim = claimsData[Number(btn.dataset.index)];
+    if (claim) releaseWorkspace(claim, btn);
+  });
+
+  async function releaseWorkspace(claim, btn) {
+    const { projectId, name, projectName } = claim;
     if (!confirm(`Workspace "${projectName}" von "${name}" freigeben?\n\nDie Zuordnung wird in den Verlauf verschoben.`)) return;
 
-    const btn = document.querySelector(`button[onclick*="${projectId}"]`);
-    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    btn.disabled = true; btn.textContent = '…';
 
     try {
-      const res = await fetch(
-        `/api/workshop/claims/${encodeURIComponent(projectId)}/release?password=${encodeURIComponent(adminPassword)}`,
+      const res = await adminFetch(
+        `/api/workshop/claims/${encodeURIComponent(projectId)}/release`,
         { method: 'POST' }
       );
       if (res.status === 401) { location.reload(); return; }
       if (!res.ok) {
         const d = await res.json();
         alert('Fehler: ' + (d.error || 'Unbekannt'));
-        if (btn) { btn.disabled = false; btn.textContent = 'Freigeben'; }
+        btn.disabled = false; btn.textContent = 'Freigeben';
         return;
       }
       loadData();
       loadStatus();
     } catch (e) {
       alert('Verbindungsfehler.');
-      if (btn) { btn.disabled = false; btn.textContent = 'Freigeben'; }
+      btn.disabled = false; btn.textContent = 'Freigeben';
     }
   }
 
@@ -465,12 +485,19 @@
   }
 
   // --- CSV export ---
+  // Cells starting with = + - @ (or tab/CR) would be evaluated as formulas by
+  // Excel/LibreOffice; prefix them with ' so they stay plain text.
+  function csvCell(v) {
+    let s = String(v || '');
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
   function exportCSV() {
     if (!claimsData.length) return;
     const header = 'Name,E-Mail,Workspace,URL,Registriert';
     const rows = claimsData.map(c =>
-      [c.name, c.email, c.projectName, c.workspaceUrl, c.claimedAt]
-        .map(v => '"' + String(v || '').replace(/"/g, '""') + '"').join(',')
+      [c.name, c.email, c.projectName, c.workspaceUrl, c.claimedAt].map(csvCell).join(',')
     );
     downloadCSV([header, ...rows].join('\r\n'), 'workshop-claims.csv');
   }
