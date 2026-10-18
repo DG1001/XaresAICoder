@@ -563,7 +563,7 @@ router.get('/:projectId/squid-logs', requireWorkspacePassword, async (req, res) 
     const lines = clampInt(req.query.lines, 50, 1, 500);
 
     // Get workspace IP address
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -572,7 +572,7 @@ router.get('/:projectId/squid-logs', requireWorkspacePassword, async (req, res) 
     }
 
     // Get squid logs filtered by IP
-    const logs = await dockerService.getSquidLogsForWorkspace(ipAddress, lines);
+    const logs = await dockerService.getSquidLogsForWorkspace(ipAddress, lines, workspaceService.getProxyIpSince(projectId));
 
     res.json({
       success: true,
@@ -602,7 +602,7 @@ router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req
       dateTo
     } = req.query;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -639,7 +639,7 @@ router.get('/:projectId/recorded-domains', requireWorkspacePassword, async (req,
   try {
     const { projectId } = req.params;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -674,7 +674,7 @@ router.post('/:projectId/generate-documentation', requireWorkspacePassword, asyn
     const { projectId } = req.params;
     const { format = 'markdown', type = 'clean' } = req.body;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -714,7 +714,7 @@ router.delete('/:projectId/llm-conversations', requireWorkspacePassword, async (
   try {
     const { projectId } = req.params;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -751,7 +751,7 @@ router.delete('/:projectId/llm-conversations/:timestamp', requireWorkspacePasswo
       return res.status(400).json({ success: false, message: 'Invalid conversation id' });
     }
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,

@@ -124,6 +124,22 @@ fi
 echo cleanup-done
 `;
 
+// IPv4 address <-> number. Arithmetic instead of bit operators, which work on
+// signed 32-bit integers.
+function ipv4ToInt(ip) {
+  return ip.split('.').reduce((n, octet) => n * 256 + Number(octet), 0);
+}
+function intToIpv4(n) {
+  return [16777216, 65536, 256, 1].map(d => Math.floor(n / d) % 256).join('.');
+}
+// '172.30.0.0/16' -> { base, size }, or null for anything but IPv4 CIDR
+function parseIpv4Cidr(cidr) {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(cidr || '');
+  if (!m || Number(m[2]) > 30) return null;
+  const size = 2 ** (32 - Number(m[2]));
+  return { base: ipv4ToInt(m[1]) - (ipv4ToInt(m[1]) % size), size };
+}
+
 class DockerService {
   constructor() {
     this.docker = new Docker();
@@ -180,6 +196,71 @@ class DockerService {
     return [this.network, this.proxyNetwork, this.securityNetwork];
   }
 
+  endpointConfig(containerName, fixedIp = null) {
+    return {
+      Aliases: [containerName],
+      ...(fixedIp && { IPAMConfig: { IPv4Address: fixedIp } })
+    };
+  }
+
+  // IPv4 subnet of the network for a proxy mode, plus the addresses in use
+  async getProxyNetworkInfo(proxyMode) {
+    const name = this.networkForProxyMode(proxyMode);
+    let info;
+    try {
+      info = await this.docker.getNetwork(name).inspect();
+    } catch (error) {
+      if (error.statusCode === 404) {
+        throw new Error(`Network '${name}' does not exist. Run ./deploy.sh first.`);
+      }
+      throw error;
+    }
+    const cfg = ((info.IPAM && info.IPAM.Config) || []).find(c => parseIpv4Cidr(c.Subnet));
+    if (!cfg) throw new Error(`Network '${name}' has no IPv4 subnet`);
+    const used = new Set([this.loggingDnsIp, this.securityDnsIp]);
+    for (const c of Object.values(info.Containers || {})) {
+      if (c.IPv4Address) used.add(c.IPv4Address.split('/')[0]);
+    }
+    return { name, subnet: cfg.Subnet, range: parseIpv4Cidr(cfg.Subnet), used };
+  }
+
+  ipInSubnet(ip, subnet) {
+    const range = parseIpv4Cidr(subnet);
+    if (!range || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip || '')) return false;
+    const n = ipv4ToInt(ip);
+    return n > range.base && n < range.base + range.size - 1;
+  }
+
+  // Picks a fixed address for a proxied workspace. mitmproxy and squid know a
+  // workspace only by its client IP; with Docker's dynamic addresses a
+  // restarted workspace could come back under another IP and lose its
+  // captures, or see those of another workspace. Fixed addresses come from
+  // the upper half of the subnet because Docker hands out dynamic ones
+  // (infrastructure containers) from the bottom. `taken` holds the addresses
+  // of all other projects, including stopped ones.
+  async allocateProxyIp(proxyMode, taken = new Set()) {
+    const { name, subnet, range, used } = await this.getProxyNetworkInfo(proxyMode);
+    const last = range.base + range.size - 2;
+    for (let n = range.base + range.size / 2; n <= last; n++) {
+      if (n % 256 === 0 || n % 256 === 255) continue;
+      const ip = intToIpv4(n);
+      if (!used.has(ip) && !taken.has(ip)) return ip;
+    }
+    throw new Error(`No free fixed address left in network '${name}' (${subnet})`);
+  }
+
+  // Current address of a running workspace on the network of its proxy mode
+  async getCurrentProxyIp(projectId, proxyMode) {
+    try {
+      const info = await this.docker.getContainer(`workspace-${projectId}`).inspect();
+      const entry = (info.NetworkSettings.Networks || {})[this.networkForProxyMode(proxyMode)];
+      return info.State.Running && entry && entry.IPAddress ? entry.IPAddress : null;
+    } catch (error) {
+      if (error.statusCode === 404) return null;
+      throw error;
+    }
+  }
+
   // Single source of truth for workspace container settings. Used by both
   // createWorkspaceContainer and createCloneContainer, so security and
   // resource settings cannot drift apart between the two paths.
@@ -198,6 +279,7 @@ class DockerService {
     gitUsername = null,
     gitToken = null,
     sudoEnabled = this.workspaceSudoEnabled,
+    proxyIp = null,
     hostCapabilities = { ncpu: null, diskQuota: false }
   }) {
     const containerName = `workspace-${projectId}`;
@@ -358,9 +440,7 @@ class DockerService {
       },
       NetworkingConfig: {
         EndpointsConfig: {
-          [workspaceNetwork]: {
-            Aliases: [containerName]
-          }
+          [workspaceNetwork]: this.endpointConfig(containerName, useProxy ? proxyIp : null)
         }
       },
       // Explicit, because snapshots imported via export/import lose the image's USER
@@ -994,12 +1074,15 @@ fi`.trim();
   async resetProxyLogsForWorkspace(projectId) {
     try {
       const ip = await this.getWorkspaceIPAddress(projectId);
-      if (!ip) return;
-      await this.clearRecordedDomains(ip);
-      await this.archiveLLMConversations(ip);
+      if (ip) await this.resetProxyLogsForIp(ip);
     } catch (e) {
       console.warn(`Could not reset proxy logs for ${projectId}: ${e.message}`);
     }
+  }
+
+  async resetProxyLogsForIp(ip) {
+    await this.clearRecordedDomains(ip);
+    await this.archiveLLMConversations(ip);
   }
 
   // Moves the conversations stored under an IP to llm_conversations/_archive/
@@ -1357,7 +1440,8 @@ fi`.trim();
   }
 
   // Get squid logs filtered by workspace IP address
-  async getSquidLogsForWorkspace(ipAddress, lines = 50) {
+  // `since` (Date) hides lines from an earlier workspace that had this IP
+  async getSquidLogsForWorkspace(ipAddress, lines = 50, since = null) {
     try {
       // Find squid container dynamically (more robust than hardcoding name)
       const containers = await this.docker.listContainers();
@@ -1375,9 +1459,11 @@ fi`.trim();
       // Execute command to read and filter logs
       // Field 3 of the 'detailed' logformat is the client IP. Exact match, so
       // 172.30.0.1 does not also return 172.30.0.10–19 and 172.30.0.100+.
+      // Field 1 is the epoch timestamp.
+      const sinceEpoch = since ? Math.floor(new Date(since).getTime() / 1000) || 0 : 0;
       const exec = await squidContainer.exec({
-        Cmd: ['sh', '-c', 'tail -n 5000 /var/log/squid/access.log | awk -v ip="$1" \'$3 == ip\' | tail -n "$2"',
-          'sh', ipAddress, String(lines)],
+        Cmd: ['sh', '-c', 'tail -n 5000 /var/log/squid/access.log | awk -v ip="$1" -v since="$3" \'$3 == ip && $1 + 0 >= since + 0\' | tail -n "$2"',
+          'sh', ipAddress, String(lines), String(sinceEpoch)],
         AttachStdout: true,
         AttachStderr: true
       });
@@ -1393,7 +1479,7 @@ fi`.trim();
     }
   }
 
-  async startWorkspace(projectId, proxyMode = 'none') {
+  async startWorkspace(projectId, proxyMode = 'none', proxyIp = null) {
     const containerName = `workspace-${projectId}`;
 
     try {
@@ -1407,7 +1493,7 @@ fi`.trim();
 
       // Reattach if its network was recreated, move it if it is on the wrong one
       try {
-        await this.ensureWorkspaceNetwork(containerName, proxyMode);
+        await this.ensureWorkspaceNetwork(containerName, proxyMode, proxyIp);
       } catch (error) {
         throw new Error(`Network recovery failed: ${error.message}`);
       }
@@ -1883,8 +1969,9 @@ fi`.trim();
   // network was removed and recreated by `docker compose down/up`, and
   // containers created before the proxy networks were split. Returns true
   // if anything changed.
-  async ensureWorkspaceNetwork(containerName, proxyMode = 'none') {
+  async ensureWorkspaceNetwork(containerName, proxyMode = 'none', proxyIp = null) {
     const required = this.networkForProxyMode(proxyMode);
+    const fixedIp = proxyMode === 'none' ? null : proxyIp;
     const info = await this.docker.getContainer(containerName).inspect();
     const attached = { ...(info.NetworkSettings.Networks || {}) };
     let changed = false;
@@ -1910,12 +1997,38 @@ fi`.trim();
       console.log(`Dropped stale entry for recreated network ${required} from ${containerName}`);
     }
 
+    // Pin the fixed address, otherwise Docker assigns a dynamic one on the
+    // next start. A running workspace that already uses it keeps running
+    // undisturbed and is pinned on its next start.
+    const current = attached[required];
+    let reattached = false;
+    if (current && fixedIp) {
+      const pinned = current.IPAMConfig && current.IPAMConfig.IPv4Address;
+      if (pinned !== fixedIp && !(info.State.Running && current.IPAddress === fixedIp)) {
+        await this.docker.getNetwork(required).disconnect({ Container: info.Id, Force: true });
+        delete attached[required];
+        reattached = true;
+      }
+    }
+
     if (!attached[required]) {
-      await this.docker.getNetwork(required).connect({
-        Container: info.Id,
-        EndpointConfig: { Aliases: [containerName] }
-      });
-      console.log(`Connected ${containerName} to network ${required}`);
+      try {
+        await this.docker.getNetwork(required).connect({
+          Container: info.Id,
+          EndpointConfig: this.endpointConfig(containerName, fixedIp)
+        });
+      } catch (error) {
+        // Address taken (running container): stay reachable, report it
+        if (reattached) {
+          await this.docker.getNetwork(required).connect({
+            Container: info.Id,
+            EndpointConfig: this.endpointConfig(containerName)
+          }).catch(() => {});
+        }
+        throw new Error(`Could not attach ${containerName} to ${required}` +
+          (fixedIp ? ` with address ${fixedIp}` : '') + `: ${error.message}`);
+      }
+      console.log(`Connected ${containerName} to network ${required}` + (fixedIp ? ` (${fixedIp})` : ''));
       changed = true;
     }
 
@@ -1943,7 +2056,7 @@ fi`.trim();
     for (const project of projects) {
       const containerName = `workspace-${project.projectId}`;
       try {
-        if (await this.ensureWorkspaceNetwork(containerName, project.proxyMode || 'none')) moved++;
+        if (await this.ensureWorkspaceNetwork(containerName, project.proxyMode || 'none', project.proxyIp)) moved++;
       } catch (error) {
         if (error.statusCode !== 404) {
           console.warn(`Could not check network of ${containerName}: ${error.message}`);

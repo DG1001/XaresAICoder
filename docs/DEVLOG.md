@@ -889,3 +889,80 @@ Feature vorgemerkt) oder per Host-Firewall – Vorschlag als eigener Schritt.
 behalten ihr altes `HostConfig.Dns` (`172.30.0.2`, im neuen Netz unerreichbar) – ohne
 Wirkung, da externe Namen dort ohnehin nicht auflösbar sind und Containernamen über
 Dockers DNS laufen.
+
+### 2.5 Feste IPs für Proxy-Workspaces
+
+**Problem**: mitmproxy und squid kennen einen Workspace nur über seine Client-IP, Docker
+vergibt sie aber bei jedem Start dynamisch. Ein neu gestarteter Workspace konnte unter
+einer anderen IP zurückkommen – seine Mitschnitte waren dann nicht mehr sichtbar, und
+unter der neuen IP lagen womöglich die eines anderen Workspaces (die Archivierung aus
+1.4 griff nur beim *Erstellen*). Für gestoppte Workspaces lieferte die API gar nichts
+(404), weil Docker die IP beim Stoppen freigibt. Squid-Logzeilen eines gelöschten
+Workspaces erschienen beim nächsten Besitzer derselben IP.
+
+**Änderung**
+- `docker.js`:
+  - `allocateProxyIp(mode, taken)`: niedrigste freie Adresse in der **oberen Hälfte**
+    des Subnetzes (z. B. ab `172.30.128.1`), ohne `.0`/`.255`, ohne belegte Adressen
+    im Netz, dnsmasq und die IPs aller anderen Projekte (auch gestoppter).
+  - `buildContainerSpec(…, proxyIp)` pinnt die Adresse per `IPAMConfig` (nur bei Proxy).
+  - `ensureWorkspaceNetwork(…, proxyIp)`: verbindet mit fester Adresse neu, wenn sie
+    nicht gepinnt ist – ein laufender Workspace, der sie schon nutzt, bleibt
+    ungestört und wird beim nächsten Start gepinnt. Schlägt das Verbinden fehl
+    (Adresse belegt), wird er dynamisch wieder angehängt und der Fehler gemeldet.
+  - `getSquidLogsForWorkspace(ip, lines, since)`: blendet Zeilen vor `since` aus.
+  - `resetProxyLogsForIp(ip)` aus `resetProxyLogsForWorkspace` herausgelöst.
+- `workspace.js`:
+  - `withProxyIpLock()` serialisiert die Vergabe; Create und Clone vergeben die IP
+    vor dem Speichern (`proxyIp`, `proxyIpSince` in `projects.json`). Clone ist
+    all-or-nothing: Gehen die Adressen aus, wird kein Klon registriert.
+  - `migrateWorkspaceNetworks()` beim Serverstart: Proxy-Workspaces ohne gültige IP
+    bekommen eine – ein **laufender** behält seine aktuelle (Mitschnitte bleiben
+    zugeordnet), ein gestoppter oder einer, dessen IP schon vergeben ist, bekommt
+    eine neue (deren alte Logs werden archiviert/geleert). Liegt eine gespeicherte
+    IP nach einer Subnetz-Änderung außerhalb des Netzes, wird neu vergeben.
+  - `getProxyIp()` / `getProxyIpSince()` als Quelle für alle Log-Routen.
+- `routes/projects.js`: alle sechs Log-Routen nutzen die gespeicherte IP; Squid-Logs
+  mit `since`.
+- Doku: `LLM_CONVERSATION_LOGGING.md` (IP-to-Project Mapping, Troubleshooting,
+  „Static IP Assignment“ aus Future Enhancements entfernt), `SECURITY.md`.
+
+**Entscheidungen**
+- **IP behalten statt Logs auf Projekt-IDs umstellen**: mitmproxy und squid sehen
+  nur die Client-IP; eine Projekt-ID müsste aus der IP abgeleitet werden – genau
+  das, was eine feste IP liefert, ohne Änderungen an Addon und Log-Format.
+- **Obere Hälfte**: Docker vergibt dynamische Adressen (nginx und squid im Security-
+  Netz, alte Workspaces) von unten; fest vergebene liegen damit außerhalb.
+- **Laufende Alt-Workspaces behalten ihre IP**, auch wenn sie in der unteren Hälfte
+  liegt: Im Logging-Netz haben alle Infrastruktur-Container feste Adressen, eine
+  Kollision ist dort ausgeschlossen; Security-Workspaces gibt es vor 2.5 nur aus der
+  Migration von 2.4, und die bekommen dabei ohnehin eine neue Adresse.
+- **Kein Aufräumen beim Löschen**: Mitschnitte bleiben auf der Platte, bis die IP neu
+  vergeben wird (dann archiviert) – wie bisher.
+
+**Tests**
+- Unit: Vergabe (obere Hälfte, belegt/vergeben/dnsmasq/`.0`/`.255` übersprungen,
+  `/29`, erschöpft, fehlendes Netz); `ipInSubnet`; Spec pinnt nur bei Proxy; Pinning
+  (gestoppt, laufend mit übernommener IP, laufend mit falscher IP, belegte Adresse →
+  dynamischer Fallback + Fehler, schon gepinnt); 12 parallele Vergaben → 12 IPs,
+  Sperre übersteht Fehler; Boot-Migration (behalten, laufend übernehmen, gestoppt/
+  belegt/außerhalb des Subnetzes neu, Logs neuer IPs zurückgesetzt); Squid-`since`-
+  Filter mit dem echten awk-Befehl. Regressionstests aus 2.4 weiter grün.
+- Live (Backup von `workspace_data` vorher):
+  - Serverstart: „newtest“ (gestoppt, Logging) bekommt `172.30.128.1`, in Docker
+    gepinnt.
+  - Drei Logging-Workspaces **gleichzeitig** angelegt → `.128.2`, `.128.3`, `.128.4`;
+    Security → `172.31.128.1`.
+  - Mitschnitt (Fake-Key) und Squid-Logs auch nach dem **Stoppen** per API abrufbar;
+    nach API-Start und nach `docker restart` (ohne API) dieselbe IP.
+  - Klon ×2 eines Security-Workspaces → `.128.2`, `.128.3`.
+  - Logging- und Security-Workspace gelöscht und neu angelegt: Die Nachfolger erben
+    die IPs; der Mitschnitt des Vorgängers liegt in `_archive/`, die API zeigt 0
+    Gespräche; die Squid-Zeile des Vorgängers ist im Log, wird aber ausgeblendet.
+  - Aufgeräumt: Test-Workspaces gelöscht, Test-Mitschnitte und Domain-Dateien
+    entfernt, 27 Projekte wie vorher.
+
+**Gilt für bestehende Installationen**: Beim ersten Start vergibt der Server die
+Adressen (Log: `Fixed proxy IP for …`). Mitschnitte gestoppter Alt-Workspaces, die
+unter ihrer früheren dynamischen IP liegen, werden ihnen nicht zugeordnet – das war
+schon vorher nicht verlässlich der Fall.

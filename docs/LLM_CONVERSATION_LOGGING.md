@@ -649,33 +649,34 @@ Backend maps workspace IP to project ID:
 
 ```javascript
 // Get workspace IP from project ID
-const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+const ipAddress = await workspaceService.getProxyIp(projectId); // fixed IP from projects.json
 
 // Files stored at: /var/log/mitmproxy/llm_conversations/{ipAddress}/
 ```
 
-**⚠️ Recordings are partitioned by container IP, not by a stable project ID.**
+**Recordings are partitioned by container IP; every proxy workspace has a fixed IP.**
 The mitmproxy logger keys every conversation (and domain record) on the client
-container's IP. Two workspaces running at the same time have different IPs and
-stay cleanly separated — but Docker assigns IPs dynamically from the subnet pool
-and the logs are never pruned automatically. Two consequences:
+container's IP. The server therefore gives each proxied workspace (and clone) a
+fixed address when it is created, stores it as `proxyIp` in `projects.json` and
+pins it in Docker (`IPAMConfig`), so the workspace keeps it across stop/start,
+`docker restart` and host reboots. Fixed addresses come from the upper half of
+the subnet (e.g. `172.30.128.1` upwards); Docker's dynamic addresses for
+infrastructure containers come from the bottom.
 
-- **IP reuse:** when a proxy workspace (or clone) is created, the server clears
-  the domain records stored under its new IP and moves any conversations stored
-  there to `llm_conversations/_archive/<ip>-<UTC timestamp>/` right after the
-  container starts. A new workspace therefore never sees recordings left by an
-  earlier workspace at the same address, and the earlier recordings are not lost
-  (they are no longer shown in the UI/API, but stay on disk).
-- **Known gap:** a workspace that is *restarted* and happens to receive an IP
-  previously used by another workspace still sees that workspace's recordings.
-  Fixing this properly requires keying logs on the project instead of the IP.
-- **Orphaned history:** if a workspace restarts and gets a different IP, its
-  earlier conversations remain under the old IP and no longer appear in the
-  API/UI for that project (see Troubleshooting → "IP Address Changed, Lost
-  Conversations").
-
-Keying logs on the project ID instead of the IP (see Future Enhancements →
-Static IP Assignment) would avoid the orphaned-history case.
+- **Readable while stopped:** the API looks up the stored address, so
+  conversations, recorded domains and Squid logs of a stopped workspace remain
+  available.
+- **IP reuse after deletion:** an address is only handed out again after its
+  workspace was deleted. When a new workspace gets it, the server clears the
+  domain records stored under it and moves its conversations to
+  `llm_conversations/_archive/<ip>-<UTC timestamp>/` (not shown in the UI/API,
+  but kept on disk). Squid log lines older than the new owner's IP assignment
+  are hidden.
+- **Upgrade:** workspaces created before fixed IPs get one on the first server
+  start. A running workspace keeps its current address (and its recordings); a
+  stopped one gets a new address — its recordings under the old, dynamic
+  address stay on disk but are no longer shown (see Troubleshooting → "IP
+  Address Changed, Lost Conversations").
 
 ### Session Grouping & Filtering
 
@@ -874,7 +875,9 @@ docker-compose up -d
 
 **Problem:** Workspace IP changed, can't find old conversations
 
-**Cause:** Docker reassigns IPs when containers restart
+**Cause:** Workspaces created before fixed proxy IPs got a dynamic address on
+every start. When they were migrated while stopped, they received a new fixed
+address; recordings made under earlier addresses are not linked to them.
 
 **Solution:**
 1. **Check old IP directories:**
@@ -890,9 +893,8 @@ docker-compose up -d
      find /var/log/mitmproxy/llm_conversations -name "*.json"
    ```
 
-3. **Prevention:**
-   - Use static IP assignment (future enhancement)
-   - Associate logs with project ID instead of IP
+3. **Prevention:** new workspaces have fixed IPs, so this only affects
+   recordings made before the upgrade.
 
 ## Future Enhancements
 
@@ -924,18 +926,13 @@ docker-compose up -d
    - Interactive prompt/response viewer
    - Diff tool for prompt iterations
 
-6. **Static IP Assignment**
-   - Assign fixed IPs to workspaces
-   - Persist conversation history across restarts
-   - Associate logs with project ID
-
-7. **Multiple Export Formats**
+6. **Multiple Export Formats**
    - PDF documentation
    - HTML with syntax highlighting
    - LaTeX for academic papers
    - JSON for programmatic access
 
-8. **Collaborative Features**
+7. **Collaborative Features**
    - Share conversations via link
    - Comment on specific prompts/responses
    - Team conversation library

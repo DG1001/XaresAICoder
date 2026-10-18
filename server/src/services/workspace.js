@@ -81,6 +81,10 @@ class WorkspaceService {
       enableResourceLimits: process.env.ENABLE_RESOURCE_LIMITS !== 'false' // default true
     };
 
+    // Fixed proxy IPs are chosen one at a time, so two workspaces created at
+    // the same moment cannot pick the same address
+    this.proxyIpLock = Promise.resolve();
+
     // Load existing projects on startup. Expose a promise so that
     // other components can await readiness before reading this.projects.
     this.whenReady = this.loadProjectsFromDisk();
@@ -88,6 +92,77 @@ class WorkspaceService {
     // Automatic cleanup removed - users manage workspace lifecycle manually
   }
 
+  withProxyIpLock(fn) {
+    const run = this.proxyIpLock.then(fn, fn);
+    this.proxyIpLock = run.catch(() => {});
+    return run;
+  }
+
+  // Gives a proxied project a fixed IP not used by any other project. Call
+  // inside withProxyIpLock, and add the project to this.projects before
+  // releasing the lock.
+  async assignNewProxyIp(project) {
+    const taken = new Set();
+    for (const p of this.projects.values()) {
+      if (p !== project && p.proxyIp) taken.add(p.proxyIp);
+    }
+    project.proxyIp = await dockerService.allocateProxyIp(project.proxyMode, taken);
+    project.proxyIpSince = new Date();
+    return project.proxyIp;
+  }
+
+  // Address under which squid/mitmproxy log this workspace. Stored for
+  // workspaces with a fixed IP, so their logs stay readable while stopped.
+  async getProxyIp(projectId) {
+    const project = this.projects.get(projectId);
+    if (!project || (project.proxyMode || 'none') === 'none') return null;
+    return project.proxyIp || await dockerService.getWorkspaceIPAddress(projectId);
+  }
+
+  // Since when the workspace has owned its proxy IP (older squid lines
+  // belong to a deleted workspace that had the same address)
+  getProxyIpSince(projectId) {
+    const project = this.projects.get(projectId);
+    return project ? (project.proxyIpSince || project.createdAt || null) : null;
+  }
+
+  // On server start: gives proxied workspaces created before fixed IPs one
+  // (a running workspace keeps its current address, so its captures stay
+  // with it), then moves every workspace to the network of its proxy mode.
+  async migrateWorkspaceNetworks() {
+    const fresh = [];
+    await this.withProxyIpLock(async () => {
+      for (const project of this.projects.values()) {
+        const mode = project.proxyMode || 'none';
+        if (mode === 'none') continue;
+        try {
+          if (project.proxyIp) {
+            const { subnet } = await dockerService.getProxyNetworkInfo(mode);
+            // Subnet changed in .env: the stored address is no longer valid
+            if (dockerService.ipInSubnet(project.proxyIp, subnet)) continue;
+          }
+          const current = await dockerService.getCurrentProxyIp(project.projectId, mode);
+          const claimed = [...this.projects.values()].some(p => p !== project && p.proxyIp === current);
+          if (current && !claimed) {
+            project.proxyIp = current;
+          } else {
+            await this.assignNewProxyIp(project);
+            fresh.push(project.proxyIp);
+          }
+          console.log(`Fixed proxy IP for ${project.projectName} (${project.projectId}): ${project.proxyIp}`);
+        } catch (error) {
+          console.warn(`Could not assign a proxy IP to ${project.projectId}: ${error.message}`);
+        }
+      }
+    });
+    await this.saveProjectsToDisk();
+    // A new address may have belonged to a deleted workspace
+    for (const ip of fresh) {
+      await dockerService.resetProxyLogsForIp(ip).catch(e =>
+        console.warn(`Could not reset proxy logs for ${ip}: ${e.message}`));
+    }
+    await dockerService.migrateWorkspaceNetworks(this.projects.values());
+  }
 
   async createProject(projectName, projectType, options = {}, userId = 'default') {
     try {
@@ -161,7 +236,10 @@ class WorkspaceService {
         workspaceUrl: null // Will be set when container is ready
       };
 
-      this.projects.set(projectId, project);
+      await this.withProxyIpLock(async () => {
+        if (project.proxyMode !== 'none') await this.assignNewProxyIp(project);
+        this.projects.set(projectId, project);
+      });
 
       // Save to disk immediately
       await this.saveProjectsToDisk();
@@ -233,6 +311,7 @@ class WorkspaceService {
         gitUsername: options.gitUsername || null,
         gitToken: options.gitToken || null,
         proxyMode: proxyMode,
+        proxyIp: project ? project.proxyIp : null,
         sudoEnabled: project ? project.sudoEnabled : undefined
       });
 
@@ -307,39 +386,48 @@ class WorkspaceService {
 
     let cloneNum = 0;
     const clones = [];
-    for (let i = 0; i < count; i++) {
-      // Find next free number
-      do { cloneNum++; } while (usedNames.has(`${source.projectName} ${cloneNum}`));
-      const projectName = `${source.projectName} ${cloneNum}`;
-      usedNames.add(projectName); // Reserve for next iteration
+    // All or nothing: no half-registered clones if addresses run out
+    await this.withProxyIpLock(async () => {
+      try {
+        for (let i = 0; i < count; i++) {
+          // Find next free number
+          do { cloneNum++; } while (usedNames.has(`${source.projectName} ${cloneNum}`));
+          const projectName = `${source.projectName} ${cloneNum}`;
+          usedNames.add(projectName); // Reserve for next iteration
 
-      const cloneId = uuidv4();
-      const clone = {
-        projectId: cloneId,
-        projectName,
-        projectType: source.projectType,
-        memoryLimit: source.memoryLimit || '2g',
-        cpuCores: source.cpuCores || '2',
-        userId,
-        group: source.group || 'Uncategorized',
-        passwordProtected: hasPassword,
-        passwordHash: passwordHash,
-        createGitRepo: source.createGitRepo || false,
-        gitRepository: null,
-        gitUrl: source.gitUrl || null,
-        proxyMode: source.proxyMode || 'none',
-        sudoEnabled: typeof options.sudoEnabled === 'boolean' ? options.sudoEnabled : process.env.WORKSPACE_SUDO_ENABLED === 'true',
-        aliases: [],
-        createdAt: new Date(),
-        lastAccessed: new Date(),
-        status: 'creating',
-        workspaceUrl: null,
-        clonedFrom: projectId
-      };
+          const cloneId = uuidv4();
+          const clone = {
+            projectId: cloneId,
+            projectName,
+            projectType: source.projectType,
+            memoryLimit: source.memoryLimit || '2g',
+            cpuCores: source.cpuCores || '2',
+            userId,
+            group: source.group || 'Uncategorized',
+            passwordProtected: hasPassword,
+            passwordHash: passwordHash,
+            createGitRepo: source.createGitRepo || false,
+            gitRepository: null,
+            gitUrl: source.gitUrl || null,
+            proxyMode: source.proxyMode || 'none',
+            sudoEnabled: typeof options.sudoEnabled === 'boolean' ? options.sudoEnabled : process.env.WORKSPACE_SUDO_ENABLED === 'true',
+            aliases: [],
+            createdAt: new Date(),
+            lastAccessed: new Date(),
+            status: 'creating',
+            workspaceUrl: null,
+            clonedFrom: projectId
+          };
 
-      this.projects.set(cloneId, clone);
-      clones.push(clone);
-    }
+          if (clone.proxyMode !== 'none') await this.assignNewProxyIp(clone);
+          this.projects.set(cloneId, clone);
+          clones.push(clone);
+        }
+      } catch (error) {
+        for (const c of clones) this.projects.delete(c.projectId);
+        throw error;
+      }
+    });
 
     // Save all to disk at once
     await this.saveProjectsToDisk();
@@ -395,6 +483,7 @@ class WorkspaceService {
             passwordProtected: clone.passwordProtected,
             password: options.password || null,
             proxyMode: clone.proxyMode,
+            proxyIp: clone.proxyIp,
             sudoEnabled: clone.sudoEnabled
           });
 
@@ -523,7 +612,7 @@ class WorkspaceService {
     }
 
     try {
-      const result = await dockerService.startWorkspace(projectId, project.proxyMode || 'none');
+      const result = await dockerService.startWorkspace(projectId, project.proxyMode || 'none', project.proxyIp);
       project.status = result.status || 'running';
       project.lastAccessed = new Date();
 
