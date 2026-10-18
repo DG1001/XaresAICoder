@@ -137,16 +137,25 @@ VSCODE_PROXY_URI: `${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${
 
 ### Network Configuration
 
-- **Network Name**: `xares-aicoder-network` (external persistent network)
-- **Network Type**: Bridge network (must be created before deployment)
+- **Direct workspaces**: `xares-aicoder-network` (external persistent bridge network, must be created before deployment)
+- **LLM Logging Proxy workspaces**: `xares-internal` (internal, with mitmproxy)
+- **Security Proxy workspaces**: `xares-security` (internal, with squid)
+- **API server**: only `xares-control` (with nginx and Forgejo)
 - **DNS Resolver**: `127.0.0.11` (Docker's internal DNS)
 
-All containers (nginx, server, workspace containers) are connected to the same Docker network:
+nginx is attached to all of these networks so it can proxy to every workspace,
+while the API server shares no network with any workspace. nginx denies
+`/api/` to the workspace subnets; see [SECURITY.md](SECURITY.md#network-isolation).
 
 ```yaml
 networks:
-  xares-aicoder-network:
+  xares-control:            # nginx, server, forgejo
+  xares-aicoder-network:    # direct workspaces
     external: true
+  xares-internal:           # LLM Logging Proxy workspaces
+    internal: true
+  xares-security:           # Security Proxy workspaces
+    internal: true
 ```
 
 ### Container Naming and DNS Resolution
@@ -154,7 +163,7 @@ networks:
 **Workspace container naming convention**:
 - **Container name**: `workspace-<projectId>`
 - **Network alias**: `workspace-<projectId>`
-- **Hostname resolution**: `workspace-<projectId>` resolves to container IP within the Docker network
+- **Hostname resolution**: `workspace-<projectId>` resolves to the container IP within its Docker network (nginx shares each of them)
 
 This allows nginx to proxy requests to containers by name, e.g., `http://workspace-abc123:5000`.
 

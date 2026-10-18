@@ -111,7 +111,16 @@ app.listen(PORT, '0.0.0.0', async () => {
   try {
     const aliasesService = require('./services/aliasesService');
     const workspaceService = require('./services/workspace');
+    const dockerService = require('./services/docker');
+    // Deny the API to workspace networks before anything else, then move
+    // workspaces created before the proxy networks were split
+    try {
+      await aliasesService.writeApiAccessConfig(await dockerService.getWorkspaceNetworkRanges());
+    } catch (err) {
+      console.error('Could not write API access rules for workspace networks:', err);
+    }
     await workspaceService.whenReady.catch(() => {});
+    await dockerService.migrateWorkspaceNetworks(workspaceService.projects.values());
     await aliasesService.generateNginxConfig(workspaceService);
     await aliasesService.reloadNginx().catch(err =>
       console.warn('Initial nginx reload skipped:', err.message)

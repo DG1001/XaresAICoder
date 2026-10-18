@@ -295,9 +295,8 @@ class WhitelistService {
     }
     section += '\n';
 
-    // Internal network ACL (required reference)
-    section += '# Internal network (workspace containers)\n';
-    section += 'acl internal_network src 172.30.0.0/16\n\n';
+    // internal_network itself is defined above the markers (its subnet is
+    // set from SECURITY_NETWORK_SUBNET when the squid container starts)
 
     // Access rules
     section += '# ============================================\n';

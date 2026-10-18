@@ -202,40 +202,16 @@ setup_environment() {
             echo "ENABLE_PROXY=true" >> .env
         fi
 
-        # Check internal network subnet for conflicts
-        local current_subnet=$(grep "^INTERNAL_NETWORK_SUBNET=" .env | cut -d'=' -f2)
-        if [ -z "$current_subnet" ]; then
-            current_subnet="172.30.0.0/16"
-        fi
-
-        # Assign separately from the declaration: `local x=$(...)` would make $?
-        # the exit status of `local` (always 0), not of the command substitution.
-        local suggested_subnet
-        suggested_subnet=$(check_internal_network_subnet "$current_subnet")
-        local subnet_check_rc=$?
-
-        if [ $subnet_check_rc -ne 0 ] || [ -z "$suggested_subnet" ]; then
-            # No usable subnet determined — keep the existing configuration
-            # rather than writing an empty value into .env.
-            print_warning "Keeping configured internal subnet: $current_subnet"
-        elif [ "$suggested_subnet" != "$current_subnet" ]; then
-            print_warning "Using alternative subnet: $suggested_subnet"
-            if grep -q "^INTERNAL_NETWORK_SUBNET=" .env; then
-                sed_inplace "s|^INTERNAL_NETWORK_SUBNET=.*|INTERNAL_NETWORK_SUBNET=$suggested_subnet|" .env
-            else
-                echo "INTERNAL_NETWORK_SUBNET=$suggested_subnet" >> .env
-            fi
-
-            # Update DNSMASQ_IP based on new subnet
-            local new_dnsmasq_ip=$(echo "$suggested_subnet" | sed 's|0\.0/16|0.2|')
-            if grep -q "^DNSMASQ_IP=" .env; then
-                sed_inplace "s|^DNSMASQ_IP=.*|DNSMASQ_IP=$new_dnsmasq_ip|" .env
-            else
-                echo "DNSMASQ_IP=$new_dnsmasq_ip" >> .env
-            fi
-
-            print_warning "IMPORTANT: Update squid/squid.conf line 34 to use: $suggested_subnet"
-        fi
+        # Check the subnets of both proxy networks for conflicts (with
+        # existing Docker networks and with each other)
+        local security_subnet=$(grep "^SECURITY_NETWORK_SUBNET=" .env | cut -d'=' -f2)
+        configure_proxy_subnet INTERNAL_NETWORK_SUBNET 172.30.0.0/16 xares-internal \
+            DNSMASQ_IP 0.2 "${security_subnet:-172.31.0.0/16}" \
+            "172.28.0.0/16 172.25.0.0/16 10.100.0.0/16"
+        local internal_subnet=$(grep "^INTERNAL_NETWORK_SUBNET=" .env | cut -d'=' -f2)
+        configure_proxy_subnet SECURITY_NETWORK_SUBNET 172.31.0.0/16 xares-security \
+            SECURITY_DNSMASQ_IP 255.254 "${internal_subnet:-172.30.0.0/16}" \
+            "172.29.0.0/16 172.26.0.0/16 10.101.0.0/16"
     else
         if grep -q "^ENABLE_PROXY=" .env; then
             sed_inplace 's/^ENABLE_PROXY=.*/ENABLE_PROXY=false/' .env
@@ -289,18 +265,69 @@ setup_network() {
     fi
 }
 
-# Function to check internal network subnet conflicts (for proxy mode)
+# Checks one proxy network subnet and writes an alternative (plus the
+# matching dnsmasq address) to .env if it conflicts.
+#   $1 .env key of the subnet          $2 default subnet
+#   $3 Docker network name to skip     $4 .env key of the dnsmasq address
+#   $5 host part of the dnsmasq address within the /16 (e.g. 0.2)
+#   $6 subnet of the other proxy network   $7 alternatives (space separated)
+configure_proxy_subnet() {
+    local key="$1" default_subnet="$2" own_network="$3" dns_key="$4" dns_host="$5"
+    local current_subnet=$(grep "^${key}=" .env | cut -d'=' -f2)
+    current_subnet=${current_subnet:-$default_subnet}
+
+    # `|| rc=$?` keeps set -e from aborting the deploy when no subnet is found
+    local suggested_subnet subnet_check_rc=0
+    suggested_subnet=$(check_internal_network_subnet "$current_subnet" "$own_network" "$6" "$7") || subnet_check_rc=$?
+
+    if [ $subnet_check_rc -ne 0 ] || [ -z "$suggested_subnet" ]; then
+        # No usable subnet determined — keep the existing configuration
+        # rather than writing an empty value into .env.
+        print_warning "Keeping configured subnet $key=$current_subnet"
+    elif [ "$suggested_subnet" != "$current_subnet" ]; then
+        print_warning "Using alternative subnet: $key=$suggested_subnet"
+        if grep -q "^${key}=" .env; then
+            sed_inplace "s|^${key}=.*|${key}=$suggested_subnet|" .env
+        else
+            echo "${key}=$suggested_subnet" >> .env
+        fi
+
+        local new_dns_ip=$(echo "$suggested_subnet" | sed "s|0\.0/16|${dns_host}|")
+        if grep -q "^${dns_key}=" .env; then
+            sed_inplace "s|^${dns_key}=.*|${dns_key}=$new_dns_ip|" .env
+        else
+            echo "${dns_key}=$new_dns_ip" >> .env
+        fi
+
+        if [ "$key" = "INTERNAL_NETWORK_SUBNET" ]; then
+            print_warning "IMPORTANT: docker-compose.yml pins nginx and mitmproxy to 172.30.0.4/172.30.0.5 on xares-internal; adjust them to $suggested_subnet"
+        fi
+    fi
+}
+
+# Function to check a proxy network subnet for conflicts. Prints the subnet
+# to use (the requested one or a free alternative).
+#   $1 requested subnet   $2 own network name (skipped on re-deploy)
+#   $3 further reserved subnets   $4 alternatives (space separated)
 check_internal_network_subnet() {
     local requested_subnet="${1:-172.30.0.0/16}"
+    local own_network="${2:-xares-internal}"
+    local reserved="$3"
+    local alternatives_list="${4:-172.28.0.0/16 172.25.0.0/16 10.100.0.0/16}"
 
-    print_status "Checking internal network subnet: $requested_subnet" >&2
+    print_status "Checking subnet for $own_network: $requested_subnet" >&2
 
-    # Get all existing network subnets, excluding our own internal network:
-    # on a re-deploy it already exists with exactly the requested subnet and
-    # would otherwise be reported as a conflict with itself.
-    local existing_subnets=$(docker network ls --format "{{.Name}}" | grep -v 'xares-internal' | while read network; do
+    # Get all existing network subnets, excluding our own network: on a
+    # re-deploy it already exists with exactly the requested subnet and would
+    # otherwise be reported as a conflict with itself.
+    local existing_subnets=$(docker network ls --format "{{.Name}}" | grep -v -- "$own_network" | while read network; do
         docker network inspect "$network" --format '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | grep -v ": $" || true
     done)
+    # The other proxy network may not exist yet, but must not overlap either
+    for subnet in $reserved; do
+        existing_subnets="$existing_subnets
+(reserved for the other proxy network): $subnet"
+    done
 
     if [ -n "$existing_subnets" ]; then
         # Check for overlaps using Python if available
@@ -330,13 +357,13 @@ if conflicts:
 " 2>/dev/null || true)
 
             if [ -n "$conflicts" ]; then
-                print_warning "Internal network subnet $requested_subnet conflicts with:" >&2
+                print_warning "Subnet $requested_subnet for $own_network conflicts with:" >&2
                 echo "$conflicts" | sed 's/^/  - /' >&2
                 echo >&2
 
                 # Suggest alternative
-                local alternatives=("172.31.0.0/16" "172.25.0.0/16" "10.100.0.0/16")
-                for alt in "${alternatives[@]}"; do
+                local alt
+                for alt in $alternatives_list; do
                     # The snippet exits 1 on overlap, 0 when the candidate is
                     # free — so a zero status is what qualifies an alternative.
                     if echo "$existing_subnets" | python3 -c "
@@ -350,10 +377,10 @@ for line in sys.stdin:
             if subnet and '/' in subnet:
                 try:
                     existing = ipaddress.IPv4Network(subnet.strip(), strict=False)
-                    if requested.overlaps(existing):
-                        sys.exit(1)
-                except:
-                    pass
+                except ValueError:
+                    continue
+                if requested.overlaps(existing):
+                    sys.exit(1)
 " 2>/dev/null; then
                         print_success "Suggested alternative subnet: $alt" >&2
                         echo "$alt"
@@ -367,7 +394,7 @@ for line in sys.stdin:
         fi
     fi
 
-    print_success "No conflicts detected for internal network subnet" >&2
+    print_success "No conflicts detected for $own_network subnet" >&2
     echo "$requested_subnet"
     return 0
 }

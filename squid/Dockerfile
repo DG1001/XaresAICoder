@@ -27,5 +27,9 @@ EXPOSE 3128 3130
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:3128/ || exit 1
 
-# Note: We use the base image's entrypoint.sh which properly initializes squid
-# No custom CMD needed - the base image handles everything correctly
+# Sets the workspace subnet ACL from SECURITY_NETWORK_SUBNET, then hands over
+# to the base image's entrypoint.sh. Overriding ENTRYPOINT resets the base
+# image's CMD, so it is repeated here.
+COPY xares-entrypoint.sh /usr/local/bin/xares-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/xares-entrypoint.sh"]
+CMD ["-f", "/etc/squid/squid.conf", "-NYC"]

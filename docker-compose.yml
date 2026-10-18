@@ -15,9 +15,11 @@ services:
     depends_on:
       - server
     networks:
-      xares-aicoder-network:  # External access and server communication
-      xares-internal:          # Workspace access when proxy is enabled
+      xares-control:           # API server and Forgejo (no workspaces)
+      xares-aicoder-network:   # Direct workspaces (no proxy)
+      xares-internal:          # LLM Logging Proxy workspaces
         ipv4_address: 172.30.0.4
+      xares-security:          # Security Proxy workspaces
     restart: unless-stopped
 
   server:
@@ -52,6 +54,8 @@ services:
       - WORKSPACE_SECCOMP=${WORKSPACE_SECCOMP:-default}
       - WORKSPACE_DISK_LIMIT=${WORKSPACE_DISK_LIMIT:-}
       - PROXY_NETWORK=${PROXY_NETWORK:-xaresaicoder_xares-internal}
+      - SECURITY_PROXY_NETWORK=${SECURITY_PROXY_NETWORK:-xaresaicoder_xares-security}
+      - SECURITY_DNSMASQ_IP=${SECURITY_DNSMASQ_IP:-172.31.255.254}
       - WORKSHOP_GROUP=${WORKSHOP_GROUP:-}
       - WORKSHOP_ADMIN_PASSWORD=${WORKSHOP_ADMIN_PASSWORD:-}
       - NGINX_CONTAINER_NAME=${NGINX_CONTAINER_NAME:-xaresaicoder-nginx}
@@ -62,7 +66,8 @@ services:
       - workspace_data:/app/workspaces
       - nginx_dynamic:/app/nginx-dynamic
     networks:
-      - xares-aicoder-network
+      # Only the control network: workspaces must not reach the API directly
+      - xares-control
     restart: unless-stopped
 
   forgejo:
@@ -94,6 +99,7 @@ services:
     ports:
       - "2222:22"  # SSH access for git operations
     networks:
+      - xares-control
       - xares-aicoder-network
     restart: unless-stopped
     healthcheck:
@@ -109,6 +115,9 @@ services:
       dockerfile: Dockerfile
     container_name: xaresaicoder-squid-proxy
     profiles: ["proxy"]
+    environment:
+      # Only clients from this subnet may use the whitelist (squid.conf ACL)
+      - SECURITY_NETWORK_SUBNET=${SECURITY_NETWORK_SUBNET:-172.31.0.0/16}
     volumes:
       - ./squid/certs:/etc/squid/certs:ro
       - squid_logs:/var/log/squid
@@ -116,8 +125,7 @@ services:
       - "3128:3128"  # HTTP proxy port (for debugging/monitoring)
     networks:
       xares-aicoder-network:  # Internet access
-      xares-internal:          # Workspace-facing network
-        ipv4_address: 172.30.0.3
+      xares-security:          # Security Proxy workspaces only
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "timeout", "2", "bash", "-c", "</dev/tcp/localhost/3128"]
@@ -172,17 +180,34 @@ services:
     networks:
       xares-internal:
         ipv4_address: ${DNSMASQ_IP:-172.30.0.2}  # Fixed IP for DNS server
+      xares-security:
+        # Last address: nginx and squid get dynamic addresses on this network
+        # and would otherwise race dnsmasq for .2
+        ipv4_address: ${SECURITY_DNSMASQ_IP:-172.31.255.254}
     restart: unless-stopped
 
 networks:
+  # nginx, API server and Forgejo. Workspaces are never attached.
+  xares-control:
+    driver: bridge
+  # Direct workspaces (no proxy), plus the proxies' internet access
   xares-aicoder-network:
     external: true
+  # LLM Logging Proxy workspaces <-> mitmproxy
   xares-internal:
     driver: bridge
     internal: true  # No internet access - forces traffic through proxy
     ipam:
       config:
         - subnet: ${INTERNAL_NETWORK_SUBNET:-172.30.0.0/16}
+  # Security Proxy workspaces <-> squid. Separate from xares-internal so that
+  # whitelisted workspaces cannot use the unrestricted mitmproxy instead.
+  xares-security:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: ${SECURITY_NETWORK_SUBNET:-172.31.0.0/16}
 
 volumes:
   workspace_data:

@@ -1,6 +1,5 @@
 const Docker = require('dockerode');
 const { v4: uuidv4 } = require('uuid');
-const dns = require('dns').promises;
 
 // Header names whose values are credentials. Captures written before the
 // mitmproxy addon redacted them still contain raw keys, so they are also
@@ -141,7 +140,13 @@ class DockerService {
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
-    this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
+    // Internal networks for proxied workspaces (compose prefixed): one per
+    // proxy, so Security Proxy workspaces cannot reach the unrestricted mitmproxy
+    this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder_xares-internal'; // LLM Logging Proxy
+    this.securityNetwork = process.env.SECURITY_PROXY_NETWORK || 'xaresaicoder_xares-security'; // Security Proxy
+    this.loggingDnsIp = process.env.DNSMASQ_IP || '172.30.0.2'; // dnsmasq on each internal network
+    this.securityDnsIp = process.env.SECURITY_DNSMASQ_IP || '172.31.255.254';
+    this.nginxContainerName = process.env.NGINX_CONTAINER_NAME || 'xaresaicoder-nginx';
     this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
     this.squidProxyHost = 'xaresaicoder-squid-proxy:3128'; // Squid proxy container for security whitelist filtering
     // Default for workspaces that do not choose themselves (per-workspace sudoEnabled)
@@ -161,6 +166,18 @@ class DockerService {
       maxProcessesPerUser: parseInt(process.env.CONTAINER_MAX_PROCS) || 2048,
       maxProcessesPerUserHard: parseInt(process.env.CONTAINER_MAX_PROCS_HARD) || 4096
     };
+  }
+
+  // Docker network a workspace belongs on, by proxy mode
+  networkForProxyMode(proxyMode) {
+    if (proxyMode === 'security') return this.securityNetwork;
+    if (proxyMode === 'logging') return this.proxyNetwork;
+    return this.network;
+  }
+
+  // Every network the platform attaches workspaces to
+  workspaceNetworks() {
+    return [this.network, this.proxyNetwork, this.securityNetwork];
   }
 
   // Single source of truth for workspace container settings. Used by both
@@ -264,8 +281,7 @@ class DockerService {
       envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
     }
 
-    // Use internal network when THIS workspace uses proxy, otherwise use default network
-    const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
+    const workspaceNetwork = this.networkForProxyMode(proxyMode);
 
     const spec = {
       Image: image,
@@ -327,9 +343,9 @@ class DockerService {
         RestartPolicy: {
           Name: 'unless-stopped'
         },
-        // Add DNS server when THIS workspace uses proxy (use dnsmasq on internal network)
+        // dnsmasq on the workspace's internal network (no route to public DNS)
         ...(useProxy && {
-          Dns: [process.env.DNSMASQ_IP || '172.30.0.2']  // dnsmasq container IP
+          Dns: [proxyMode === 'security' ? this.securityDnsIp : this.loggingDnsIp]
         }),
         // Only request GPU access if GPU is enabled
         ...(enableGpu && {
@@ -667,16 +683,29 @@ fi`.trim();
     return false;
   }
 
+  // nginx resolves the workspace name through Docker's DNS when it proxies a
+  // request. The API server shares no network with workspaces, so the lookup
+  // runs inside the nginx container.
   async waitForDnsReady(containerName, maxWaitTime = 10000) {
+    const nginx = this.docker.getContainer(this.nginxContainerName);
     const startTime = Date.now();
     while (Date.now() - startTime < maxWaitTime) {
       try {
-        await dns.lookup(containerName);
-        console.log(`DNS resolved for ${containerName}`);
-        return true;
+        const exec = await nginx.exec({
+          Cmd: ['getent', 'hosts', containerName],
+          AttachStdout: true,
+          AttachStderr: true
+        });
+        await this.streamToString(await exec.start({}));
+        const { ExitCode } = await exec.inspect();
+        if (ExitCode === 0) {
+          console.log(`DNS resolved for ${containerName}`);
+          return true;
+        }
       } catch {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // nginx not running (yet): retry until the deadline
       }
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
     console.warn(`DNS for ${containerName} not ready after ${maxWaitTime}ms, proceeding anyway`);
     return false;
@@ -911,7 +940,7 @@ fi`.trim();
     return projectTypeVar ? projectTypeVar.split('=')[1] : 'unknown';
   }
 
-  // Get workspace container IP address from internal network (for proxy logs filtering)
+  // Get workspace container IP address on its proxy network (for proxy logs filtering)
   async getWorkspaceIPAddress(projectId) {
     const containerName = `workspace-${projectId}`;
 
@@ -919,11 +948,10 @@ fi`.trim();
       const container = this.docker.getContainer(containerName);
       const inspectData = await container.inspect();
 
-      // Get IP from xares-internal network (proxy network)
-      const networks = inspectData.NetworkSettings.Networks;
-      const internalNetwork = networks[this.proxyNetwork];
+      const networks = inspectData.NetworkSettings.Networks || {};
+      const proxyNetwork = networks[this.proxyNetwork] || networks[this.securityNetwork];
 
-      return internalNetwork ? internalNetwork.IPAddress : null;
+      return proxyNetwork ? proxyNetwork.IPAddress : null;
     } catch (error) {
       console.error(`Error getting IP address for project ${projectId}:`, error);
       return null;
@@ -1367,7 +1395,6 @@ fi`.trim();
 
   async startWorkspace(projectId, proxyMode = 'none') {
     const containerName = `workspace-${projectId}`;
-    const useProxy = proxyMode !== 'none';
 
     try {
       // Try to get container by name from Docker API
@@ -1378,15 +1405,11 @@ fi`.trim();
         return { success: true, message: 'Workspace is already running' };
       }
 
-      // Check if container is orphaned (not connected to network)
-      const isOrphaned = await this.isContainerOrphaned(container, useProxy);
-      if (isOrphaned) {
-        console.log(`Container ${containerName} is orphaned, attempting network recovery...`);
-        const recoveryResult = await this.recoverOrphanedContainer(container, containerName, useProxy);
-        if (!recoveryResult.success) {
-          throw new Error(`Network recovery failed: ${recoveryResult.error}`);
-        }
-        console.log(`Network recovery successful for ${containerName}`);
+      // Reattach if its network was recreated, move it if it is on the wrong one
+      try {
+        await this.ensureWorkspaceNetwork(containerName, proxyMode);
+      } catch (error) {
+        throw new Error(`Network recovery failed: ${error.message}`);
       }
 
       await container.start();
@@ -1410,7 +1433,8 @@ fi`.trim();
         status: 'running'
       };
     } catch (error) {
-      if (error.statusCode === 404) {
+      // Docker also answers 404 for a missing network, which is not this case
+      if (error.statusCode === 404 && /no such container/i.test(error.message)) {
         throw new Error('Workspace container not found');
       }
       console.error(`Error starting workspace ${projectId}:`, error);
@@ -1854,76 +1878,100 @@ fi`.trim();
     }
   }
 
-  async isContainerOrphaned(container, useProxy = false) {
+  // Attaches a workspace container to the network of its proxy mode and
+  // detaches it from the other workspace networks. Covers containers whose
+  // network was removed and recreated by `docker compose down/up`, and
+  // containers created before the proxy networks were split. Returns true
+  // if anything changed.
+  async ensureWorkspaceNetwork(containerName, proxyMode = 'none') {
+    const required = this.networkForProxyMode(proxyMode);
+    const info = await this.docker.getContainer(containerName).inspect();
+    const attached = { ...(info.NetworkSettings.Networks || {}) };
+    let changed = false;
+
+    let requiredId;
     try {
-      const containerInfo = await container.inspect();
-      const networks = containerInfo.NetworkSettings.Networks;
-
-      // Determine which network the container should be on
-      const requiredNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      // Check if container is connected to the correct network
-      if (!networks || !networks[requiredNetwork]) {
-        return true; // Orphaned - not connected to required network
-      }
-
-      // Check if the network actually exists
-      const networkExists = await this.ensureNetworkExists();
-      if (!networkExists) {
-        return true; // Network doesn't exist, container is orphaned
-      }
-
-      return false; // Container is properly connected
+      requiredId = (await this.docker.getNetwork(required).inspect()).Id;
     } catch (error) {
-      console.error('Error checking container orphan status:', error);
-      return true; // Assume orphaned on error to be safe
+      if (error.statusCode === 404) {
+        throw new Error(`Network '${required}' does not exist. Run ./deploy.sh (or ./setup-network.sh) first.`);
+      }
+      throw error;
     }
+
+    // A stopped container keeps the ID of a network that `docker compose
+    // down/up` has since recreated under the same name, and Docker then
+    // refuses to start it ("network ... not found"). Disconnecting by name
+    // drops the stale entry so the container can be reattached.
+    const entry = attached[required];
+    if (entry && entry.NetworkID && entry.NetworkID !== requiredId) {
+      await this.docker.getNetwork(required).disconnect({ Container: info.Id, Force: true });
+      delete attached[required];
+      console.log(`Dropped stale entry for recreated network ${required} from ${containerName}`);
+    }
+
+    if (!attached[required]) {
+      await this.docker.getNetwork(required).connect({
+        Container: info.Id,
+        EndpointConfig: { Aliases: [containerName] }
+      });
+      console.log(`Connected ${containerName} to network ${required}`);
+      changed = true;
+    }
+
+    for (const name of this.workspaceNetworks()) {
+      if (name === required || !attached[name]) continue;
+      try {
+        await this.docker.getNetwork(name).disconnect({ Container: info.Id, Force: true });
+      } catch (error) {
+        // The network itself is gone: the entry cannot be removed by name
+        if (error.statusCode !== 404) throw error;
+        console.warn(`Could not disconnect ${containerName} from missing network ${name}`);
+        continue;
+      }
+      console.log(`Disconnected ${containerName} from network ${name} (proxy mode: ${proxyMode})`);
+      changed = true;
+    }
+
+    return changed;
   }
 
-  async recoverOrphanedContainer(container, containerName, useProxy = false) {
-    try {
-      console.log(`Attempting to recover orphaned container: ${containerName}`);
-
-      // Determine which network the container should be on
-      const requiredNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      // Ensure the network exists
-      const networkExists = await this.ensureNetworkExists();
-      if (!networkExists) {
-        return {
-          success: false,
-          error: `Required network '${requiredNetwork}' does not exist. Run ./setup-network.sh first.`
-        };
-      }
-
-      // Get the network object
-      const network = this.docker.getNetwork(requiredNetwork);
-
-      // Connect container to network with alias
-      await network.connect({
-        Container: containerName,
-        EndpointConfig: {
-          Aliases: [containerName]
+  // Runs ensureWorkspaceNetwork for every known workspace on server start.
+  // Failures are logged per workspace; startWorkspace retries them.
+  async migrateWorkspaceNetworks(projects) {
+    let moved = 0;
+    for (const project of projects) {
+      const containerName = `workspace-${project.projectId}`;
+      try {
+        if (await this.ensureWorkspaceNetwork(containerName, project.proxyMode || 'none')) moved++;
+      } catch (error) {
+        if (error.statusCode !== 404) {
+          console.warn(`Could not check network of ${containerName}: ${error.message}`);
         }
-      });
-
-      console.log(`Successfully connected ${containerName} to network ${requiredNetwork}`);
-      return { success: true, message: 'Container recovered successfully' };
-      
-    } catch (error) {
-      console.error(`Failed to recover container ${containerName}:`, error);
-      
-      // If connection failed, check if it's because it's already connected
-      if (error.message && error.message.includes('already exists')) {
-        console.log(`Container ${containerName} is already connected to network`);
-        return { success: true, message: 'Container was already connected' };
       }
-      
-      return { 
-        success: false, 
-        error: `Network recovery failed: ${error.message}` 
-      };
     }
+    if (moved > 0) console.log(`Updated the network attachment of ${moved} workspace(s)`);
+  }
+
+  // Subnets of all workspace networks with their gateways. nginx denies the
+  // platform API to these subnets; a gateway stays allowed because traffic
+  // from the host itself (and Docker Desktop's port forwarding) arrives from
+  // there.
+  async getWorkspaceNetworkRanges() {
+    const ranges = [];
+    for (const name of this.workspaceNetworks()) {
+      let info;
+      try {
+        info = await this.docker.getNetwork(name).inspect();
+      } catch (error) {
+        if (error.statusCode === 404) continue;
+        throw error;
+      }
+      for (const cfg of (info.IPAM && info.IPAM.Config) || []) {
+        if (cfg.Subnet) ranges.push({ network: name, subnet: cfg.Subnet, gateway: cfg.Gateway || null });
+      }
+    }
+    return ranges;
   }
 
   async validateNetworkHealth() {

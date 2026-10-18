@@ -187,21 +187,28 @@ tmpfs:
 
 ### Network Isolation
 
-```yaml
-networks:
-  xares-aicoder-network:
-    driver: bridge
-    internal: false              # Internet access allowed
-    ipam:
-      config:
-        - subnet: 172.19.0.0/16  # Isolated subnet
-```
+Workspaces never share a network with the API server, and each proxy mode has
+its own network:
 
-**Network Security**:
-- **Isolated Subnet** - Separate from host network
-- **Service Discovery** - Container name resolution only
-- **Port Isolation** - Ports only accessible via proxy
-- **No Direct Access** - External access only through nginx
+| Network | Internal | Members |
+|---------|----------|---------|
+| `xares-control` | no | nginx, API server, Forgejo — **no workspaces** |
+| `xares-aicoder-network` (external) | no | Direct workspaces (no proxy), nginx, Forgejo; squid/mitmproxy use it for internet access |
+| `xares-internal` (`INTERNAL_NETWORK_SUBNET`) | yes | LLM Logging Proxy workspaces, mitmproxy, nginx, dnsmasq |
+| `xares-security` (`SECURITY_NETWORK_SUBNET`) | yes | Security Proxy workspaces, squid, nginx, dnsmasq |
+
+**What this enforces**:
+- **API server unreachable from workspaces** - It sits only on `xares-control`; no workspace can resolve or reach `server:3000`.
+- **No proxy hopping** - A Security Proxy workspace cannot use the unrestricted mitmproxy to bypass the whitelist, and Logging Proxy workspaces cannot reach squid. Squid only accepts clients from `SECURITY_NETWORK_SUBNET`.
+- **No platform API via nginx** - nginx must share a network with every workspace to proxy code-server and app ports. `location /api/` therefore denies all workspace subnets (403). The API server generates the rules from the live Docker networks on every start (`/etc/nginx/dynamic/api-access.conf`). Requests that arrive through mitmproxy or squid are denied as well, because the proxies reach nginx from a workspace subnet.
+- **Existing workspaces are migrated** - On start the API server moves every workspace to the network of its proxy mode, and `start` repairs containers whose network was recreated by `docker compose down/up`.
+
+Still allowed on purpose: workspaces can reach each other's ports (also via nginx subdomains — clones require a password for that reason), the workspace UI and app subdomains through nginx, and Forgejo (direct workspaces, see "Git Server Credentials" below).
+
+**Limitation — traffic relayed by the host.** nginx tells workspaces apart from legitimate clients by source address. The bridge gateway (e.g. `172.19.0.1`) stays allowed, because the host itself and Docker Desktop's port forwarding reach nginx from there. Anything a workspace can send *through the host's published port* therefore looks like a host request:
+- **Docker Desktop**: `host.docker.internal:<HOST_PORT>` reaches nginx from the gateway — from direct workspaces and through mitmproxy. Binding `HOST_PORT` to `127.0.0.1` does not help there. Do not run untrusted participants on Docker Desktop.
+- **Linux, Docker 28** (verified behaviour on Docker 28.5): requests to a gateway or host address keep the workspace's source address (403); internal networks (`xares-internal`, `xares-security`) cannot reach published host ports at all. Older Docker versions with the userland proxy can relay such requests from the gateway address. Mitigations: bind `HOST_PORT` to `127.0.0.1` when a reverse proxy on the same host fronts the platform, or block the workspace subnets from the host's published ports in the firewall (`DOCKER-USER`/`INPUT`).
+- The public URL: any workspace with internet access (direct, LLM Logging Proxy, or Security Proxy if the platform's own domain is whitelisted) reaches the platform like any other client. The API itself has no login yet, so protect the dashboard with an outer access layer and do not whitelist the platform's own domain for Security Proxy workspaces.
 
 ## Network Security
 

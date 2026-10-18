@@ -596,8 +596,9 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 
 - **Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
   `git push` mit „src refspec … does not match any“ scheitert (Workspace ohne Commits).
-- **`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen – der Workspace
-  war trotzdem sofort über nginx erreichbar; der Check scheint nicht zu greifen.
+- ~~**`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen~~ – behoben in
+  2.4: Der Server konnte die Namen von Proxy-Workspaces nie auflösen (anderes Netz);
+  die Prüfung läuft jetzt in nginx.
 - **Alias direkt nach dem Anlegen** liefert kurz 404 (nginx-Reload ist asynchron); das
   API meldet bereits Erfolg.
 - Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env
@@ -607,7 +608,7 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 
 ## Paket 2 – Isolation (Variante 2: Teilnehmer gelten als nicht vertrauenswürdig)
 
-Branch `security/paket-2`, aufgesetzt auf `security/paket-1` (PR #3 noch offen).
+Branch `security/paket-2`, aufgesetzt auf `security/paket-1` (PR #3 am 2026-10-18 in `main` gemergt).
 
 ### Entscheidungen vorab (2026-10-03)
 
@@ -756,3 +757,135 @@ HostConfig, bis sie neu erstellt werden.
   ungültiger Wert wird von Codex abgelehnt (Gegenprobe).
 - Auf Docker Desktop (Backing FS `extfs`) ist Disk-Quota nicht verfügbar – nur die
   Erkennung/Warnung ist getestet.
+
+### 2.4 Netzsegmentierung: API-Server, Proxy-Netze, `/api/` aus Workspaces
+
+**Problem**
+- Workspaces ohne Proxy hingen mit dem API-Server im selben Netz und erreichten
+  `server:3000` direkt – an nginx und einer äußeren Zugangskontrolle vorbei.
+- Security- und Logging-Proxy teilten sich `xares-internal`: Ein Security-Workspace
+  konnte statt squid einfach den uneingeschränkten mitmproxy (`172.30.0.5:8080`)
+  nutzen und so die Whitelist komplett umgehen.
+- nginx hängt zwangsläufig in jedem Workspace-Netz (es leitet code-server und App-Ports
+  weiter); `/api/` war darüber für jeden Workspace offen – inkl. `PUT /api/whitelist`.
+
+**Änderung**
+- `docker-compose.yml`: neues Netz `xares-control` (nginx, Server, Forgejo); der Server
+  hängt **nur** noch dort. Neues internes Netz `xares-security`
+  (`SECURITY_NETWORK_SUBNET`, Standard `172.31.0.0/16`) für Security-Workspaces mit
+  squid, nginx und dnsmasq; `xares-internal` bleibt für Logging-Workspaces und
+  mitmproxy (squid ist dort raus). dnsmasq hängt in beiden internen Netzen.
+- squid: `xares-entrypoint.sh` setzt die ACL `internal_network` beim Start aus
+  `SECURITY_NETWORK_SUBNET` (vorher fest `172.30.0.0/16` in `squid.conf`); der
+  Whitelist-Generator definiert die ACL nicht mehr ein zweites Mal.
+- `docker.js`:
+  - `networkForProxyMode()` / `workspaceNetworks()`; `buildContainerSpec` wählt Netz
+    und DNS (dnsmasq im jeweiligen Netz) pro Modus. `getWorkspaceIPAddress` liest die
+    IP aus dem Logging- **oder** Security-Netz.
+  - `ensureWorkspaceNetwork()` ersetzt `isContainerOrphaned`/`recoverOrphanedContainer`:
+    verbindet mit dem Netz des Modus, trennt von den anderen Workspace-Netzen
+    (fremde Netze bleiben unberührt) und entfernt **veraltete Netz-IDs** (siehe unten).
+    Läuft bei jedem `start` und für alle Workspaces beim Serverstart
+    (`migrateWorkspaceNetworks`).
+  - `getWorkspaceNetworkRanges()` liefert Subnetze und Gateways der Workspace-Netze.
+  - `waitForDnsReady` fragt per `getent hosts` im nginx-Container (der Server teilt
+    kein Netz mehr mit Workspaces).
+- `aliasesService.writeApiAccessConfig()` schreibt `api-access.conf`
+  (`allow <Gateway>; … deny <Subnetz>; …`, Werte validiert); `nginx-base.conf.template`
+  bindet sie in `location /api/` ein (Glob → optional beim allerersten Boot).
+  `index.js` schreibt sie beim Start als Erstes, danach Migration und Alias-Config.
+- `deploy.sh`: `configure_proxy_subnet` prüft beide Proxy-Subnetze auf Konflikte (auch
+  gegeneinander) und schreibt Alternativen samt dnsmasq-Adresse in `.env`. Zwei
+  vorbestehende Fehler behoben: Im Alternativen-Check fing `except: pass` das
+  `sys.exit(1)` ab (jede Alternative galt als frei), und `x=$(…)` brach unter `set -e`
+  das Deploy ab, wenn keine Alternative gefunden wurde.
+- `.env.example`: `SECURITY_NETWORK_SUBNET`, `SECURITY_DNSMASQ_IP`,
+  `SECURITY_PROXY_NETWORK`; Hinweis zu `HOST_PORT=127.0.0.1:<port>`.
+- Doku: `SECURITY.md` (Network Isolation inkl. Restrisiken), `PROXY_ARCHITECTURE.md`.
+  Die übrigen Erwähnungen von `xares-internal`/`172.30` in der Doku folgen in 2.7.
+
+**Entscheidungen**
+- **Logging bleibt in `xares-internal`, Security bekommt das neue Netz**: Mitschnitte
+  hängen an der Client-IP. Ein Umzug der Logging-Workspaces hätte ihre IPs und damit die
+  Zuordnung der vorhandenen Mitschnitte verändert; Squid-Logs werden nur live gelesen.
+- **dnsmasq bleibt** für beide internen Netze: Ohne eigenen DNS-Server könnten externe
+  Namen je nach Docker-Version über den Host aufgelöst werden (Exfiltration per DNS).
+  Im Security-Netz liegt dnsmasq auf der **letzten** Adresse (`172.31.255.254`): nginx
+  und squid haben dort dynamische Adressen, squid bekam beim Deploy prompt `.2`.
+- **Sperre per Quell-Subnetz, Gateways erlaubt**: Vom Gateway kommen der Host selbst und
+  die Port-Weiterleitung von Docker Desktop (der Browser des Admins). Welches Netz nginx'
+  „Veröffentlichungsnetz“ ist, legt Docker selbst fest (hier `xares-aicoder-network`) –
+  die Gateway-Ausnahme macht die Regel davon unabhängig.
+- **Regeln aus den echten Netzen generiert** statt aus `.env`: Das Subnetz von
+  `xares-aicoder-network` wählt `setup-network.sh` ggf. selbst; IPv6-Subnetze werden mit
+  erfasst.
+- **Kein Ziel-Filter in mitmproxy**: Lokale Modelle (`host.docker.internal`, LAN-IPs)
+  sind ausdrücklich ein Logging-Feature; ein Filter auf private Ziele hätte es zerstört,
+  ein Filter nur auf `HOST_PORT` wäre bei `HOST_PORT=8000` (vLLM-Standard) ebenso
+  kollidiert und hätte direkte Workspaces (gleicher Weg ohne Proxy) nicht geschützt.
+
+**Beim Live-Test gefunden und behoben**: Gestoppte Proxy-Workspaces ließen sich nach
+einem Deploy **nicht mehr starten**. `docker compose down` entfernt `xares-internal`,
+wenn kein laufender Container daran hängt; der gestoppte Container behält die alte
+Netz-ID, Docker antwortet beim Start mit 404 („network … not found“), und die API
+meldete irreführend „Workspace container not found“. Betroffen war der vorhandene
+Workspace „newtest“. `ensureWorkspaceNetwork` trennt den veralteten Eintrag per Name
+und verbindet neu; die 404-Meldung gilt nur noch für fehlende Container.
+
+**Tests**
+- Unit (gemockte Docker-API): Netz/DNS pro Modus; Migration (alt→neu, verwaist,
+  falsches + fremdes Netz, idempotent); fehlendes Netz → klare Meldung; veraltete
+  Netz-ID → trennen + verbinden; fehlendes falsches Netz → Warnung; IP-Lookup;
+  `api-access.conf` inkl. IPv6 und Injection-Versuchen; DNS-Check über nginx;
+  Whitelist-Abschnitt ohne eigene ACL. `deploy.sh`: Subnetzwahl mit Fake-`docker` für
+  5 Fälle (frei, Re-Deploy, fremdes Netz auf 172.31 bzw. 172.30 bei belegtem
+  Security-Subnetz, alles belegt → kein Abbruch).
+- Live (Docker Desktop, Engine 28.5.1), nach Backup von `workspace_data`,
+  `nginx_dynamic`, `mitmproxy_logs`; Deploy mit `--enable-proxy --git-server
+  --skip-build --skip-env --skip-network`:
+  - Netze wie geplant; Server nur in `xares-control`; `api-access.conf` mit
+    `allow 172.19.0.1` und `deny` für 172.19/16, 172.30/16, 172.31/16 (interne Netze
+    haben kein Gateway). Health-Check vom Host → 200.
+  - Je ein Workspace pro Modus, in ~15 s bereit, DNS-Check über nginx sofort grün.
+    Erreichbarkeit:
+
+    | aus … | Server | `/api/` via nginx | mitmproxy | squid | Host-Gateway `/api/` |
+    |-------|--------|-------------------|-----------|-------|----------------------|
+    | ohne Proxy | – | 403 | – | erreichbar (400) | 403 |
+    | Security | – | 403 | **–** | ✔ | – |
+    | Logging | – | 403 | ✔ | – | – |
+    | Security via squid | 403 | 403 | | | 403 |
+    | Logging via mitmproxy | 502 | 403 | | | 403 |
+
+    Workspace-UI über nginx (302) und Forgejo-Web (`/git/`) bleiben erreichbar;
+    squid lässt `pypi.org` durch und sperrt `example.com`.
+  - Migration: laufender Security-Workspace künstlich ins alte Netz gehängt →
+    Serverstart verschiebt ihn; gestoppt → `start` verschiebt ihn; squid danach ✔,
+    mitmproxy –. „newtest“ (veraltete Netz-ID) beim Serverstart repariert, startet,
+    erreichbar, wieder gestoppt.
+  - Mitschnitt im Logging-Workspace (Fake-Key) → per API für das richtige Projekt,
+    Key redigiert; Recorded Domains über `172.30.0.3`; Squid-Logs des Security-
+    Workspaces gefiltert. Whitelist `PUT` → nur noch eine `internal_network`-ACL
+    (`172.31.0.0/16`), `squid -k parse` fehlerfrei, `example.org` danach erlaubt.
+  - Klon eines Security-Workspaces landet in `xares-security` mit dnsmasq-DNS.
+  - Docker-Verhalten (Wegwerf-Netze): interne Netze erreichen veröffentlichte Host-Ports
+    nicht; aus einem anderen Bridge-Netz gesperrt; aus demselben Netz wie nginx kommt die
+    Anfrage mit der eigenen Container-IP an (→ 403).
+  - Aufgeräumt: Test-Workspaces gelöscht, squid neu erstellt (Standard-Whitelist),
+    Test-Mitschnitte/Domain-Dateien entfernt; vorhandene Mitschnitte unverändert
+    (nichts archiviert). 27 Projekte wie vorher.
+
+**Restrisiko (bewusst offen, dokumentiert in `SECURITY.md`)**: Was über den
+**veröffentlichten Host-Port** zurückkommt, sieht für nginx aus wie der Host selbst.
+Unter Docker Desktop erreicht `host.docker.internal:80` die API aus direkten Workspaces
+und über mitmproxy (**200**); `HOST_PORT=127.0.0.1:…` hilft dort nicht (getestet).
+Unter Linux mit Docker 28 bleibt die Quelladresse erhalten (→ 403); ältere Versionen
+mit Userland-Proxy oder ein Reverse Proxy ohne Auth vor der öffentlichen URL öffnen den
+Weg wieder. Belastbar schließen lässt sich das nur mit einem **Login für die API** (als
+Feature vorgemerkt) oder per Host-Firewall – Vorschlag als eigener Schritt.
+
+**Gilt für bestehende Installationen**: Squid-Image wird neu gebaut (Entrypoint),
+`build/nginx.conf.template` von `deploy.sh` neu erzeugt. Migrierte Security-Workspaces
+behalten ihr altes `HostConfig.Dns` (`172.30.0.2`, im neuen Netz unerreichbar) – ohne
+Wirkung, da externe Namen dort ohnehin nicht auflösbar sind und Containernamen über
+Dockers DNS laufen.
