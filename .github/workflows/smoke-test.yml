@@ -22,6 +22,11 @@ jobs:
     # Fixed image: ubuntu-latest moves to a new release on its own
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    defaults:
+      run:
+        # Explicit, so steps run with pipefail: without it a failing
+        # deploy.sh or smoke test piped into tee counts as success
+        shell: bash
 
     steps:
       - name: Checkout repository
@@ -48,7 +53,10 @@ jobs:
           ./deploy.sh --git-server --enable-proxy < /dev/null 2>&1 | tee deploy.log
 
       - name: Smoke test
-        run: tests/smoke-test.sh --backup 2>&1 | tee smoke.log
+        run: |
+          tests/smoke-test.sh --backup 2>&1 | tee smoke.log
+          # The result line on the run page (and readable through the API)
+          echo "::notice title=Smoke test::$(tail -n 1 smoke.log | sed 's/\x1b\[[0-9;]*m//g')"
 
       - name: Diagnostics
         if: failure()
@@ -65,6 +73,13 @@ jobs:
             [ -z "$text" ] || echo "::error title=$1::$text"
           }
           [ ! -f deploy.log ] || annotate "deploy.sh" 60 < deploy.log
+          {
+            curl -sv --max-time 5 http://localhost/api/health 2>&1 | grep -E '^(< HTTP|\* Connected|\* connect|\{)'
+            echo "api-access.conf:"
+            docker exec xaresaicoder-nginx cat /etc/nginx/dynamic/api-access.conf
+            echo "nginx networks:"
+            docker inspect -f '{{range $n, $c := .NetworkSettings.Networks}}{{$n}} {{$c.IPAddress}} gw {{$c.Gateway}}{{println}}{{end}}' xaresaicoder-nginx
+          } 2>&1 | annotate "Health probe" 40
           [ ! -f smoke.log ] || annotate "Smoke test" 60 < smoke.log
           docker compose --profile git-server --profile proxy logs --no-color --tail 15 2>&1 | annotate "Service logs" 90
           docker ps -a
