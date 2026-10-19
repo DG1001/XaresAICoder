@@ -1263,3 +1263,36 @@ Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinnin
   squid neu erstellt → weiterhin erlaubt; komplettes Deploy → weiterhin erlaubt,
   Secrets unverändert. Danach Standard-Whitelist wiederhergestellt, Test-Workspace
   und Forgejo-Testnutzer entfernt.
+
+### 3.2 Sticky Feature-Flags, Node 22 / `npm ci`, Image-Pinning
+
+**Problem**
+- `deploy.sh` ohne `--git-server` bzw. `--enable-proxy` schrieb `ENABLE_*=false` in
+  `.env` – ein vergessenes Flag schaltete Git-Server oder Proxy unbemerkt ab.
+- Der API-Server lief auf `node:18-alpine` (seit April 2025 ohne Support) und
+  installierte mit `npm install` (nicht reproduzierbar, inkl. Dev-Abhängigkeiten).
+- `nginx:alpine`, `forgejo:9`, `mitmproxy:latest`, `dnsmasq:latest`,
+  `ubuntu/squid:latest`, `codercom/code-server:latest`: Jeder Rebuild konnte andere
+  Versionen bringen (in 2.7 kam so ungeplant ein neues Debian-Basisimage).
+
+**Änderung**
+- `deploy.sh`: `set_feature_flag` – Flag gesetzt → an, neue `--disable-git-server` /
+  `--disable-proxy` → aus, ohne Flag bleibt der Wert aus `.env`. Die Subnetzprüfung
+  läuft, wenn der Proxy *effektiv* aktiv ist, ebenso die CA-Erzeugung.
+- `server/Dockerfile`: `node:22-alpine`, `npm ci --omit=dev`.
+- Pinning auf die **laufenden** Versionen (kein Versionssprung): `nginx:1.29.0-alpine`,
+  `forgejo:9.0.3`, `mitmproxy:12.2.1`, `codercom/code-server:4.141.0`; dnsmasq
+  (2.84rc2) und squid (6.13) per Digest, weil kein Versions-Tag zum laufenden Build
+  passt (`ubuntu/squid:6.13-25.04_*` hat einen anderen Digest). Node nur auf die
+  Hauptversion – Sicherheits-Patches sollen mit Rebuilds kommen.
+- KI-Tools im Code-Server-Image bleiben bewusst auf `latest` (`update_ai_agents`).
+- Doku: `DEPLOYMENT.md` („Pinned versions“, Upgrade-Tabelle).
+
+**Tests (live)**
+- Deploy **ohne** Feature-Flags und ohne `--skip-env`: „Keeping … ENABLE_GIT_SERVER=true /
+  ENABLE_PROXY=true“, Subnetzprüfung lief, `.env` unverändert, Git-Server-Setup ✔.
+- Laufende Dienste genau in den gepinnten Versionen; Server Node 22.23.3, `npm ci`
+  (166 Pakete). Login, Projektliste, Whitelist ✔; Workspace mit Repo angelegt, UI 302,
+  gelöscht (Forgejo-Testnutzer entfernt).
+- Code-Server-Image mit gepinnter Basis gebaut: alle Schritte aus dem Cache, gleiche
+  Image-ID wie zuvor → Basis identisch mit dem bisherigen `latest`.

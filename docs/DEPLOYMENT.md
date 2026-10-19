@@ -307,6 +307,16 @@ To switch between environments:
    # OR: docker-compose up --build -d
    ```
 
+## Pinned versions
+
+Service images and Dockerfile bases are pinned so a rebuild produces the same stack:
+`nginx:1.29.0-alpine`, `codeberg.org/forgejo/forgejo:9.0.3`, `mitmproxy/mitmproxy:12.2.1`
+(in `docker-compose.yml`), `andyshinn/dnsmasq` and `ubuntu/squid` by digest (no version
+tag matches the builds in use), `codercom/code-server:4.141.0`, and `node:22-alpine`
+for the API server (major pinned, patch updates come with rebuilds). To update, change
+the version, redeploy and test. The AI tools inside the code-server image deliberately
+stay on their latest releases (`update_ai_agents` inside a workspace).
+
 ## Upgrading Existing Installations
 
 The security hardening (packages 1 and 2, see `docs/DEVLOG.md`) changes how the
@@ -332,6 +342,8 @@ What changes:
 | Workshop admin | Dashboard session or `X-Admin-Password` header (never in the URL) | — |
 | Protected workspaces | API calls for clone, aliases, ports, logs, documentation need `X-Workspace-Password` | Update scripts |
 | Whitelist | IP addresses, URLs and single labels are rejected; the applied whitelist now lives on the volume `squid_whitelist` and survives redeploys | Re-apply your whitelist once after the upgrade (it was reset by every deploy before); delete the volume to return to the default |
+| `deploy.sh` flags | Feature flags are sticky: `--git-server` / `--enable-proxy` switch on, the new `--disable-git-server` / `--disable-proxy` switch off; without a flag the `.env` value is kept | Scripts that relied on "no flag = off" must pass `--disable-…` |
+| Images | Server on Node 22 with `npm ci`; nginx, Forgejo, mitmproxy, squid, dnsmasq and the code-server base are pinned to fixed versions (see "Pinned versions") | Nothing; updates happen deliberately by editing the version |
 | Forgejo secret key | The compose file shipped a public placeholder as `SECRET_KEY`; `deploy.sh` now generates `FORGEJO_SECRET_KEY` | Everybody is logged out of the Forgejo web UI once; 2FA, push mirrors and Actions secrets set up before must be set up again. Without `deploy.sh`, set `FORGEJO_SECRET_KEY` in `.env` (compose refuses to start otherwise) |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
