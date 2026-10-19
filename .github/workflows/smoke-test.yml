@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - ops/paket-3  # until Paket 3 is merged
   workflow_dispatch:
 
 concurrency:

@@ -20,7 +20,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 |-------|--------|--------|
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
-| 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | 🚧 in Arbeit (Branch `ops/paket-3`) |
+| 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 
 ---
 
@@ -1441,3 +1441,27 @@ Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinnin
 - Deploy ohne `--skip-env` mit `</dev/null`: läuft durch, `.env` von `644` auf `600`.
 - Zweiter Lauf mit `--backup`: alle 36 Prüfungen grün in 82 s; danach 27 Projekte,
   27 Workspace-Container, 28 Forgejo-Nutzer wie vorher, keine Temp-Verzeichnisse.
+
+**CI auf GitHub** (fünf Läufe bis grün; die Job-Logs brauchen Admin-Rechte auf
+`DG1001/XaresAICoder`, daher Fehler jetzt auch als Annotationen)
+- Lauf 1 (`ubuntu-latest`): Deploy scheitert am Health-Check. Lauf 2 nur *scheinbar*
+  grün: Ohne ausdrückliches `shell: bash` laufen Schritte mit `bash -e` **ohne
+  `pipefail`**, `deploy.sh … | tee` zählte daher immer als Erfolg. → `shell: bash` für
+  den Job; bei Fehlern die Log-Enden, eine Health-Probe (`curl -v`,
+  `api-access.conf`, nginx-Netze) und bei Erfolg die Ergebniszeile als Annotation.
+- Lauf 3 zeigte die Ursache: **403** auf `/api/health`, `api-access.conf` ohne
+  `allow`-Zeile. Docker unter Linux trägt ein selbst vergebenes Gateway nicht in
+  `IPAM.Config` ein (Docker Desktop schon), `deny 172.19.0.0/16` sperrte so auch den
+  Host – **jede frische Linux-Installation seit 2.4** war über `localhost` ohne API,
+  `deploy.sh` brach ab. → `networkGateway()` in `docker.js`: fehlt das Gateway, gilt
+  bei nicht internen Netzen die erste Adresse des Subnetzes (Dockers Standard, von
+  Docker reserviert); interne Netze bekommen keine Ausnahme. Lokal unverändert
+  (gleiche `api-access.conf`, Health 200); Ausweichwerte mit Testdaten geprüft.
+- Lauf 4: Deploy grün, Smoke-Test 502 – `deploy.sh` erzeugt beim ersten Deploy am
+  Ende den Server neu (Rotation des Forgejo-Admin-Passworts), der Test kam zu früh.
+  → Der Smoke-Test wartet bis zu 60 s auf die API. Außerdem `tr`s harmloses „Broken
+  pipe“ (CI ignoriert `SIGPIPE`) aus dem Deploy-Log entfernt.
+- Lauf 5: Deploy 3:46 min, Smoke-Test 1 min, „All 36 checks passed“.
+- Runner fest auf `ubuntu-24.04` (`ubuntu-latest` wechselt ab 2026-10-19 auf Ubuntu
+  26), `actions/checkout@v5` (Node 24). Der vorübergehende Trigger auf `ops/paket-3`
+  ist vor dem Merge wieder entfernt.
