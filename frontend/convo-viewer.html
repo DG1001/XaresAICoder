@@ -321,6 +321,8 @@ async function loadDocumentation(password){
     body: JSON.stringify({ format: "markdown", type: params.get("type") || "detailed" })
   });
   if (r.status === 401){
+    const body = await r.clone().json().catch(() => ({}));
+    if (body.code === "LOGIN_REQUIRED") throw new Error("Nicht angemeldet – bitte im Dashboard anmelden und diese Seite neu laden.");
     const pw = prompt(password ? "Falsches Passwort. Workspace-Passwort:" : "Workspace-Passwort:");
     if (pw === null) throw new Error("Passwort erforderlich");
     return loadDocumentation(pw);

@@ -58,6 +58,9 @@ services:
       - SECURITY_DNSMASQ_IP=${SECURITY_DNSMASQ_IP:-172.31.255.254}
       - WORKSHOP_GROUP=${WORKSHOP_GROUP:-}
       - WORKSHOP_ADMIN_PASSWORD=${WORKSHOP_ADMIN_PASSWORD:-}
+      # Dashboard/API login; without it the API stays locked (deploy.sh generates one)
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - ADMIN_SESSION_HOURS=${ADMIN_SESSION_HOURS:-12}
       - NGINX_CONTAINER_NAME=${NGINX_CONTAINER_NAME:-xaresaicoder-nginx}
       - NGINX_DYNAMIC_DIR=/app/nginx-dynamic
       - NGINX_VIEW_DIR=/etc/nginx/dynamic

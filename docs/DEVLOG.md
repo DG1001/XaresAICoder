@@ -19,7 +19,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | Paket | Inhalt | Status |
 |-------|--------|--------|
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
-| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | 🚧 in Arbeit (Branch `security/paket-2`, Variante 2) |
+| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | 🚧 in Arbeit (Branch `security/paket-2`, Variante 2) |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
 
 ---
@@ -628,8 +628,9 @@ Branch `security/paket-2`, aufgesetzt auf `security/paket-1` (PR #3 am 2026-10-1
 | 2.3 | Härtung: sudo pro Workspace, echtes CPU-Limit (`NanoCpus`), seccomp-Standardprofil (konfigurierbar), Disk-Quota wo das Host-Dateisystem es kann | 2.1 |
 | 2.4 | Netzsegmentierung: API-Server nur noch im Control-Netz, getrennte interne Netze für Security- und Logging-Proxy, nginx sperrt `/api/` für Workspace-Subnetze, Migration bestehender Workspaces beim Start | 2.1 |
 | 2.5 | Feste IPs für Proxy-Workspaces → Mitschnitte bleiben dauerhaft beim richtigen Projekt | 2.4 |
-| 2.6 | Forgejo: eigener Nutzer + Token pro Workspace, kein `GIT_ADMIN_PASSWORD` mehr in Workspaces; Klone bekommen einen **Fork** statt eines Branches im gemeinsamen Repo (Vorschlag, siehe dort) | 2.4 |
-| 2.7 | Doku, Upgrade-Hinweise, Live-Test | alle |
+| 2.6 | API-Login (vorgezogen, schließt das Restrisiko aus 2.4) | 2.4 |
+| 2.7 | Forgejo: eigener Nutzer + Token pro Workspace, kein `GIT_ADMIN_PASSWORD` mehr in Workspaces; Klone bekommen einen **Fork** statt eines Branches im gemeinsamen Repo (Vorschlag, siehe dort) | 2.4 |
+| 2.8 | Doku, Upgrade-Hinweise, Live-Test | alle |
 
 ### 2.1 Ein Container-Bauplan für Create und Clone
 
@@ -802,7 +803,7 @@ HostConfig, bis sie neu erstellt werden.
 - `.env.example`: `SECURITY_NETWORK_SUBNET`, `SECURITY_DNSMASQ_IP`,
   `SECURITY_PROXY_NETWORK`; Hinweis zu `HOST_PORT=127.0.0.1:<port>`.
 - Doku: `SECURITY.md` (Network Isolation inkl. Restrisiken), `PROXY_ARCHITECTURE.md`.
-  Die übrigen Erwähnungen von `xares-internal`/`172.30` in der Doku folgen in 2.7.
+  Die übrigen Erwähnungen von `xares-internal`/`172.30` in der Doku folgen in 2.8.
 
 **Entscheidungen**
 - **Logging bleibt in `xares-internal`, Security bekommt das neue Netz**: Mitschnitte
@@ -882,7 +883,7 @@ und über mitmproxy (**200**); `HOST_PORT=127.0.0.1:…` hilft dort nicht (getes
 Unter Linux mit Docker 28 bleibt die Quelladresse erhalten (→ 403); ältere Versionen
 mit Userland-Proxy oder ein Reverse Proxy ohne Auth vor der öffentlichen URL öffnen den
 Weg wieder. Belastbar schließen lässt sich das nur mit einem **Login für die API** (als
-Feature vorgemerkt) oder per Host-Firewall – Vorschlag als eigener Schritt.
+Feature vorgemerkt) oder per Host-Firewall – umgesetzt als Login in 2.6.
 
 **Gilt für bestehende Installationen**: Squid-Image wird neu gebaut (Entrypoint),
 `build/nginx.conf.template` von `deploy.sh` neu erzeugt. Migrierte Security-Workspaces
@@ -966,3 +967,87 @@ Workspaces erschienen beim nächsten Besitzer derselben IP.
 Adressen (Log: `Fixed proxy IP for …`). Mitschnitte gestoppter Alt-Workspaces, die
 unter ihrer früheren dynamischen IP liegen, werden ihnen nicht zugeordnet – das war
 schon vorher nicht verlässlich der Fall.
+
+### 2.6 API-Login
+
+**Problem**: Die Plattform-API hatte keine Anmeldung – wer das Dashboard erreichte,
+konnte alle ungeschützten Workspaces steuern, die Whitelist ändern usw. Die
+Netzsegmentierung (2.4) hält Workspaces nur fern, solange sie nicht über den
+veröffentlichten Host-Port kommen; unter Docker Desktop ging das per
+`host.docker.internal` (live nachgewiesen), hinter einem Reverse Proxy ohne Auth
+über die öffentliche URL.
+
+**Entscheidungen vorab (2026-10-19, mit dir abgestimmt)**
+
+| Frage | Entscheidung |
+|-------|--------------|
+| Login-Modell | **Ein gemeinsames Admin-Passwort** (`ADMIN_PASSWORD`), Session-Cookie, Login-Dialog im Dashboard. Rollen später. |
+| Ohne Passwort | **API gesperrt** (503); `deploy.sh` erzeugt eins. |
+| Workspace-Passwörter | **Weiter abfragen**, auch für eingeloggte Admins. |
+| Workshop-Admin-Seite | Nimmt **zusätzlich** die Dashboard-Session; `WORKSHOP_ADMIN_PASSWORD` bleibt optional. |
+
+**Änderung**
+- `services/auth.js` (neu): signierte Session-Tokens (`<Ablauf>.<Nonce>.<HMAC>`),
+  Schlüssel aus `/app/workspaces/.session-secret` (0600, überlebt Neustarts) gemischt
+  mit dem Passwort → Passwortwechsel beendet alle Sessions. Cookie `xares_admin`:
+  HttpOnly, SameSite=Strict, host-only, `Secure` bei `PROTOCOL=https`, Laufzeit
+  `ADMIN_SESSION_HOURS` (12). Logout widerruft die Nonce. Rate-Limit: 10 Fehlversuche
+  pro Client (`X-Real-IP`) in 15 Minuten → 429. Middleware `requireLogin` für
+  `/api/*` außer Health, `/api/auth/*`, `/api/workshop/*` (dort eigene Prüfung).
+- **CSRF**: Workspace-Apps laufen auf Subdomains – *same-site*, der Browser schickt
+  SameSite=Strict-Cookies mit. Schreibende Requests mit fremdem `Origin`-Hostnamen,
+  `Origin: null` oder `Sec-Fetch-Site: same-site/cross-site` → 403. Clients ohne
+  diese Header (curl) sind keine Browser und brauchen ohnehin das Cookie.
+- `routes/auth.js` (neu): `POST /login`, `POST /logout`, `GET /status`.
+- `routes/workshop.js`: `requireAdmin` akzeptiert die Session (nicht bei Cross-Site-
+  Schreibzugriffen) oder wie bisher `X-Admin-Password`.
+- Frontend: Login-Dialog (blockierend) und Logout-Button. Ein Wrapper um `fetch`
+  öffnet bei `401 LOGIN_REQUIRED` den Dialog und sendet die Anfrage nach dem Login
+  erneut – alle bestehenden Aufrufe funktionieren ohne Änderung; parallele Anfragen
+  teilen sich einen Dialog. Bei `LOGIN_NOT_CONFIGURED` erklärt der Dialog, was zu
+  tun ist. Workshop-Admin-Seite probiert zuerst die Session; Convo-Viewer meldet
+  „Nicht angemeldet“ statt nach einem Workspace-Passwort zu fragen.
+- `deploy.sh`: `ensure_admin_password` erzeugt ein Passwort (24 Zeichen, a–z/A–Z/0–9)
+  in `.env`, auch mit `--skip-env`, und zeigt es am Ende einmalig an.
+  `docker-compose.yml` reicht `ADMIN_PASSWORD`/`ADMIN_SESSION_HOURS` durch;
+  `.env.example` dokumentiert beide. `tests/test-resource-limits.sh` meldet sich an.
+- Doku: `API.md` (Authentication, Workshop-Claims), `SECURITY.md`.
+
+**Tests**
+- Integration (Express, echte Router): ohne Passwort 503, Health/Status öffentlich;
+  401 `LOGIN_REQUIRED`; Workshop-Teilnehmer-Endpunkte öffentlich; falsches/leeres
+  Passwort 401; Login mit Umlaut-Passwort → Cookie-Attribute; manipulierte
+  Ablaufzeit/Signatur/Müll → 401; CSRF (curl-artig und same-origin ✔, fremde
+  Subdomain/same-site/cross-site/`null` → 403, GET unberührt); Workshop-Admin per
+  Session/Passwort, ohne beides 401/503, Cross-Site-Schreibzugriff mit Session → 401;
+  Logout widerruft; Passwortwechsel beendet Sessions; Rate-Limit 429 nur für den
+  betroffenen Client; `Secure` bei https.
+- Live (Deploy mit `--skip-env`): Passwort generiert und in `.env`; ohne Login
+  `/api/projects/` → 401, Health/Workshop-Status 200; Login → 27 Projekte; CSRF von
+  einer Workspace-Subdomain → 403; Workshop-Claims mit Session 200.
+  **Die Lücke aus 2.4 ist zu**: Direkter Workspace und Logging-Workspace über
+  mitmproxy → `host.docker.internal/api/projects/` → `401 LOGIN_REQUIRED`.
+- Headless-Chrome-E2E: Dialog ohne Session, keine Projekte; falsches Passwort →
+  Fehlermeldung; Login per Enter → Projektliste, Logout-Button, Cookie HttpOnly/Strict
+  und für JS unsichtbar; Reload bleibt eingeloggt; Cookie mitten in der Nutzung
+  gelöscht → Dialog, Anfrage nach Login erneut gesendet; Workshop-Admin-Seite öffnet
+  mit Session ohne Passwortabfrage; Logout → Dialog, Workshop-Admin fragt wieder;
+  Convo-Viewer ohne Session → „Nicht angemeldet“, kein Prompt. Konsolenfehler nur
+  „Error loading disk usage“ bei Seiten-Reloads (vom Browser abgebrochene Requests,
+  unabhängig vom Login).
+- Aufgeräumt: Test-Workspaces gelöscht, 27 Projekte.
+
+**Bewusst offen**
+- Keine Rollen: Jeder Admin sieht und steuert alle Workspaces.
+- Rate-Limit pro `X-Real-IP`: Unter Docker Desktop kommen Browser und Workspaces
+  (über `host.docker.internal`) mit derselben Gateway-Adresse an – ein Workspace
+  könnte den Login dort für 15 Minuten sperren. Unter Linux haben Workspaces eigene
+  Adressen (und erreichen `/api/` ohnehin nicht).
+- `app.use(cors())` erlaubt weiter jede Origin für **nicht** authentifizierte
+  Antworten; mit Cookie scheitern Cross-Origin-Requests am fehlenden
+  `Allow-Credentials`.
+
+**Gilt für bestehende Installationen (Breaking Change)**: Nach dem Update ist die API
+ohne `ADMIN_PASSWORD` gesperrt. `./deploy.sh` erzeugt es automatisch; wer ohne
+`deploy.sh` deployt, muss es in `.env` setzen. Skripte, die die API nutzen, brauchen
+das Cookie (siehe `API.md`).

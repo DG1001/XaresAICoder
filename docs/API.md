@@ -35,7 +35,41 @@ All API endpoints are prefixed with `/api`.
 
 ## Authentication
 
-Currently, XaresAICoder uses **workspace-level password protection** rather than platform-level authentication. Some operations require workspace passwords when workspaces are password-protected.
+### Admin Login
+
+The API requires an admin session: one shared password, `ADMIN_PASSWORD` in
+`.env` (`./deploy.sh` generates one if it is missing). Without a session every
+endpoint answers `401 {"error": "Login required", "code": "LOGIN_REQUIRED"}`;
+while `ADMIN_PASSWORD` is not set at all, `503 {"code": "LOGIN_NOT_CONFIGURED"}`.
+
+Public without a session: `GET /api/health`, `/api/auth/*`, and the workshop
+participant endpoints (`/api/workshop/status`, `/claim`, `/my-claim`).
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/auth/login` | Body `{ "password": "..." }`. Sets the session cookie `xares_admin` (HttpOnly, SameSite=Strict, `Secure` with `PROTOCOL=https`, lifetime `ADMIN_SESSION_HOURS`, default 12). `401` wrong password, `429` after 10 failed attempts per client within 15 minutes |
+| `POST /api/auth/logout` | Ends the session and clears the cookie |
+| `GET /api/auth/status` | `{ "configured": bool, "authenticated": bool }` |
+
+Changing `ADMIN_PASSWORD` ends all sessions.
+
+Requests that change state (`POST`/`PUT`/`DELETE`) from a browser must come
+from the dashboard's own origin: a different `Origin` hostname or
+`Sec-Fetch-Site: same-site/cross-site` is rejected with `403` (workspace apps
+run on subdomains and would otherwise ride on the admin's cookie). Clients
+without these headers (curl, scripts) are not affected.
+
+```bash
+# curl: log in once, reuse the cookie
+curl -c cookies.txt -H 'Content-Type: application/json' \
+  -d '{"password":"<ADMIN_PASSWORD>"}' http://localhost/api/auth/login
+curl -b cookies.txt http://localhost/api/projects/
+```
+
+### Workspace Passwords
+
+In addition to the admin login, password-protected workspaces require their
+workspace password for sensitive operations.
 
 ### Password-Protected Operations
 
@@ -1034,10 +1068,11 @@ Returns all active claims and release history. Requires admin password.
 
 **Endpoint**: `GET /api/workshop/claims`
 
-**Headers**: `X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (percent-encoded;
-plain ASCII passwords without `%` can be sent as is). The password is not
-accepted as a query parameter. Returns `401` for a wrong password and `503` if
-`WORKSHOP_ADMIN_PASSWORD` is not set (admin endpoints are disabled then).
+**Auth**: an admin session (dashboard login) **or** the header
+`X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (percent-encoded; plain ASCII
+passwords without `%` can be sent as is). The password is not accepted as a
+query parameter. Returns `401` for a wrong password and `503` if there is no
+session and `WORKSHOP_ADMIN_PASSWORD` is not set.
 
 **Response**:
 ```json

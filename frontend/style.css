@@ -192,6 +192,12 @@ body {
 }
 
 /* Theme Toggle Button */
+.title-bar-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
 .theme-toggle {
     display: flex;
     align-items: center;

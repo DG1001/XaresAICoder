@@ -5,6 +5,8 @@ require('dotenv').config();
 const projectsRouter = require('./routes/projects');
 const workspaceRouter = require('./routes/workspace');
 const workshopRouter = require('./routes/workshop');
+const authRouter = require('./routes/auth');
+const auth = require('./services/auth');
 
 const app = express();
 const PORT = 3000;
@@ -12,6 +14,11 @@ const PORT = 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Admin login for everything under /api except health, login itself and the
+// workshop endpoints (see services/auth.js)
+app.use('/api', auth.requireLogin);
+app.use('/api/auth', authRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
