@@ -606,7 +606,7 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 - Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env
   (bekannt, Paket 2).
 
-### Vorgemerkte Feature-Ideen
+### Vorgemerkte Aufgaben und Feature-Ideen
 
 - **XaresAICoder als MCP-Server** (vorgemerkt 2026-10-19): Ein KI-Agent – z. B. Claude
   im Chat – soll sich per MCP mit einem Workspace verbinden können, wenn er „mehr
@@ -615,6 +615,17 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
   Optional später: Workspace anlegen. Zu klären: Transport (Streamable HTTP über nginx),
   Authentifizierung (eigener Token pro Agent/Workspace statt Admin-Session, vgl. 2.6),
   Begrenzung auf freigegebene Workspaces, Zeit-/Ausgabelimits, Protokollierung.
+- **KI-Agenten überprüfen** (vorgemerkt 2026-10-19): Die neun vorinstallierten Tools
+  (Continue, Cline, Aider, OpenCode, Claude Code, Qwen Code, Codex CLI, Crush, Pi)
+  durchgehen: Sind alle noch relevant und gepflegt? Gibt es inzwischen weitere
+  Kandidaten? Funktioniert das Aktualisieren aus der CLI noch? Erste Befunde:
+  `update_ai_agents` (genannt in README, `DEPLOYMENT.md`, `CLAUDE.md`, DEVLOG 3.2) gibt
+  es seit 2025-09-29 nicht mehr – ersetzt durch `update_aider`, `update_claude`,
+  `update_codex`, `update_crush`, `update_opencode`, `update_pi`, `update_qwen`. Die
+  meisten werden laut `info` mit `sudo` aufgerufen, das seit 2.3 standardmäßig aus ist
+  (`WORKSPACE_SUDO_ENABLED=false`, `no-new-privileges`); ob die Updates ohne `sudo`
+  laufen, ist ungeprüft. Continue und Cline (VS-Code-Erweiterungen) haben kein
+  Update-Skript.
 
 ---
 
