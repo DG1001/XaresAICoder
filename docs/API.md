@@ -447,27 +447,27 @@ Retrieves filtered Squid proxy logs for a specific workspace (only for proxy-ena
 ```json
 {
   "success": true,
-  "ipAddress": "172.30.0.5",
+  "ipAddress": "172.31.128.1",
   "logs": [
     {
       "timestamp": "1733234567.123",
       "duration": "4233",
-      "clientIP": "172.30.0.5",
+      "clientIP": "172.31.128.1",
       "status": "TCP_TUNNEL/200",
       "bytes": "5688",
       "method": "CONNECT",
       "url": "opencode.ai:443",
-      "rawLine": "1733234567.123   4233 172.30.0.5 TCP_TUNNEL/200 5688 CONNECT opencode.ai:443 - HIER_DIRECT/172.65.90.22 -"
+      "rawLine": "1733234567.123   4233 172.31.128.1 TCP_TUNNEL/200 5688 CONNECT opencode.ai:443 - HIER_DIRECT/172.65.90.22 -"
     },
     {
       "timestamp": "1733234888.186",
       "duration": "0",
-      "clientIP": "172.30.0.5",
+      "clientIP": "172.31.128.1",
       "status": "TCP_DENIED/403",
       "bytes": "3369",
       "method": "GET",
       "url": "http://blocked-site.com/",
-      "rawLine": "1733234888.186      0 172.30.0.5 TCP_DENIED/403 3369 GET http://blocked-site.com/ - HIER_NONE/- text/html"
+      "rawLine": "1733234888.186      0 172.31.128.1 TCP_DENIED/403 3369 GET http://blocked-site.com/ - HIER_NONE/- text/html"
     }
   ]
 }
@@ -599,7 +599,7 @@ Retrieves current resource limit configuration for workspace management.
 **Usage**:
 ```bash
 # Check current resource limits
-curl http://localhost/api/limits
+curl -b cookies.txt http://localhost/api/limits
 ```
 
 This endpoint is used by the frontend to dynamically populate resource selection options, ensuring users can only choose values within configured limits.
@@ -738,7 +738,7 @@ Returns all domains recorded by mitmproxy for a workspace using LLM Logging Prox
 {
   "success": true,
   "projectId": "abc-123",
-  "ipAddress": "172.30.0.5",
+  "ipAddress": "172.30.128.1",
   "domains": {
     "pypi.org": {"count": 15, "first_seen": "2026-02-14T10:00:00Z", "last_seen": "2026-02-14T11:30:00Z"},
     "api.anthropic.com": {"count": 3, "first_seen": "2026-02-14T10:05:00Z", "last_seen": "2026-02-14T11:00:00Z"}
@@ -1231,7 +1231,7 @@ Currently, no rate limiting is implemented. Future versions may include:
 curl http://localhost/api/health
 
 # 2. Create a new Python Flask project
-curl -X POST http://localhost/api/projects/create \
+curl -b cookies.txt -X POST http://localhost/api/projects/create \
   -H "Content-Type: application/json" \
   -d '{
     "projectName": "my-web-app",
@@ -1242,26 +1242,26 @@ curl -X POST http://localhost/api/projects/create \
   }'
 
 # 3. Get project details
-curl http://localhost/api/projects/abc123def456
+curl -b cookies.txt http://localhost/api/projects/abc123def456
 
 # 4. List all projects
-curl http://localhost/api/projects/
+curl -b cookies.txt http://localhost/api/projects/
 
 # 5. Stop the workspace (with password)
-curl -X POST http://localhost/api/projects/abc123def456/stop \
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123def456/stop \
   -H "Content-Type: application/json" \
   -d '{"password": "secure123!"}'
 
 # 6. Start the workspace again
-curl -X POST http://localhost/api/projects/abc123def456/start
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123def456/start
 
 # 7. Clone workspace for a workshop (20 student copies)
-curl -X POST http://localhost/api/projects/abc123def456/clone \
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123def456/clone \
   -H "Content-Type: application/json" \
   -d '{"count": 20, "password": "student-pw-123"}'
 
 # 8. Delete the project (with password)
-curl -X DELETE http://localhost/api/projects/abc123def456 \
+curl -b cookies.txt -X DELETE http://localhost/api/projects/abc123def456 \
   -H "Content-Type: application/json" \
   -d '{"password": "secure123!"}'
 ```

@@ -54,13 +54,13 @@ The captured data enables:
 ┌──────────────────────────┐
 │  /var/log/mitmproxy/     │
 │  ├── llm_conversations/  │  (LLM API calls)
-│  │   ├── 172.30.0.5/    │
+│  │   ├── 172.30.128.1/    │
 │  │   │   ├── 2025-*.json│
 │  │   │   └── ...         │
-│  │   └── 172.30.0.6/    │
+│  │   └── 172.30.128.2/    │
 │  └── domains/            │  (ALL accessed domains)
-│      ├── 172.30.0.5.json │
-│      └── 172.30.0.6.json │
+│      ├── 172.30.128.1.json │
+│      └── 172.30.128.2.json │
 └──────────────────────────┘
            │
            ▼
@@ -173,7 +173,7 @@ The logger:
 Each conversation is stored as:
 ```json
 {
-  "client_ip": "172.30.0.5",
+  "client_ip": "172.30.128.1",
   "timestamp": "2025-01-15T10:30:45.123Z",
   "method": "POST",
   "url": "https://api.anthropic.com/v1/messages",
@@ -251,8 +251,12 @@ Each conversation is stored as:
 4. Documentation downloads automatically
 
 **Method 2: Via API**
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
-curl -X POST http://localhost/api/projects/{projectId}/generate-documentation \
+curl -b cookies.txt -X POST http://localhost/api/projects/{projectId}/generate-documentation \
   -H "Content-Type: application/json" \
   -d '{"format":"markdown","type":"clean"}'
 ```
@@ -272,10 +276,10 @@ curl -X POST http://localhost/api/projects/{projectId}/generate-documentation \
 **Via API:**
 ```bash
 # Delete all
-curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
+curl -b cookies.txt -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
 
 # Delete specific conversation
-curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations/{timestamp}
+curl -b cookies.txt -X DELETE http://localhost/api/projects/{projectId}/llm-conversations/{timestamp}
 ```
 
 ## Domain Recording & Whitelist Generation
@@ -329,15 +333,15 @@ In addition to LLM conversation capture, mitmproxy records **every domain** acce
 **Via API:**
 ```bash
 # View recorded domains for a workspace
-curl http://localhost/api/projects/{projectId}/recorded-domains
+curl -b cookies.txt http://localhost/api/projects/{projectId}/recorded-domains
 
 # Apply domains as whitelist
-curl -X PUT http://localhost/api/whitelist \
+curl -b cookies.txt -X PUT http://localhost/api/whitelist \
   -H "Content-Type: application/json" \
   -d '{"domains": ["pypi.org", "api.anthropic.com", "github.com", "registry.npmjs.org"]}'
 
 # View current whitelist
-curl http://localhost/api/whitelist
+curl -b cookies.txt http://localhost/api/whitelist
 ```
 
 ## Documentation Types
@@ -488,7 +492,7 @@ GET /api/projects/:projectId/llm-conversations
 {
   "success": true,
   "projectId": "abc-123",
-  "ipAddress": "172.30.0.5",
+  "ipAddress": "172.30.128.1",
   "conversations": [...],
   "count": 50
 }
@@ -585,7 +589,7 @@ Conversations are stored indefinitely. To manage storage:
 **Manual cleanup:**
 ```bash
 # Delete all conversations for workspace
-curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
+curl -b cookies.txt -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
 ```
 
 **Automated cleanup (future):**
@@ -629,11 +633,11 @@ This enables HTTPS interception without SSL errors.
 
 ```
 /var/log/mitmproxy/llm_conversations/
-├── 172.30.0.5/               # Workspace container IP
+├── 172.30.128.1/               # Workspace container IP
 │   ├── 2025-01-15T10-30-45-123Z.json
 │   ├── 2025-01-15T10-31-12-456Z.json
 │   └── ...
-├── 172.30.0.6/               # Different workspace
+├── 172.30.128.2/               # Different workspace
 │   └── 2025-01-15T11-00-00-789Z.json
 └── ...
 ```

@@ -84,22 +84,26 @@ project.passwordHash = hashedPassword;
 Workspace passwords can be managed after creation via the `PUT /api/projects/:projectId/password` endpoint:
 
 **Set password on unprotected workspace:**
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
-curl -X PUT http://localhost/api/projects/abc123/password \
+curl -b cookies.txt -X PUT http://localhost/api/projects/abc123/password \
   -H "Content-Type: application/json" \
   -d '{"newPassword": "MySecurePassword123!"}'
 ```
 
 **Update existing password:**
 ```bash
-curl -X PUT http://localhost/api/projects/abc123/password \
+curl -b cookies.txt -X PUT http://localhost/api/projects/abc123/password \
   -H "Content-Type: application/json" \
   -d '{"currentPassword": "OldPassword123!", "newPassword": "NewPassword456!"}'
 ```
 
 **Remove password protection:**
 ```bash
-curl -X PUT http://localhost/api/projects/abc123/password \
+curl -b cookies.txt -X PUT http://localhost/api/projects/abc123/password \
   -H "Content-Type: application/json" \
   -d '{"currentPassword": "OldPassword123!", "removePassword": true}'
 ```
@@ -120,7 +124,7 @@ Operations requiring password verification:
 
 ```bash
 # Stop protected workspace
-curl -X POST http://localhost/api/projects/abc123/stop \
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123/stop \
   -H "Content-Type: application/json" \
   -d '{"password": "MySecurePassword123!"}'
 ```

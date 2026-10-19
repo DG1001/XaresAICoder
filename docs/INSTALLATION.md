@@ -166,50 +166,19 @@ curl http://localhost/api/health
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GIT_ADMIN_USER` | developer | Git server account used by the platform |
-| `GIT_ADMIN_PASSWORD` | admin123! | Credential shipped **into every workspace** — see warning below |
-| `GIT_ADMIN_BOOTSTRAP_PASSWORD` | *(falls back to `GIT_ADMIN_PASSWORD`)* | Real account password, used only to create the account |
+| `GIT_ADMIN_PASSWORD` | admin123! | Password of the admin account (server-side only); `./deploy.sh` replaces the default once with a random password, `--rotate-git-password` sets a new one |
+| `GIT_ADMIN_BOOTSTRAP_PASSWORD` | *(falls back to `GIT_ADMIN_PASSWORD`)* | Password used to create the account; kept in sync by `deploy.sh` |
 | `GIT_ADMIN_EMAIL` | gitadmin@xaresaicoder.local | Admin email |
 | `GIT_SITE_NAME` | XaresAICoder Git Server | Git server site name |
 
-> **⚠️ `GIT_ADMIN_PASSWORD` leaves the server.** When `ENABLE_GIT_SERVER=true`, it is
-> injected as an environment variable into **every** workspace container — not just into
-> those created with the "create Git repository" option — and it is embedded in the git
-> remote URL of workspaces that have a repository. Anyone who receives a workspace can
-> read it with a single `printenv`.
-
-This has three consequences for any setup where workspaces are handed to other people
-(workshops, training, shared machines):
-
-**1. The account must not be a Forgejo administrator.** By default the first Forgejo
-account is created with `--admin`, which would give every workspace holder full
-administrative access to the instance, including the web UI. The platform itself needs no
-administrative rights — it only calls `POST /api/v1/user/repos`,
-`GET /api/v1/repos/{user}/{repo}` and `/api/v1/version`. Create a separate personal
-administrator account and demote `GIT_ADMIN_USER` to a regular user.
-
-**2. Private repositories belong to a different account.** A demoted `GIT_ADMIN_USER`
-cannot see repositories owned by anyone else, so keep anything confidential under your
-personal account. Moving an existing repository is a single API call:
-
-```bash
-curl -u "<admin>:<password>" -X POST \
-  "http://<forgejo>/api/v1/repos/<old-owner>/<repo>/transfer" \
-  -H 'Content-Type: application/json' -d '{"new_owner":"<new-owner>"}'
-```
-
-**3. Prefer an access token over the account password.** A Forgejo access token works for
-git-over-HTTP *and* for the API, but cannot be used to log into the web UI. Put the token
-into `GIT_ADMIN_PASSWORD` and the real password into `GIT_ADMIN_BOOTSTRAP_PASSWORD`:
-
-```bash
-curl -u "<user>:<password>" -X POST \
-  "http://<forgejo>/api/v1/users/<user>/tokens" \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"xaresaicoder-platform","scopes":["write:repository","write:user"]}'
-```
-
-Both scopes are required: `POST /api/v1/user/repos` is routed under `/user/` and returns
-`403` with `write:repository` alone.
+The admin account never reaches a workspace. The API server uses it to give every
+workspace its **own** Forgejo user and an access token limited to that user
+(`FORGEJO_USER`/`FORGEJO_TOKEN` in the workspace); repositories are private and belong
+to the workspace user. The account must therefore be a **Forgejo administrator**.
+`GIT_ADMIN_PASSWORD` may also be an access token of that account with the scopes
+`write:admin`, `write:user` and `write:repository` (sent via Basic Auth) — then put the
+real password into `GIT_ADMIN_BOOTSTRAP_PASSWORD`. Details and the upgrade of existing
+workspaces: [SECURITY.md → Git Server](SECURITY.md#git-server-one-forgejo-account-per-workspace).
 
 Keeping the two variables separate matters because `deploy.sh` and `setup-forgejo.sh`
 create the Forgejo account with `--password`. If the token were used there, it would
@@ -526,8 +495,12 @@ MEMORY_PER_WORKSPACE_MB=2048
 ```
 
 **Check Current Limits**:
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
-curl http://localhost/api/limits
+curl -b cookies.txt http://localhost/api/limits
 ```
 
 See [README - Resource Limits](../README.md#resource-limits) for detailed information.

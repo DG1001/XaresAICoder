@@ -525,8 +525,8 @@ When `ENABLE_GIT_SERVER=true` in `.env`, XaresAICoder includes an integrated For
 GIT_SERVER_ENABLED=true
 GIT_SERVER_URL=http://forgejo:3000  // Internal Docker URL
 GIT_SERVER_EXTERNAL_URL=http://localhost/git  // External browser URL
-GIT_ADMIN_USER=gitadmin
-GIT_ADMIN_PASSWORD=<configured_password>
+FORGEJO_USER=<workspace user>     // own Forgejo account of this workspace
+FORGEJO_TOKEN=<access token>      // limited to that account (never the admin password)
 ```
 
 ### Git Operations
@@ -671,6 +671,10 @@ curl http://${PROJECT_ID}-${PORT}.${BASE_DOMAIN}/
 
 ### Finding Container and Project Information
 
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
 # Inside workspace
 echo $PROJECT_ID
@@ -681,7 +685,7 @@ hostname
 # From host machine
 docker ps | grep workspace
 docker inspect workspace-<projectId>
-curl http://localhost/api/projects/<projectId>
+curl -b cookies.txt http://localhost/api/projects/<projectId>
 ```
 
 ## Quick Reference for AI Agents

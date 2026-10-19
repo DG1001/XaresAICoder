@@ -345,11 +345,15 @@ Teachers can prepare a fully-configured base workspace and then clone it into mu
 
 ### Workshop Workflow Example
 
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
 # 1. Teacher creates and sets up the base workspace via UI
 
 # 2. Clone via API (alternative to UI)
-curl -X POST http://localhost/api/projects/<source-id>/clone \
+curl -b cookies.txt -X POST http://localhost/api/projects/<source-id>/clone \
   -H "Content-Type: application/json" \
   -d '{"count": 20, "password": "student2026"}'
 

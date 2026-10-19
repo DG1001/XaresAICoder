@@ -231,9 +231,13 @@ docker run -it --rm \
    - Add/update tests as needed
 
 3. **Testing**:
+   > The API needs the admin login. Log in once with curl and reuse the cookie:
+   > `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+   > (see [API.md → Authentication](API.md#authentication)).
+
    ```bash
    # Test API endpoints
-   curl -X POST http://localhost/api/projects/create \
+   curl -b cookies.txt -X POST http://localhost/api/projects/create \
      -H "Content-Type: application/json" \
      -d '{"projectName":"test","projectType":"empty"}'
    
@@ -241,8 +245,8 @@ docker run -it --rm \
    # Use UI to create different project types
    
    # Test container management
-   curl -X POST http://localhost/api/projects/PROJECT_ID/stop
-   curl -X POST http://localhost/api/projects/PROJECT_ID/start
+   curl -b cookies.txt -X POST http://localhost/api/projects/PROJECT_ID/stop
+   curl -b cookies.txt -X POST http://localhost/api/projects/PROJECT_ID/start
    ```
 
 4. **Code Review**:
@@ -448,7 +452,7 @@ COPY --chown=coder:coder setup-scripts/ setup-scripts/
 **API Testing**:
 ```bash
 # Test workspace creation
-curl -X POST http://localhost/api/projects/create \
+curl -b cookies.txt -X POST http://localhost/api/projects/create \
   -H "Content-Type: application/json" \
   -d '{
     "projectName": "test-workspace",
@@ -459,11 +463,11 @@ curl -X POST http://localhost/api/projects/create \
 
 # Test workspace management
 PROJECT_ID="returned-project-id"
-curl http://localhost/api/projects/$PROJECT_ID
-curl -X POST http://localhost/api/projects/$PROJECT_ID/stop \
+curl -b cookies.txt http://localhost/api/projects/$PROJECT_ID
+curl -b cookies.txt -X POST http://localhost/api/projects/$PROJECT_ID/stop \
   -H "Content-Type: application/json" \
   -d '{"password": "testpass123"}'
-curl -X POST http://localhost/api/projects/$PROJECT_ID/start
+curl -b cookies.txt -X POST http://localhost/api/projects/$PROJECT_ID/start
 ```
 
 **UI Testing Checklist**:

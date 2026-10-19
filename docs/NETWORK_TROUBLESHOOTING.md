@@ -7,11 +7,18 @@ XaresAICoder uses a persistent external Docker network to ensure workspace conta
 ## Network Architecture
 
 ```
-External Network: xares-aicoder-network (persistent)
-├── nginx container (proxy/routing)
-├── server container (API backend)  
-└── workspace-* containers (user workspaces)
+xaresaicoder_xares-control          nginx, server (API), forgejo          — never workspaces
+xares-aicoder-network (external)    nginx, forgejo, squid/mitmproxy egress, direct workspaces
+xaresaicoder_xares-internal         nginx, mitmproxy, dnsmasq, LLM Logging Proxy workspaces (internal)
+xaresaicoder_xares-security         nginx, squid, dnsmasq, Security Proxy workspaces (internal)
 ```
+
+A workspace belongs to exactly one network, chosen by its proxy mode; proxied
+workspaces have a fixed IP in the upper half of their subnet. On server start and
+on every workspace start the server attaches the container to its network,
+detaches it from the others and repairs stale network references left by
+`docker compose down/up` — re-run *Start* before reconnecting containers by hand.
+See [SECURITY.md → Network Isolation](SECURITY.md#network-isolation).
 
 ## Quick Setup
 
@@ -133,7 +140,7 @@ docker-compose up -d
 - **Type:** External persistent network
 
 ### Container Network Settings
-- **NetworkMode:** `xares-aicoder-network`
+- **NetworkMode:** `xares-aicoder-network` (direct), `xaresaicoder_xares-internal` (LLM Logging Proxy) or `xaresaicoder_xares-security` (Security Proxy)
 - **Aliases:** Each container gets an alias matching its name
 - **DNS:** Automatic container-to-container DNS resolution
 
@@ -163,14 +170,15 @@ docker inspect workspace-{project-id} | jq '.[0].NetworkSettings.Networks'
 docker exec workspace-{project-id} ping server
 ```
 
-### Network Health Check API
-XaresAICoder provides an internal network health check:
+### Network Health Check
+There is no network health API endpoint; check the networks and the server log:
 
 ```bash
-# Access via API (if exposed)
-curl http://localhost/api/system/network-health
+for n in xares-aicoder-network xaresaicoder_xares-control xaresaicoder_xares-internal xaresaicoder_xares-security; do
+  docker network inspect "$n" --format '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}}{{end}}' 
+done
 
-# Or check container logs
+# Network moves and repairs on server/workspace start
 docker-compose logs server | grep -i network
 ```
 

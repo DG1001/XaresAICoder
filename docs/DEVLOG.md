@@ -19,7 +19,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | Paket | Inhalt | Status |
 |-------|--------|--------|
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
-| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | 🚧 in Arbeit (Branch `security/paket-2`, Variante 2) |
+| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
 
 ---
@@ -594,6 +594,9 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 
 ### Beobachtete, vorbestehende Probleme (Backlog)
 
+- **„Error loading disk usage“ bei Seiten-Reloads**: Lädt das Dashboard neu, während
+  die Disk-Usage-Abfragen laufen, bricht der Browser sie ab und die App meldet jeden
+  Abbruch als Fehler in der Konsole (harmlos, vorbestehend; beim E2E-Test 2.6/2.8 sichtbar).
 - ~~**Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
   `git push` scheitert~~ – entfallen in 2.7 (eigenes Repo pro Klon, Exit-Code geprüft).
 - ~~**`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen~~ – behoben in
@@ -1161,3 +1164,47 @@ nicht per `Authorization: token`), Repos für Nutzer anlegen, Repos sofort über
   unsichtbar (Besitzer privat). Für anonyme Besucher von `/git/` ebenso.
 - Unverändert: Security-/Logging-Proxy-Workspaces erreichen Forgejo nicht (nicht in
   ihren internen Netzen).
+
+### 2.8 Doku, Upgrade-Hinweise, Abschluss-Live-Test
+
+**Doku**
+- `DEPLOYMENT.md`: neuer Abschnitt **„Upgrading Existing Installations“** – Backup,
+  Deploy mit `deploy.sh`, Tabelle aller Änderungen aus Paket 1 und 2 mit nötigen
+  Schritten, verbleibende Grenzen. `README.md`: „Security Hardening“ unter Recent
+  Updates, Login-Hinweis beim Schnellstart, Forgejo-Login aus `.env`, Klone mit
+  eigenem Repo.
+- curl-Beispiele (36 in 10 Dateien) senden das Session-Cookie; je Datei ein Hinweis,
+  wie man sich per curl anmeldet.
+- `INSTALLATION.md`: Git-Admin-Abschnitt neu (Admin-Konto bleibt auf dem Server, muss
+  Forgejo-Admin sein, Rotation). `PROXY_ARCHITECTURE.md`: Workspace-Env `FORGEJO_*`.
+  `NETWORK_TROUBLESHOOTING.md`: vier Netze, automatische Reparatur beim Start; der
+  dokumentierte Endpunkt `/api/system/network-health` existierte nie – ersetzt.
+  `OUTGOING_PROXY.md`: Hinweis auf die aktuelle Topologie. `TROUBLESHOOTING.md`:
+  Forgejo-Beispiele ohne `admin123!`. Beispiel-IPs in `API.md`/`LLM_CONVERSATION_LOGGING.md`
+  an Security- bzw. Logging-Netz und feste IPs angepasst.
+
+**Paket 2 – Upgrade-Hinweise (Breaking Changes)**: siehe `docs/DEPLOYMENT.md` →
+„Upgrading Existing Installations“. Kurz: Admin-Login (API ohne `ADMIN_PASSWORD`
+gesperrt), Security-Proxy-Workspaces in neuem Netz `xares-security` (Subnetz prüfen),
+feste Proxy-IPs, Forgejo-Admin-Passwort wird rotiert und bleibt auf dem Server,
+Code-Server-Image neu bauen, Klone brauchen ein Passwort.
+
+**Abschluss-Live-Test (Docker Desktop, Engine 28.5.1)**
+- Erneutes Deploy mit dem finalen Stand: idempotent – kein neues Admin-Passwort,
+  keine erneute Forgejo-Rotation, 27 Projekte, 28 Forgejo-Nutzer, API-Sperrliste da.
+- Alle Testsuiten gegen den finalen Code: Netze (10), feste IPs (8), Login (10),
+  Forgejo (6), Subnetzwahl in `deploy.sh` (5 Fälle) – grün.
+- Ein Workspace pro Modus: Netz und feste IP wie erwartet (direkt dynamisch,
+  Security `172.31.128.1`, Logging `172.30.128.2`), harte CPU-Grenze, eigener
+  Forgejo-Nutzer überall. Erreichbarkeitsmatrix identisch mit 2.4 (Server nie
+  erreichbar, `/api/` über nginx 403, kein Proxy-Hopping, Squid-Whitelist greift).
+  Hinweis: `pypi.org/simple/` (Gesamtindex, viele MB) läuft über den puffernden
+  mitmproxy in den Timeout des Probe-Skripts; einzelne Paketseiten und `pip download`
+  funktionieren.
+- Direkter Workspace mit Repo: Push mit eigenem Token, Admin-API 403. Klon eines
+  Security-Workspaces: feste IP `172.31.128.2`, eigener Forgejo-Nutzer, PyPI über
+  squid ✔ (Forgejo ist aus Proxy-Netzen wie bisher nicht erreichbar).
+- Headless-Chrome-E2E (Login, falsches Passwort, Reload, Session-Verlust, Workshop-
+  Admin, Logout, Convo-Viewer): alle 8 Schritte ✔.
+- Aufgeräumt: Test-Workspaces, Forgejo-Test-Nutzer und Probe-Artefakte in
+  `/var/log/mitmproxy` entfernt; Zustand wie vorher (27 Projekte, 28 Forgejo-Nutzer).
