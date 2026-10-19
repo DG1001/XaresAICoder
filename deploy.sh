@@ -237,7 +237,7 @@ ensure_generated_secret() {
     local current=$(grep "^${key}=" .env | cut -d'=' -f2-)
     [ -n "$current" ] && return 0
 
-    local value=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$length")
+    local value=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$length")
     if grep -q "^${key}=" .env; then
         sed_inplace "s|^${key}=.*|${key}=$value|" .env
     else
@@ -279,7 +279,7 @@ rotate_git_admin_password() {
         return 0
     fi
 
-    local new_password=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)
+    local new_password=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 24)
     if ! docker exec -u git xaresaicoder-forgejo forgejo admin user change-password \
             --username "$user" --password "$new_password" --must-change-password=false >/dev/null 2>&1; then
         print_warning "Could not change the Forgejo admin password - keeping the current one"

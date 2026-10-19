@@ -201,8 +201,8 @@ trap cleanup EXIT
 echo "XaresAICoder smoke test against http://$BASE_DOMAIN:$HOST_PORT (proxy: ${ENABLE_PROXY:-false}, Git server: ${ENABLE_GIT_SERVER:-false})"
 
 section "Platform"
-api GET /health
-check "API health" [ "$STATUS" = 200 ]
+# deploy.sh may just have recreated the API server (Forgejo password rotation)
+check "API health" wait_health
 api GET /projects/
 check "API locked without login (HTTP $STATUS)" [ "$STATUS" = 401 ]
 if ! login; then
