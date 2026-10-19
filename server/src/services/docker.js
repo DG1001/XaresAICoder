@@ -2127,10 +2127,21 @@ fi`.trim();
         throw error;
       }
       for (const cfg of (info.IPAM && info.IPAM.Config) || []) {
-        if (cfg.Subnet) ranges.push({ network: name, subnet: cfg.Subnet, gateway: cfg.Gateway || null });
+        if (cfg.Subnet) ranges.push({ network: name, subnet: cfg.Subnet, gateway: this.networkGateway(info, cfg) });
       }
     }
     return ranges;
+  }
+
+  // Docker on Linux leaves a gateway it assigned itself out of IPAM.Config
+  // (Docker Desktop lists it); that is the subnet's first address, reserved
+  // by Docker. Internal networks get none: the host does not reach nginx
+  // through them, and the address could otherwise belong to a workspace.
+  networkGateway(info, cfg) {
+    if (cfg.Gateway) return cfg.Gateway;
+    if (info.Internal) return null;
+    const range = parseIpv4Cidr(cfg.Subnet);
+    return range ? intToIpv4(range.base + 1) : null;
   }
 
   async validateNetworkHealth() {
