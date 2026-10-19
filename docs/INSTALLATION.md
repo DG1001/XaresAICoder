@@ -70,7 +70,7 @@ This command automatically:
 # Skip image rebuild (faster for updates)
 ./deploy.sh --skip-build
 
-# Skip environment setup (use existing .env)
+# Skip the interactive environment setup (use existing .env; feature flags still apply)
 ./deploy.sh --skip-env
 
 # Skip network setup (use existing network)

@@ -181,6 +181,29 @@ setup_environment() {
         print_success ".env file already exists"
     fi
     
+    apply_env_settings "$enable_git_server" "$enable_proxy"
+
+    # Show current configuration
+    print_status "Current configuration:"
+    echo "----------------------------------------"
+    grep -E "BASE_DOMAIN|BASE_PORT|PROTOCOL|ENABLE_GIT_SERVER" .env | sed 's/^/  /'
+    echo "----------------------------------------"
+    
+    # Ask if user wants to edit
+    read -p "Do you want to edit the configuration? (y/N): " -n 1 -r || REPLY=""
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        ${EDITOR:-nano} .env
+    fi
+}
+
+# The non-interactive part of the environment setup; also runs with
+# --skip-env, so explicit feature flags and the checks always apply.
+#   $1/$2: true = enable, false = disable, empty = keep the value in .env
+apply_env_settings() {
+    local enable_git_server=$1
+    local enable_proxy=$2
+
     # Feature flags are sticky: --git-server / --enable-proxy switch a feature
     # on, --disable-git-server / --disable-proxy off, and without a flag the
     # value in .env stays (a forgotten flag no longer turns a feature off).
@@ -212,19 +235,6 @@ setup_environment() {
         fi
     else
         print_success "HOST_PORT already configured"
-    fi
-    
-    # Show current configuration
-    print_status "Current configuration:"
-    echo "----------------------------------------"
-    grep -E "BASE_DOMAIN|BASE_PORT|PROTOCOL|ENABLE_GIT_SERVER" .env | sed 's/^/  /'
-    echo "----------------------------------------"
-    
-    # Ask if user wants to edit
-    read -p "Do you want to edit the configuration? (y/N): " -n 1 -r || REPLY=""
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        ${EDITOR:-nano} .env
     fi
 }
 
@@ -1001,7 +1011,7 @@ show_usage() {
     echo
     echo "Options:"
     echo "  --skip-build          Skip building the code-server image"
-    echo "  --skip-env            Skip environment setup (use existing .env)"
+    echo "  --skip-env            Skip the interactive environment setup (use existing .env; flags still apply)"
     echo "  --skip-network        Skip Docker network setup (use existing network)"
     echo "  --rotate-git-password Set a new random Forgejo admin password (done automatically while it is the default)"
     echo "  --build-only          Only build the code-server image, don't deploy"
@@ -1149,7 +1159,12 @@ main() {
     if [ "$skip_env" = false ]; then
         setup_environment "$enable_git_server" "$enable_proxy"
     else
-        print_status "Skipping environment setup"
+        if [ ! -f .env ]; then
+            print_error "--skip-env needs an existing .env (run without it to create one)"
+            exit 1
+        fi
+        print_status "Skipping the interactive environment setup"
+        apply_env_settings "$enable_git_server" "$enable_proxy"
     fi
     ensure_admin_password
 
