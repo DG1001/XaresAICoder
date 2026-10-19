@@ -19,6 +19,9 @@ __pycache__/
 # Docker volumes
 workspace_data/
 
+# Backups (backup.sh): contain .env, the CA key and AI tool logins
+backups/
+
 # Build artifacts
 build/
 

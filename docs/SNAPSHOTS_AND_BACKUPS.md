@@ -21,7 +21,9 @@ This document provides comprehensive research on Docker snapshot, backup, and re
 
 ### Existing Implementation
 
-**Status:** No backup/snapshot functionality currently exists in XaresAICoder.
+**Status:** This is a research document. Backups of the platform data and of workspace
+files are now done with `./backup.sh` (see [DEPLOYMENT.md](DEPLOYMENT.md#backup-and-restore));
+workspace snapshots/checkpoints as described below do not exist.
 
 **Current Container Management:**
 - Location: `/server/src/services/docker.js`

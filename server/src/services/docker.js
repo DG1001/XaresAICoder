@@ -174,6 +174,14 @@ class DockerService {
     // Per-workspace writable layer limit (e.g. '20G'); only enforceable on
     // overlay2 backed by xfs with project quotas (see getHostCapabilities)
     this.diskLimit = (process.env.WORKSPACE_DISK_LIMIT || '').trim();
+    // Docker log rotation, same values as the compose services
+    this.logConfig = {
+      Type: 'json-file',
+      Config: {
+        'max-size': process.env.LOG_MAX_SIZE || '10m',
+        'max-file': process.env.LOG_MAX_FILE || '3'
+      }
+    };
     this.hostCapabilities = null;
     // Security and isolation configuration
     this.securityConfig = {
@@ -429,6 +437,7 @@ class DockerService {
         RestartPolicy: {
           Name: 'unless-stopped'
         },
+        LogConfig: this.logConfig,
         // dnsmasq on the workspace's internal network (no route to public DNS)
         ...(useProxy && {
           Dns: [proxyMode === 'security' ? this.securityDnsIp : this.loggingDnsIp]

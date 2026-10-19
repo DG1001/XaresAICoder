@@ -16,4 +16,10 @@ mkdir -p /etc/squid/whitelist
 if [ ! -s /etc/squid/whitelist/whitelist.conf ]; then
     cp /etc/squid/whitelist-default.conf /etc/squid/whitelist/whitelist.conf
 fi
+# Rotate the logs on the volume (daily, earlier at 100 MB, 14 kept)
+(
+    while sleep 3600; do
+        logrotate -s /var/log/squid/.logrotate.status /etc/squid/logrotate.conf || true
+    done
+) &
 exec entrypoint.sh "$@"

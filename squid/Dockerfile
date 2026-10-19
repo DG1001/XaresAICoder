@@ -18,6 +18,7 @@ RUN mkdir -p /etc/squid/certs /var/lib/squid/ssl_db && \
 # from the default by xares-entrypoint.sh)
 COPY squid.conf /etc/squid/squid.conf
 COPY whitelist-default.conf /etc/squid/whitelist-default.conf
+COPY logrotate.conf /etc/squid/logrotate.conf
 
 # Create log directory
 RUN mkdir -p /var/log/squid && \

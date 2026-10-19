@@ -1296,3 +1296,90 @@ Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinnin
   gelöscht (Forgejo-Testnutzer entfernt).
 - Code-Server-Image mit gepinnter Basis gebaut: alle Schritte aus dem Cache, gleiche
   Image-ID wie zuvor → Basis identisch mit dem bisherigen `latest`.
+
+### 3.3 Log-Rotation und Backups
+
+**Problem**
+- Kein Container hatte ein Limit für seine Docker-Logs (`json-file` ohne `max-size`).
+  dnsmasq (`--log-queries`), mitmproxy und squid schreiben eine Zeile pro Anfrage;
+  squid spiegelt sein `access.log` zusätzlich per `tail -F` auf stdout.
+- squids `access.log` liegt auf dem Volume `squid_logs` und wurde nie rotiert (live
+  38 MB, übersteht jeden Redeploy). `logrotate` und `cron` sind im Image, laufen aber
+  nicht.
+- Es gab kein Backup. Workspaces haben **keine Volumes**: Ihre Dateien liegen in der
+  beschreibbaren Schicht des Containers (live 27 Container, 10 MB bis 3,5 GB).
+
+**Änderung**
+- `docker-compose.yml`: YAML-Anker `x-logging` (`json-file`, `max-size`
+  `${LOG_MAX_SIZE:-10m}`, `max-file` `${LOG_MAX_FILE:-3}`) für alle sechs Dienste;
+  `docker.js` setzt dieselben Werte als `LogConfig` in `buildContainerSpec()` (Anlegen
+  und Klonen). `.env.example` dokumentiert beide Variablen.
+- squid: `squid/logrotate.conf` (täglich, ab 100 MB früher, 14 Generationen, gzip,
+  `delaycompress`, `postrotate` → `squid -k rotate`); `xares-entrypoint.sh` startet
+  eine Schleife, die stündlich `logrotate` aufruft, Statusdatei auf dem Volume.
+  `squid.conf` setzt `logfile_rotate 0` ausdrücklich (kam bisher nur aus `conf.d` des
+  Ubuntu-Pakets), damit `-k rotate` die Dateien nur neu öffnet.
+- Neues `backup.sh`:
+  - Ohne Option: `.env`, `squid/certs` (CA) und die Volumes `workspace_data`,
+    `forgejo_data`, `nginx_dynamic`, `squid_whitelist`, `mitmproxy_logs` nach
+    `backups/xares-<Zeit>/` (Modus 700/600, `MANIFEST`); erst in `.partial`, bei Erfolg
+    umbenannt, bei Abbruch gelöscht. `--keep N` (Standard 7) räumt ältere auf.
+  - `--workspaces`: pro Workspace `/workspace` und `/home/coder` per `docker cp` (auch
+    gestoppte Container), ohne Caches, Image-Anteile (`extensions`,
+    `CachedExtensionVSIXs`, OpenCode-Binary) und die code-server-Anmeldung;
+    `workspaces/index.tsv` mit ID und Projektname. Fehlgeschlagene Workspaces landen in
+    `workspaces/FAILED`, Exit-Code 1.
+  - `--restore`: stoppt die Plattform-Container (Compose-Label), sichert den aktuellen
+    Stand nach `xares-<Zeit>-before-restore`, spielt `.env`, CA und Volumes zurück
+    (fehlende Volumes mit Compose-Labels anlegen) und startet wieder – nicht, wenn sich
+    `.env` oder die CA geändert haben (dann `./deploy.sh`).
+  - `--restore-workspace BACKUP ID [--into ID]`: kopiert die Dateien per `docker cp -a`
+    zurück in denselben oder einen neuen Workspace.
+- `.gitignore`: `backups/`. Doku: `DEPLOYMENT.md` (Abschnitte „Logs“, „Backup and
+  Restore“, Upgrade-Tabelle), README, Hinweis in `SNAPSHOTS_AND_BACKUPS.md`.
+
+**Entscheidungen** (mit dir abgestimmt, 2026-10-19)
+- **Workspaces per Flag**: Standard nur Plattformdaten (klein, ~7 s), `--workspaces`
+  zusätzlich die Nutzerdaten. Volle Container-Snapshots wären bei dir ≈ 30 GB.
+- **Forgejo kurz stoppen** statt `docker pause` (crash-konsistent, mögliche `.lock`-
+  Dateien) oder `forgejo dump` (Restore aufwendig). Git ist dabei wenige Sekunden weg.
+- **Eigenes Skript mit Restore** statt Subcommand in `deploy.sh` (schon 1163 Zeilen).
+- **Aufbewahrung**: Docker 10 MB × 3, squid 14 Tage; LLM-Mitschnitte und `_archive`
+  sind Daten, keine Logs, und bleiben unangetastet.
+- **tar im gepinnten nginx-Image** (busybox): auf jeder Installation vorhanden, kein
+  weiteres Image; `--numeric-owner`, weil die Volumes UIDs aus anderen Images
+  enthalten (squid 13, Forgejo 1000). Die Archive werden dem aufrufenden Nutzer
+  übergeben (`chown`): Auf diesem Host legt root im Container root-eigene Dateien an.
+- **code-server-Anmeldung nicht im Backup**: `config.yaml`/`.code-server-auth` gehören
+  zum Container. Sonst würde `--into` Passwort bzw. Auth des Ziel-Workspace
+  überschreiben und ein Restore ein inzwischen geändertes Passwort zurückdrehen.
+- **Kein Neuanlegen von Containern**: Auf einem neuen Host stehen die Projekte wieder
+  in der Liste, ihre Container fehlen. Neue Workspaces anlegen und `--into` nutzen;
+  ein „Container zu bestehendem Projekt neu erzeugen“ wäre ein eigenes Feature.
+
+**Tests (live)**
+- Vorher manuelle Sicherung von `.env`, CA und Volumes
+  (`~/xares-backups/…/*-before-3.3*`). Deploy: alle Dienste mit
+  `{"max-file":"3","max-size":"10m"}`, Server kennt `LOG_MAX_*`; neuer Workspace
+  ebenso.
+- logrotate: Trockenlauf ok; erzwungene Rotation → `access.log.1`, squid schreibt
+  nach `-k rotate` in die neue Datei, `tail -F` folgt (`docker logs`); zweite Rotation
+  → `access.log.2.gz` (38 MB → 2,4 MB). Danach `-k rotate` stumm geschaltet (gab jedes
+  Mal alle Whitelist-Warnungen aus).
+- Backup ohne Workspaces: 7 s, 97 MB; Forgejo gestoppt/gestartet, danach `healthy`,
+  `/git/` 200. `--keep 2` löscht nur ältere reguläre Backups, nicht `-before-restore`
+  oder `.partial`.
+- `--workspaces` über 28 Workspaces: exit 0, knapp 10 min, 3,2 GB. Größter Brocken war
+  `CachedExtensionVSIXs` (bis 300 MB pro Workspace) → ausgeschlossen. Zweiter Lauf
+  (27 Workspaces): exit 0, 8,5 min, 1,2 GB, keine Cache-Pfade mehr in den Archiven.
+- Restore in denselben Workspace: veränderte/gelöschte Dateien zurück, Besitzer
+  `coder:coder`, Rechte 600 erhalten, neue Dateien bleiben, Container läuft wieder.
+  `--into` in einen passwortgeschützten Workspace: Dateien da, Login weiter verlangt.
+- Plattform-Restore: Projekt umbenannt und `example.org` auf die Whitelist gesetzt,
+  dann Restore (13 s) → Name und Whitelist (44 Einträge) wieder wie vorher, 29
+  Projekte, Forgejo `healthy`, Git 200, Workspace 302, `-before-restore` angelegt.
+- Restore in neue Volumes (Wegwerf-Projektname `xarestest`): Volumes mit Labels
+  `com.docker.compose.project/volume` angelegt, Pfade wie im Archiv, `gitea.db`
+  bitgleich, Hinweis „Start the platform with ./deploy.sh“.
+- Aufgeräumt: Test-Workspaces, ihre Forgejo-Nutzer, `xarestest_*`-Volumes und die
+  Test-Backups.
