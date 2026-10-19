@@ -1428,7 +1428,7 @@ Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinnin
 - **Whitelist nicht verändern**: Der Security-Test nutzt die Standard-Domains
   (`pypi.org` ist dort komplett frei), damit er eine angepasste Whitelist einer
   echten Installation nicht anfasst.
-- Bekannt, nicht geändert: `--skip-env` ignoriert `--git-server`/`--enable-proxy`
+- Bekannt, hier nicht geändert (→ 3.5): `--skip-env` ignoriert `--git-server`/`--enable-proxy`
   (die Flags werden in `setup_environment` geschrieben). Vorbestehend seit 3.2.
 
 **Tests (live)**
@@ -1465,3 +1465,29 @@ Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinnin
 - Runner fest auf `ubuntu-24.04` (`ubuntu-latest` wechselt ab 2026-10-19 auf Ubuntu
   26), `actions/checkout@v5` (Node 24). Der vorübergehende Trigger auf `ops/paket-3`
   ist vor dem Merge wieder entfernt.
+
+### 3.5 `--skip-env` übernimmt Feature-Flags (Nachtrag)
+
+**Problem**
+- Seit 3.2 schreibt `set_feature_flag` die Flags in `setup_environment` – das mit
+  `--skip-env` komplett übersprungen wird. `./deploy.sh --skip-env --enable-proxy`
+  erzeugte zwar die CA (die Entscheidung dafür liest das Flag), startete den Proxy
+  aber nicht (die Compose-Profile kommen aus `.env`); `--disable-…` wirkte gar nicht.
+  Die Subnetzprüfung lief mit `--skip-env` ebenfalls nie.
+- Ohne `.env` lief `--skip-env` weiter und scheiterte erst später unklar.
+
+**Änderung**
+- `deploy.sh`: Flags, Subnetzprüfung der Proxy-Netze und `HOST_PORT` stehen in der
+  neuen Funktion `apply_env_settings`. `setup_environment` ruft sie wie bisher auf
+  (vor Anzeige und „edit?“-Frage), mit `--skip-env` wird sie direkt aufgerufen –
+  übersprungen wird nur noch der interaktive Teil. `--skip-env` ohne `.env` bricht mit
+  klarer Meldung ab, bevor etwas geschrieben wird. Hilfetext angepasst.
+- Doku: Upgrade-Tabelle (`deploy.sh` flags), `INSTALLATION.md`.
+
+**Tests**
+- Funktion mit Wegwerf-`.env`: `--git-server` → an, `HOST_PORT` aus `BASE_PORT`
+  ergänzt; ohne Flag → behalten; `--disable-git-server` → aus; `--enable-proxy` → an,
+  Subnetzprüfung gegen die echten Netze ohne Konflikt.
+- `--skip-env` in einem leeren Verzeichnis: Abbruch mit Meldung, keine Datei angelegt.
+- Live: `./deploy.sh --skip-build --skip-env --skip-network` → „Keeping …“,
+  Subnetzprüfung, Deploy erfolgreich, `.env` unverändert; Smoke-Test 29/29.
