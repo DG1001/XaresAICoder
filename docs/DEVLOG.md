@@ -1383,3 +1383,61 @@ Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinnin
   bitgleich, Hinweis „Start the platform with ./deploy.sh“.
 - Aufgeräumt: Test-Workspaces, ihre Forgejo-Nutzer, `xarestest_*`-Volumes und die
   Test-Backups.
+
+### 3.4 CI-Smoke-Test, `.env` nur für den Eigentümer
+
+**Problem**
+- CI baute Images nur beim Release-Tag; ob die Plattform danach startet, Workspaces
+  anlegen kann und die Isolation greift, prüfte nichts. `tests/` enthielt nur alte
+  Ad-hoc-Skripte ohne echte Prüfung.
+- `deploy.sh` ohne Terminal (CI, cron, `</dev/null`) brach an der Frage „edit the
+  configuration?“ **still** ab: `read` liefert bei EOF 1, `set -e` beendet das Skript
+  ohne Meldung. Unbeaufsichtigt ging nur `--skip-env`.
+- `.env` (Admin-Passwort, Forgejo-Schlüssel und -Admin-Passwort) entstand per
+  `cp .env.example` mit der umask, meist `644` – für alle Nutzer des Hosts lesbar
+  (live so vorgefunden).
+
+**Änderung**
+- `tests/smoke-test.sh` (liest `.env`, prüft über nginx mit `--resolve`): API-Sperre
+  ohne Login, Login, Dashboard, Catch-all-404, Forgejo; Workspace ohne Proxy (VS Code
+  über nginx, neun KI-Tools, Log-Limit, `/api/` aus dem Workspace gesperrt, eigener
+  Forgejo-Nutzer, Stop/Start/Löschen); Security-Proxy-Workspace (`pypi.org` erlaubt,
+  `example.com` 403, kein direkter Internetzugang); Logging-Proxy-Workspace
+  (`example.com` über mitmproxy, Domain aufgezeichnet, kein direkter Zugang);
+  `--backup`: `backup.sh` + Restore, danach API, Login, `projects.json` unverändert,
+  Forgejo. Räumt beim Beenden alles ab (Workspaces, Forgejo-Nutzer per Admin-API,
+  Domain-Datei); Passwörter gehen per stdin an curl, nicht über die Kommandozeile.
+- `.github/workflows/smoke-test.yml`: bei PRs, Push auf `main` und manuell (vorerst
+  auch auf `ops/paket-3`). Statische Prüfungen (`bash -n`, `node --check`, Python-
+  Syntax des mitmproxy-Addons, `docker compose config` aller Profile), dann
+  `.env` aus `.env.example` und `./deploy.sh --git-server --enable-proxy </dev/null`,
+  dann `tests/smoke-test.sh --backup`; bei Fehlern Container- und Workspace-Logs.
+  Ein neuer Push bricht den laufenden Test desselben Branches ab.
+- `deploy.sh`: alle Rückfragen mit `|| REPLY=""` – ohne Terminal gilt die
+  Standardantwort. `ensure_admin_password` setzt `.env` auf `600`.
+- Doku: `DEVELOPMENT.md` (Smoke Test), `GITHUB_ACTIONS.md`, Upgrade-Tabelle.
+
+**Entscheidungen** (mit dir abgestimmt, 2026-10-19)
+- **Voller Durchlauf** statt nur Plattform ohne Workspaces: Die Kernfunktion
+  (Workspace anlegen) und die Isolation sind das, was kaputtgehen kann. Kostet bei
+  einem öffentlichen Repo nichts.
+- **Echter `deploy.sh`** statt eigenem Compose-Aufruf im Workflow: CI prüft so auch
+  den Weg, den Nutzer gehen (Secrets, CA, Netze, Forgejo-Setup, Passwort-Rotation).
+- **Ein Skript für CI und lokal**: gegen die eigene Installation in etwa einer Minute,
+  ohne Spuren; `--backup` nur auf Wunsch, weil es die Plattform kurz stoppt.
+- **Whitelist nicht verändern**: Der Security-Test nutzt die Standard-Domains
+  (`pypi.org` ist dort komplett frei), damit er eine angepasste Whitelist einer
+  echten Installation nicht anfasst.
+- Bekannt, nicht geändert: `--skip-env` ignoriert `--git-server`/`--enable-proxy`
+  (die Flags werden in `setup_environment` geschrieben). Vorbestehend seit 3.2.
+
+**Tests (live)**
+- Statische Prüfungen lokal sauber (Node 22 im Container, `compose config` mit
+  `.env.example` + Platzhalter-Schlüssel).
+- Erster Lauf gegen die Live-Umgebung: 28 von 29 grün; KI-Tool-Prüfung scheiterte am
+  Begrüßungstext der Login-Shell (→ Markierung `missing:`). Forgejo-Nutzer wurden
+  nicht entfernt: Der Container entsteht asynchron, `FORGEJO_USER` wurde vor dem
+  Start gelesen (→ erst nach `running`). Drei Testnutzer von Hand gelöscht.
+- Deploy ohne `--skip-env` mit `</dev/null`: läuft durch, `.env` von `644` auf `600`.
+- Zweiter Lauf mit `--backup`: alle 36 Prüfungen grün in 82 s; danach 27 Projekte,
+  27 Workspace-Container, 28 Forgejo-Nutzer wie vorher, keine Temp-Verzeichnisse.

@@ -427,6 +427,7 @@ What changes:
 | Forgejo secret key | The compose file shipped a public placeholder as `SECRET_KEY`; `deploy.sh` now generates `FORGEJO_SECRET_KEY` | Everybody is logged out of the Forgejo web UI once; 2FA, push mirrors and Actions secrets set up before must be set up again. Without `deploy.sh`, set `FORGEJO_SECRET_KEY` in `.env` (compose refuses to start otherwise) |
 | Logs | Docker logs limited to `LOG_MAX_SIZE` × `LOG_MAX_FILE` (default 10 MB × 3); squid logs rotated daily, 14 days kept (see "Logs") | Existing workspaces keep unlimited Docker logs until recreated |
 | Backups | New `./backup.sh` with restore (see "Backup and Restore") | Set up a nightly cron job |
+| `.env` | `deploy.sh` makes it readable by its owner only (`chmod 600`); without a terminal (CI, cron, `</dev/null`) every prompt takes its default instead of ending the script silently | Tools reading `.env` must run as its owner |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
 Forgejo admin password) until they are recreated; `setup_local_remote` works in them
