@@ -604,6 +604,16 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 - Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env
   (bekannt, Paket 2).
 
+### Vorgemerkte Feature-Ideen
+
+- **XaresAICoder als MCP-Server** (vorgemerkt 2026-10-19): Ein KI-Agent – z. B. Claude
+  im Chat – soll sich per MCP mit einem Workspace verbinden können, wenn er „mehr
+  braucht“, ohne die Cloud-Umgebung des Anbieters zu nutzen. Kernfunktionen: Dateien
+  hoch-/herunterladen, Programme/Befehle im Workspace ausführen (Ausgabe zurück).
+  Optional später: Workspace anlegen. Zu klären: Transport (Streamable HTTP über nginx),
+  Authentifizierung (eigener Token pro Agent/Workspace statt Admin-Session, vgl. 2.6),
+  Begrenzung auf freigegebene Workspaces, Zeit-/Ausgabelimits, Protokollierung.
+
 ---
 
 ## Paket 2 – Isolation (Variante 2: Teilnehmer gelten als nicht vertrauenswürdig)
