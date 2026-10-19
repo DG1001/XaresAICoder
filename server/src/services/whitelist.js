@@ -1,6 +1,9 @@
 const Docker = require('dockerode');
 
 const SQUID_CONF = '/etc/squid/squid.conf';
+// Whitelist ACLs and access rules; squid.conf includes this file, which lives
+// on a volume so an applied whitelist survives a recreated squid container
+const WHITELIST_FILE = '/etc/squid/whitelist/whitelist.conf';
 
 // One hostname label: letters, digits, hyphens (not at the ends); underscores
 // are tolerated because some real-world hostnames use them.
@@ -18,9 +21,8 @@ function whitelistError(message, code) {
 class WhitelistService {
   constructor() {
     this.docker = new Docker();
-    // Markers in squid.conf that delimit the replaceable whitelist section
+    // First line of a generated whitelist file
     this.WHITELIST_START = '# Whitelist ACLs - CUSTOMIZE THESE';
-    this.WHITELIST_END = '# DENY ALL OTHER TRAFFIC';
     // Base domains always included (essential for workspace operation)
     // Use .domain format only — squid .domain matches both bare domain and all subdomains
     this.BASE_DOMAINS = [
@@ -110,16 +112,7 @@ class WhitelistService {
    */
   async getWhitelist() {
     try {
-      const confContent = await this._readSquidConf();
-
-      const startIdx = confContent.indexOf(this.WHITELIST_START);
-      const endIdx = confContent.indexOf(this.WHITELIST_END);
-
-      if (startIdx === -1 || endIdx === -1) {
-        throw new Error('Could not find whitelist markers in squid.conf');
-      }
-
-      const whitelistSection = confContent.substring(startIdx, endIdx);
+      const whitelistSection = await this._execInSquidChecked(['cat', WHITELIST_FILE], 'Reading the whitelist');
 
       // Parse ACL lines for dstdomain entries
       const domains = new Set();
@@ -229,38 +222,33 @@ class WhitelistService {
       // Generate new whitelist section
       const newSection = this._generateWhitelistSection(domainList);
 
-      // Read current squid.conf
-      const confContent = await this._readSquidConf();
-
-      const startIdx = confContent.indexOf(this.WHITELIST_START);
-      const endIdx = confContent.indexOf(this.WHITELIST_END);
-
-      if (startIdx === -1 || endIdx === -1) {
-        throw new Error('Could not find whitelist markers in squid.conf');
+      // Validate before touching the live whitelist: a copy of squid.conf
+      // that includes the candidate instead of the live file
+      const candidate = `${WHITELIST_FILE}.new`;
+      const checkConf = `${SQUID_CONF}.check`;
+      await this._writeFileInSquid(candidate, newSection);
+      const conf = await this._readSquidConf();
+      if (!conf.includes(`include ${WHITELIST_FILE}`)) {
+        throw new Error(`squid.conf does not include ${WHITELIST_FILE}`);
       }
-
-      // Replace whitelist section
-      const newConf = confContent.substring(0, startIdx) + newSection + confContent.substring(endIdx);
-
-      // Validate the candidate config before touching the live one
-      const candidate = `${SQUID_CONF}.new`;
-      await this._writeFileInSquid(candidate, newConf);
-      const parse = await this._execInSquid(['squid', '-k', 'parse', '-f', candidate]);
+      await this._writeFileInSquid(checkConf, conf.split(`include ${WHITELIST_FILE}`).join(`include ${candidate}`));
+      const parse = await this._execInSquid(['squid', '-k', 'parse', '-f', checkConf]);
+      await this._execInSquid(['rm', '-f', checkConf]);
       if (parse.exitCode !== 0) {
         await this._execInSquid(['rm', '-f', candidate]);
         const detail = (parse.stderr || parse.stdout).trim().split('\n').slice(-5).join('\n');
         throw whitelistError(`Generated squid configuration is invalid: ${detail}`, 'PARSE');
       }
 
-      // Swap in the new config, keeping a backup for rollback
-      await this._execInSquidChecked(['cp', SQUID_CONF, `${SQUID_CONF}.bak`], 'Backing up squid.conf');
-      await this._execInSquidChecked(['mv', candidate, SQUID_CONF], 'Installing squid.conf');
+      // Swap in the new whitelist, keeping a backup for rollback
+      await this._execInSquidChecked(['cp', WHITELIST_FILE, `${WHITELIST_FILE}.bak`], 'Backing up the whitelist');
+      await this._execInSquidChecked(['mv', candidate, WHITELIST_FILE], 'Installing the whitelist');
 
       try {
         await this._execInSquidChecked(['squid', '-k', 'reconfigure'], 'squid reconfigure');
       } catch (reconfigureError) {
-        console.error('squid reconfigure failed, restoring previous config:', reconfigureError.message);
-        await this._execInSquid(['cp', `${SQUID_CONF}.bak`, SQUID_CONF]);
+        console.error('squid reconfigure failed, restoring previous whitelist:', reconfigureError.message);
+        await this._execInSquid(['cp', `${WHITELIST_FILE}.bak`, WHITELIST_FILE]);
         await this._execInSquid(['squid', '-k', 'reconfigure']);
         throw reconfigureError;
       }

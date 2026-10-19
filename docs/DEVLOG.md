@@ -20,7 +20,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 |-------|--------|--------|
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
-| 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
+| 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | 🚧 in Arbeit (Branch `ops/paket-3`) |
 
 ---
 
@@ -169,9 +169,8 @@ falsches Passwort → erneuter Prompt mit Fehlermeldung, Abbruch → `null`.
   es eine `dst`-ACL. Falls „Select All“ in Recorded Domains IP-Literale enthält, muss
   man sie abwählen. Eine eigene `dst`-ACL für IPs wäre ein mögliches Folge-Feature.
 - **Einzel-Labels wie `.com` werden abgelehnt**, weil sie faktisch alles freigeben.
-- **Offen (Paket 2/3)**: Die Whitelist lebt nur im laufenden squid-Container und geht
-  beim Neuerstellen verloren; das Subnetz `172.30.0.0/16` ist weiterhin fest
-  eingetragen. Sauberer wäre eine per `include` eingebundene Datei auf einem Volume.
+- ~~**Offen (Paket 2/3)**: Whitelist nur im laufenden squid-Container, Subnetz fest
+  eingetragen~~ – erledigt: Subnetz per Env (2.4), Whitelist auf einem Volume (3.1).
 
 **Test**: Node-Test mit simuliertem squid-Container: gültige Schreibweisen werden
 normalisiert und dedupliziert; Newline-Injection, Leerzeichen, IP, `.com`, URL und
@@ -1208,3 +1207,59 @@ Code-Server-Image neu bauen, Klone brauchen ein Passwort.
   Admin, Logout, Convo-Viewer): alle 8 Schritte ✔.
 - Aufgeräumt: Test-Workspaces, Forgejo-Test-Nutzer und Probe-Artefakte in
   `/var/log/mitmproxy` entfernt; Zustand wie vorher (27 Projekte, 28 Forgejo-Nutzer).
+
+---
+
+## Paket 3 – Betrieb
+
+Branch `ops/paket-3`. Reihenfolge (mit dir abgestimmt, 2026-10-19): 1) generierte
+Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinning,
+3) Backups + Log-Rotation, 4) CI-Smoke-Test.
+
+### 3.1 Generierte Secrets und persistente Whitelist
+
+**Problem**
+- `docker-compose.yml` setzte `FORGEJO__security__SECRET_KEY` fest auf den öffentlich
+  bekannten Platzhalter `your-secret-key-change-this-in-production` – live auch in
+  `app.ini`. Forgejo signiert damit u. a. Sessions und CSRF-Tokens und verschlüsselt
+  2FA-, Mirror- und Actions-Secrets.
+- Eine per `PUT /api/whitelist` angewandte Whitelist lebte nur in der `squid.conf`
+  des Containers; jedes `deploy.sh` (Container neu erstellt) setzte sie zurück.
+
+**Änderung**
+- `docker-compose.yml`: `SECRET_KEY=${FORGEJO_SECRET_KEY:?…}` – ohne Wert bricht
+  `docker compose` mit klarer Meldung ab. Der leere `INTERNAL_TOKEN`-Eintrag ist raus
+  (Forgejo erzeugt ihn selbst).
+- `deploy.sh`: `ensure_generated_secret` (allgemein) erzeugt fehlende/leere Werte in
+  `.env`, auch mit `--skip-env`; genutzt für `ADMIN_PASSWORD` und neu
+  `FORGEJO_SECRET_KEY` (64 Zeichen). `.env.example` dokumentiert ihn.
+- squid: Der Whitelist-Abschnitt (ACLs + Access-Regeln) steht jetzt in
+  `squid/whitelist-default.conf`; `squid.conf` bindet
+  `/etc/squid/whitelist/whitelist.conf` per `include` ein. Diese Datei liegt auf dem
+  neuen Volume `squid_whitelist`; `xares-entrypoint.sh` befüllt es beim ersten Start
+  aus der Vorlage.
+- `whitelist.js`: liest/schreibt nur noch die Whitelist-Datei; Prüfung mit
+  `squid -k parse` gegen eine Kopie von `squid.conf`, die den Kandidaten einbindet;
+  Backup und Rollback wie bisher.
+
+**Entscheidungen**
+- **Leerer Schlüssel ist keine Option**: Test mit Wegwerf-Forgejo – ein leerer Wert
+  landet als leerer `SECRET_KEY` in `app.ini`, Forgejo läuft damit; einen eigenen
+  erzeugt es nicht. Daher harter Abbruch statt stiller Unsicherheit.
+- **Schlüsselwechsel auf Bestandsinstallationen**: Vorher geprüft – keine mit
+  `SECRET_KEY` verschlüsselten Daten (0 Actions-Secrets, Push-Mirrors, 2FA, Webhooks;
+  nur die drei eingebauten OAuth-Apps). Wer 2FA, Mirrors oder Actions-Secrets nutzt,
+  muss sie nach dem Wechsel neu einrichten (Upgrade-Hinweis).
+- **Volume statt Server-seitiger Wiederanwendung**: squid lädt die Datei selbst beim
+  Start; kein Zeitfenster mit Standard-Whitelist nach einem Neustart von squid.
+
+**Tests**
+- `deploy.sh`-Funktionen mit temporären `.env`: Schlüssel fehlt / leer / gesetzt →
+  erzeugt (24 bzw. 64 Zeichen) / erzeugt / unangetastet; kein Abbruch unter `set -e`.
+- Live (Backup von `forgejo_data` und `.env` vorher): Deploy erzeugt
+  `FORGEJO_SECRET_KEY`, `app.ini` übernimmt ihn, Platzhalter weg; Admin-Login und
+  Web-UI funktionieren. Whitelist auf dem Volume, `squid -k parse` fehlerfrei.
+  Security-Workspace: `PUT` mit `example.org` → erlaubt, `example.com` gesperrt;
+  squid neu erstellt → weiterhin erlaubt; komplettes Deploy → weiterhin erlaubt,
+  Secrets unverändert. Danach Standard-Whitelist wiederhergestellt, Test-Workspace
+  und Forgejo-Testnutzer entfernt.

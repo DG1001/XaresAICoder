@@ -13,8 +13,10 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /etc/squid/certs /var/lib/squid/ssl_db && \
     chown -R proxy:proxy /etc/squid/certs /var/lib/squid/ssl_db
 
-# Copy Squid configuration
+# Copy Squid configuration (the whitelist itself lives on a volume, seeded
+# from the default by xares-entrypoint.sh)
 COPY squid.conf /etc/squid/squid.conf
+COPY whitelist-default.conf /etc/squid/whitelist-default.conf
 
 # Create log directory
 RUN mkdir -p /var/log/squid && \

@@ -331,7 +331,8 @@ What changes:
 | Workspaces | Hard CPU limit, Docker's default seccomp profile, sudo chosen per workspace (default `WORKSPACE_SUDO_ENABLED`) | Applies to new and recreated workspaces only |
 | Workshop admin | Dashboard session or `X-Admin-Password` header (never in the URL) | — |
 | Protected workspaces | API calls for clone, aliases, ports, logs, documentation need `X-Workspace-Password` | Update scripts |
-| Whitelist | IP addresses, URLs and single labels are rejected | Remove such entries |
+| Whitelist | IP addresses, URLs and single labels are rejected; the applied whitelist now lives on the volume `squid_whitelist` and survives redeploys | Re-apply your whitelist once after the upgrade (it was reset by every deploy before); delete the volume to return to the default |
+| Forgejo secret key | The compose file shipped a public placeholder as `SECRET_KEY`; `deploy.sh` now generates `FORGEJO_SECRET_KEY` | Everybody is logged out of the Forgejo web UI once; 2FA, push mirrors and Actions secrets set up before must be set up again. Without `deploy.sh`, set `FORGEJO_SECRET_KEY` in `.env` (compose refuses to start otherwise) |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
 Forgejo admin password) until they are recreated; `setup_local_remote` works in them
