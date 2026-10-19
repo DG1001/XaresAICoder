@@ -19,12 +19,13 @@ permissions:
 
 jobs:
   smoke-test:
-    runs-on: ubuntu-latest
+    # Fixed image: ubuntu-latest moves to a new release on its own
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Static checks
         run: |
@@ -44,14 +45,28 @@ jobs:
           # The defaults from .env.example; deploy.sh turns on the features and
           # generates the secrets. No terminal: every prompt takes its default.
           cp .env.example .env
-          ./deploy.sh --git-server --enable-proxy < /dev/null
+          ./deploy.sh --git-server --enable-proxy < /dev/null 2>&1 | tee deploy.log
 
       - name: Smoke test
-        run: tests/smoke-test.sh --backup
+        run: tests/smoke-test.sh --backup 2>&1 | tee smoke.log
 
       - name: Diagnostics
         if: failure()
         run: |
+          set +e
+          # compose refuses to run without it, and deploy.sh may have failed
+          # before generating it (only the logs are read here)
+          export FORGEJO_SECRET_KEY=diagnostics
+          # The ends of the logs also as annotations: they show up on the run
+          # and pull request, and the API serves them without admin rights
+          annotate() {
+            local text
+            text=$(tail -n "$2" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\r//g;s/\n/%0A/g')
+            [ -z "$text" ] || echo "::error title=$1::$text"
+          }
+          [ ! -f deploy.log ] || annotate "deploy.sh" 60 < deploy.log
+          [ ! -f smoke.log ] || annotate "Smoke test" 60 < smoke.log
+          docker compose --profile git-server --profile proxy logs --no-color --tail 15 2>&1 | annotate "Service logs" 90
           docker ps -a
           docker compose --profile git-server --profile proxy logs --no-color --tail 200
           for c in $(docker ps -aq --filter name=^workspace-); do
