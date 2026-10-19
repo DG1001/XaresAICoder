@@ -351,9 +351,13 @@ docker start workspace-PROJECT_ID
 - Status doesn't update after operations
 
 **Solutions**:
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
 # Refresh page and check API directly
-curl http://localhost/api/projects/PROJECT_ID
+curl -b cookies.txt http://localhost/api/projects/PROJECT_ID
 
 # Check actual container status
 docker ps | grep workspace-PROJECT_ID
@@ -571,7 +575,7 @@ docker exec xaresaicoder-nginx-1 curl http://workspace-projectid:5000
 **Diagnosis**:
 ```bash
 # Is the alias actually registered?
-curl http://localhost/api/projects/<projectId>/aliases
+curl -b cookies.txt http://localhost/api/projects/<projectId>/aliases
 
 # Is it in nginx's dynamic config?
 docker exec xaresaicoder-nginx cat /etc/nginx/dynamic/aliases.conf | grep server_name
@@ -618,7 +622,7 @@ docker logs xaresaicoder-nginx 2>&1 | grep -E "reloading|signal" | tail -5
    ```bash
    # Passwords are case-sensitive
    # Check exact password from creation response
-   curl http://localhost/api/projects/PROJECT_ID
+   curl -b cookies.txt http://localhost/api/projects/PROJECT_ID
    ```
 
 2. **Browser Cache Issues**:
@@ -652,7 +656,7 @@ docker logs xaresaicoder-nginx 2>&1 | grep -E "reloading|signal" | tail -5
 1. **Check Password in Request**:
    ```bash
    # Ensure password is in request body
-   curl -X POST http://localhost/api/projects/PROJECT_ID/stop \
+   curl -b cookies.txt -X POST http://localhost/api/projects/PROJECT_ID/stop \
      -H "Content-Type: application/json" \
      -d '{"password": "correct-password-here"}'
    ```
@@ -660,7 +664,7 @@ docker logs xaresaicoder-nginx 2>&1 | grep -E "reloading|signal" | tail -5
 2. **Check Workspace Protection Status**:
    ```bash
    # Verify workspace is actually password protected
-   curl http://localhost/api/projects/PROJECT_ID
+   curl -b cookies.txt http://localhost/api/projects/PROJECT_ID
    # Look for "passwordProtected": true
    ```
 
@@ -842,7 +846,8 @@ grep ENABLE_GIT_SERVER .env
 1. **Check Forgejo API**:
    ```bash
    # Test Forgejo API connectivity
-   curl -u developer:admin123! \
+   # GIT_ADMIN_USER / GIT_ADMIN_PASSWORD from .env
+   curl -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" \
      http://localhost/git/api/v1/user
    ```
 
@@ -856,7 +861,7 @@ grep ENABLE_GIT_SERVER .env
 3. **Manual Repository Creation**:
    ```bash
    # Create repository manually
-   curl -u developer:admin123! -X POST \
+   curl -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" -X POST \
      -H "Content-Type: application/json" \
      -d '{"name":"test-repo","private":false}' \
      http://localhost/git/api/v1/user/repos

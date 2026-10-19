@@ -84,22 +84,26 @@ project.passwordHash = hashedPassword;
 Workspace passwords can be managed after creation via the `PUT /api/projects/:projectId/password` endpoint:
 
 **Set password on unprotected workspace:**
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
-curl -X PUT http://localhost/api/projects/abc123/password \
+curl -b cookies.txt -X PUT http://localhost/api/projects/abc123/password \
   -H "Content-Type: application/json" \
   -d '{"newPassword": "MySecurePassword123!"}'
 ```
 
 **Update existing password:**
 ```bash
-curl -X PUT http://localhost/api/projects/abc123/password \
+curl -b cookies.txt -X PUT http://localhost/api/projects/abc123/password \
   -H "Content-Type: application/json" \
   -d '{"currentPassword": "OldPassword123!", "newPassword": "NewPassword456!"}'
 ```
 
 **Remove password protection:**
 ```bash
-curl -X PUT http://localhost/api/projects/abc123/password \
+curl -b cookies.txt -X PUT http://localhost/api/projects/abc123/password \
   -H "Content-Type: application/json" \
   -d '{"currentPassword": "OldPassword123!", "removePassword": true}'
 ```
@@ -120,7 +124,7 @@ Operations requiring password verification:
 
 ```bash
 # Stop protected workspace
-curl -X POST http://localhost/api/projects/abc123/stop \
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123/stop \
   -H "Content-Type: application/json" \
   -d '{"password": "MySecurePassword123!"}'
 ```
@@ -187,21 +191,30 @@ tmpfs:
 
 ### Network Isolation
 
-```yaml
-networks:
-  xares-aicoder-network:
-    driver: bridge
-    internal: false              # Internet access allowed
-    ipam:
-      config:
-        - subnet: 172.19.0.0/16  # Isolated subnet
-```
+Workspaces never share a network with the API server, and each proxy mode has
+its own network:
 
-**Network Security**:
-- **Isolated Subnet** - Separate from host network
-- **Service Discovery** - Container name resolution only
-- **Port Isolation** - Ports only accessible via proxy
-- **No Direct Access** - External access only through nginx
+| Network | Internal | Members |
+|---------|----------|---------|
+| `xares-control` | no | nginx, API server, Forgejo — **no workspaces** |
+| `xares-aicoder-network` (external) | no | Direct workspaces (no proxy), nginx, Forgejo; squid/mitmproxy use it for internet access |
+| `xares-internal` (`INTERNAL_NETWORK_SUBNET`) | yes | LLM Logging Proxy workspaces, mitmproxy, nginx, dnsmasq |
+| `xares-security` (`SECURITY_NETWORK_SUBNET`) | yes | Security Proxy workspaces, squid, nginx, dnsmasq |
+
+**What this enforces**:
+- **API server unreachable from workspaces** - It sits only on `xares-control`; no workspace can resolve or reach `server:3000`.
+- **No proxy hopping** - A Security Proxy workspace cannot use the unrestricted mitmproxy to bypass the whitelist, and Logging Proxy workspaces cannot reach squid. Squid only accepts clients from `SECURITY_NETWORK_SUBNET`.
+- **No platform API via nginx** - nginx must share a network with every workspace to proxy code-server and app ports. `location /api/` therefore denies all workspace subnets (403). The API server generates the rules from the live Docker networks on every start (`/etc/nginx/dynamic/api-access.conf`). Requests that arrive through mitmproxy or squid are denied as well, because the proxies reach nginx from a workspace subnet.
+- **Existing workspaces are migrated** - On start the API server moves every workspace to the network of its proxy mode, and `start` repairs containers whose network was recreated by `docker compose down/up`.
+
+Still allowed on purpose: workspaces can reach each other's ports (also via nginx subdomains — clones require a password for that reason), the workspace UI and app subdomains through nginx, and Forgejo (direct workspaces, see "Git Server Credentials" below).
+
+**Limitation — traffic relayed by the host.** nginx tells workspaces apart from legitimate clients by source address. The bridge gateway (e.g. `172.19.0.1`) stays allowed, because the host itself and Docker Desktop's port forwarding reach nginx from there. Anything a workspace can send *through the host's published port* therefore looks like a host request:
+- **Docker Desktop**: `host.docker.internal:<HOST_PORT>` reaches nginx from the gateway — from direct workspaces and through mitmproxy. Binding `HOST_PORT` to `127.0.0.1` does not help there. Do not run untrusted participants on Docker Desktop.
+- **Linux, Docker 28** (verified behaviour on Docker 28.5): requests to a gateway or host address keep the workspace's source address (403); internal networks (`xares-internal`, `xares-security`) cannot reach published host ports at all. Older Docker versions with the userland proxy can relay such requests from the gateway address. Mitigations: bind `HOST_PORT` to `127.0.0.1` when a reverse proxy on the same host fronts the platform, or block the workspace subnets from the host's published ports in the firewall (`DOCKER-USER`/`INPUT`).
+- The public URL: any workspace with internet access (direct, LLM Logging Proxy, or Security Proxy if the platform's own domain is whitelisted) reaches the platform like any other client.
+
+Since the admin login (see "Authentication") these paths only lead to the login: without a session the API answers `401`. The network rules remain as defense in depth.
 
 ## Network Security
 
@@ -314,12 +327,13 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" alway
 | **LLM Conversations** | mitmproxy volume | Per-workspace IP | Until container reset |
 | **Proxy Logs** | Squid volume | Per-workspace IP | Until container reset |
 
-> ⚠️ **"Per-workspace IP" is not a stable boundary.** Proxy recordings (domains,
-> LLM conversations, Squid logs) are partitioned by the workspace's Docker
-> container IP, not by project ID. Docker reuses IPs from the subnet pool and
-> the logs are not pruned automatically, so a new workspace that inherits a
-> recycled IP can surface a previous workspace's recordings, and a workspace
-> that restarts under a new IP loses visibility of its earlier logs. See
+> **"Per-workspace IP" is a fixed address.** Proxy recordings (domains, LLM
+> conversations, Squid logs) are partitioned by the workspace's container IP.
+> Every proxied workspace gets a fixed IP when it is created (stored in
+> `projects.json`, pinned in Docker), so it keeps its recordings across
+> restarts. An address is only reused after its workspace was deleted; the new
+> owner does not see the previous recordings (conversations are archived,
+> domain records cleared, older Squid lines hidden). See
 > [LLM_CONVERSATION_LOGGING.md](LLM_CONVERSATION_LOGGING.md#ip-to-project-mapping).
 
 ### Data Isolation
@@ -356,9 +370,30 @@ docker run --volume workspace_data_def456:/data workspace-def456
 
 ## Authentication
 
-### Current Authentication Model
+### Admin Login (Dashboard and API)
 
-XaresAICoder uses **workspace-level authentication** rather than platform-level user accounts:
+The dashboard and the whole platform API require an admin login: one shared
+password (`ADMIN_PASSWORD` in `.env`, generated by `./deploy.sh` if missing).
+Without it the API stays locked (`503`). Sessions are signed, HttpOnly,
+SameSite=Strict cookies (12 h by default, `ADMIN_SESSION_HOURS`); the signing
+key lives in the data volume and is mixed with the password, so changing the
+password ends all sessions. Ten failed logins per client within 15 minutes
+block further attempts. State-changing requests must come from the dashboard's
+own origin (workspace apps on sibling subdomains are same-site and would
+otherwise send the admin's cookie along).
+
+Public without login: `/api/health`, the login endpoints and the workshop
+participant endpoints. The workshop admin page accepts the dashboard session
+or `WORKSHOP_ADMIN_PASSWORD`.
+
+This closes the remaining path from section "Network Isolation": a request a
+workspace relays through the host now reaches nginx, but the API answers
+`401` without a session. There are no roles yet — every admin can manage every
+workspace.
+
+### Workspace Passwords
+
+In addition, workspaces can be protected individually:
 
 ```mermaid
 graph TD
@@ -372,48 +407,52 @@ graph TD
     C --> I[Password can be added at any time]
 ```
 
-### Git Server Credentials Are Shared With Every Workspace
+### Git Server: One Forgejo Account per Workspace
 
-When `ENABLE_GIT_SERVER=true`, `server/src/services/docker.js` injects `GIT_ADMIN_USER`
-and `GIT_ADMIN_PASSWORD` as environment variables into **every** workspace container —
-not only into those created with the "create Git repository" option. Workspaces that do
-have a repository additionally carry the credential inside the remote URL in
-`.git/config`.
+The Forgejo admin account (`GIT_ADMIN_USER`/`GIT_ADMIN_PASSWORD`) stays on the
+API server. Every workspace gets its own Forgejo user (`<project-slug>-<8 hex of
+the project ID>`, profile visibility *private*) and an access token limited to
+it (`write:repository`, `write:user`), passed in as `FORGEJO_USER` /
+`FORGEJO_TOKEN` and used in its remote URLs. Older code-server images read
+`GIT_ADMIN_USER`/`GIT_ADMIN_PASSWORD`, so these carry the same workspace values.
 
-There is no isolation here: a single `printenv GIT_ADMIN_PASSWORD` inside any workspace
-reveals it. Treat the credential as disclosed the moment a workspace is handed to someone
-else.
+- Repositories created by the platform or `setup_local_remote` are **private**
+  and belong to the workspace user. A workspace cannot read, push to or even see
+  the repositories of other workspaces, and its token cannot use the admin API
+  or sign in to the web UI.
+- **Clones** get their own user and their own private repository with the
+  source's state and history — no shared repository any participant could
+  overwrite.
+- **Deleting a workspace** revokes its token; user and repositories stay. To
+  continue, create a workspace from the repository URL
+  (`<base>/git/<user>/<repo>.git`): the new workspace user is added as
+  collaborator automatically.
+- Administrators sign in to `/git/` with the admin account and see everything.
+  The admin account must be a Forgejo administrator (the server creates users,
+  tokens and repositories); see `.env.example`.
+- `./deploy.sh` replaces the well-known default password `admin123!` once with
+  a random one; `./deploy.sh --rotate-git-password` sets a new one at any time.
 
-**If the account is a Forgejo administrator — which is the default, since the account is
-created with `--admin` — every workspace holder gains full administrative access to the
-Git server, including the web UI and the admin API.**
+**Upgrade from earlier versions:** workspaces created before carried the admin
+password in their environment and in `.git/config`. On the first start of the
+new server every workspace gets its own user; when its container runs, its
+repositories are transferred to that user and the remote URLs switch to its
+token (a clone that pointed at its source gets an own copy instead). Old
+containers keep the admin password in their environment until they are
+recreated — the password rotation makes it worthless. Repositories that were
+public stay public, but are hidden from other workspace users because the
+owning user is private.
 
-Recommended hardening for shared or workshop use:
-
-| Measure | Why |
-|---|---|
-| Demote `GIT_ADMIN_USER` to a regular user | The platform only needs `POST /api/v1/user/repos`, `GET /api/v1/repos/{user}/{repo}` and `/api/v1/version` — none require admin rights |
-| Keep private repositories under a separate account | A non-admin account cannot read repositories owned by others |
-| Use an access token instead of the account password | A token works for git-over-HTTP and the API but cannot log into the web UI. Scopes: `write:repository` **and** `write:user` |
-| Set `GIT_ADMIN_BOOTSTRAP_PASSWORD` | Account creation in `deploy.sh` / `setup-forgejo.sh` must not use the token — it would become the account password |
-
-Note that a demoted account still grants **write access to all repositories it owns**, so
-participants can modify each other's repositories. That is acceptable for disposable
-workshop repositories; anything stronger requires a separate Forgejo account per
-workspace.
-
-Verification — run these from inside a workspace; all three must fail:
+Verification — from inside a workspace, all must fail:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' \
-  -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" http://forgejo:3000/api/v1/admin/users   # expect 403
-git clone http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/<other>/<private>.git  # expect "not found"
-curl -s -o /dev/null -w '%{http_code}\n' \
-  -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" http://forgejo:3000/api/v1/repos/<other>/<private>  # expect 404
+curl -s -o /dev/null -w '%{http_code}\n' -u "$FORGEJO_USER:$FORGEJO_TOKEN" http://forgejo:3000/api/v1/admin/users        # 403
+curl -s -o /dev/null -w '%{http_code}\n' -u "$FORGEJO_USER:$FORGEJO_TOKEN" http://forgejo:3000/api/v1/repos/<other>/<repo> # 404
+git push http://$FORGEJO_USER:$FORGEJO_TOKEN@forgejo:3000/<other>/<repo>.git   # repository not found
 ```
 
-See [INSTALLATION.md](INSTALLATION.md#git-server-configuration) for the configuration
-details.
+Not reachable from Security/Logging Proxy workspaces: Forgejo is not on their
+internal networks (unchanged).
 
 ### VS Code Authentication
 
@@ -425,9 +464,9 @@ AUTH_FLAG=password          # or "none" to remove protection
 export PASSWORD='secret'    # set when AUTH_FLAG=password
 ```
 
-### API Authentication
+### Workspace Password Checks in the API
 
-API endpoints respect workspace protection:
+In addition to the admin login, API endpoints respect workspace protection:
 - **Stop/Delete** operations require the workspace password in the request body
 - **Password management** (`PUT /api/projects/:id/password`) requires current password when changing/removing
 - **Adding** a password to an unprotected workspace does not require authentication

@@ -134,7 +134,13 @@ Four security levels are available, each with different trade-offs between secur
 
 ### Architecture Overview
 
-The transparent proxy solution adds a Squid proxy container to the XaresAICoder deployment:
+The transparent proxy solution adds a Squid proxy container to the XaresAICoder deployment.
+
+> **Current topology:** Security Proxy workspaces and squid share the internal network
+> `xares-security`; squid reaches the internet through `xares-aicoder-network`, and the
+> API server is not reachable from any workspace network. See
+> [SECURITY.md → Network Isolation](SECURITY.md#network-isolation). The diagram below shows
+> the original single-network design.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

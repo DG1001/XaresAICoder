@@ -73,7 +73,11 @@ function clampInt(value, fallback, min, max) {
 // Create new project
 router.post('/create', async (req, res) => {
   try {
-    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group, proxyMode: rawProxyMode, useProxy } = req.body;
+    const { projectName, projectType, memoryLimit, cpuCores, passwordProtected, password, createGitRepo, gitUrl, gitUsername, gitToken, group, proxyMode: rawProxyMode, useProxy, sudoEnabled } = req.body;
+
+    if (sudoEnabled !== undefined && typeof sudoEnabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid request', message: 'sudoEnabled must be a boolean' });
+    }
 
     // Determine proxyMode: support new proxyMode field, with backward compat for old useProxy boolean
     let proxyMode = rawProxyMode;
@@ -148,7 +152,8 @@ router.post('/create', async (req, res) => {
       gitUsername: gitUsername || null,
       gitToken: gitToken || null,
       group: group || null, // Will default to 'Uncategorized' in service
-      proxyMode: proxyMode || 'none'
+      proxyMode: proxyMode || 'none',
+      sudoEnabled // undefined -> WORKSPACE_SUDO_ENABLED default
     });
     
     res.status(201).json({
@@ -300,7 +305,11 @@ router.post('/:projectId/stop', async (req, res) => {
 router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { count, password } = req.body;
+    const { count, password, keepAiLogins, sudoEnabled } = req.body;
+
+    if (sudoEnabled !== undefined && typeof sudoEnabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid request', message: 'sudoEnabled must be a boolean' });
+    }
 
     // Validate count
     if (count === undefined || count === null) {
@@ -318,19 +327,23 @@ router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
       });
     }
 
-    // Validate password if provided
-    if (password) {
-      const passwordError = validateNewPassword(password);
-      if (passwordError) {
-        return res.status(400).json({ error: 'Invalid password', message: passwordError });
-      }
+    // Clones are usually handed to participants and can reach each other's
+    // ports inside the Docker network, so code-server must be protected
+    const passwordError = validateNewPassword(password);
+    if (passwordError) {
+      return res.status(400).json({
+        error: 'Invalid password',
+        message: password ? passwordError : 'A password is required for cloned workspaces'
+      });
     }
 
     // Look up source project for response metadata
     const sourceProject = await workspaceService.getProject(projectId);
 
     const clones = await workspaceService.cloneProject(projectId, cloneCount, {
-      password: password || null
+      password,
+      keepAiLogins: keepAiLogins === true,
+      sudoEnabled
     });
 
     res.status(202).json({
@@ -550,7 +563,7 @@ router.get('/:projectId/squid-logs', requireWorkspacePassword, async (req, res) 
     const lines = clampInt(req.query.lines, 50, 1, 500);
 
     // Get workspace IP address
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -559,7 +572,7 @@ router.get('/:projectId/squid-logs', requireWorkspacePassword, async (req, res) 
     }
 
     // Get squid logs filtered by IP
-    const logs = await dockerService.getSquidLogsForWorkspace(ipAddress, lines);
+    const logs = await dockerService.getSquidLogsForWorkspace(ipAddress, lines, workspaceService.getProxyIpSince(projectId));
 
     res.json({
       success: true,
@@ -589,7 +602,7 @@ router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req
       dateTo
     } = req.query;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -626,7 +639,7 @@ router.get('/:projectId/recorded-domains', requireWorkspacePassword, async (req,
   try {
     const { projectId } = req.params;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -661,7 +674,7 @@ router.post('/:projectId/generate-documentation', requireWorkspacePassword, asyn
     const { projectId } = req.params;
     const { format = 'markdown', type = 'clean' } = req.body;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -701,7 +714,7 @@ router.delete('/:projectId/llm-conversations', requireWorkspacePassword, async (
   try {
     const { projectId } = req.params;
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,
@@ -738,7 +751,7 @@ router.delete('/:projectId/llm-conversations/:timestamp', requireWorkspacePasswo
       return res.status(400).json({ success: false, message: 'Invalid conversation id' });
     }
 
-    const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+    const ipAddress = await workspaceService.getProxyIp(projectId);
     if (!ipAddress) {
       return res.status(404).json({
         success: false,

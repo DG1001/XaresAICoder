@@ -35,7 +35,41 @@ All API endpoints are prefixed with `/api`.
 
 ## Authentication
 
-Currently, XaresAICoder uses **workspace-level password protection** rather than platform-level authentication. Some operations require workspace passwords when workspaces are password-protected.
+### Admin Login
+
+The API requires an admin session: one shared password, `ADMIN_PASSWORD` in
+`.env` (`./deploy.sh` generates one if it is missing). Without a session every
+endpoint answers `401 {"error": "Login required", "code": "LOGIN_REQUIRED"}`;
+while `ADMIN_PASSWORD` is not set at all, `503 {"code": "LOGIN_NOT_CONFIGURED"}`.
+
+Public without a session: `GET /api/health`, `/api/auth/*`, and the workshop
+participant endpoints (`/api/workshop/status`, `/claim`, `/my-claim`).
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/auth/login` | Body `{ "password": "..." }`. Sets the session cookie `xares_admin` (HttpOnly, SameSite=Strict, `Secure` with `PROTOCOL=https`, lifetime `ADMIN_SESSION_HOURS`, default 12). `401` wrong password, `429` after 10 failed attempts per client within 15 minutes |
+| `POST /api/auth/logout` | Ends the session and clears the cookie |
+| `GET /api/auth/status` | `{ "configured": bool, "authenticated": bool }` |
+
+Changing `ADMIN_PASSWORD` ends all sessions.
+
+Requests that change state (`POST`/`PUT`/`DELETE`) from a browser must come
+from the dashboard's own origin: a different `Origin` hostname or
+`Sec-Fetch-Site: same-site/cross-site` is rejected with `403` (workspace apps
+run on subdomains and would otherwise ride on the admin's cookie). Clients
+without these headers (curl, scripts) are not affected.
+
+```bash
+# curl: log in once, reuse the cookie
+curl -c cookies.txt -H 'Content-Type: application/json' \
+  -d '{"password":"<ADMIN_PASSWORD>"}' http://localhost/api/auth/login
+curl -b cookies.txt http://localhost/api/projects/
+```
+
+### Workspace Passwords
+
+In addition to the admin login, password-protected workspaces require their
+workspace password for sensitive operations.
 
 ### Password-Protected Operations
 
@@ -94,8 +128,10 @@ Creates a new workspace with the specified configuration.
   - `nodejs-react` - React application with Vite
   - `java-spring` - Spring Boot application
 - `passwordProtected` (boolean, optional): Enable password protection
+- `sudoEnabled` (boolean, optional): allow sudo in the workspace; defaults to `WORKSPACE_SUDO_ENABLED` (`GET /api/config` → `workspaceSudoDefault`)
 - `password` (string, conditional): Required if `passwordProtected` is true (min 8 chars)
-- `createGitRepo` (boolean, optional): Create Git repository (requires Git server)
+- `createGitRepo` (boolean, optional): Create a private Git repository owned by the workspace's own Forgejo user (requires Git server). With the Git server enabled, every workspace gets its own Forgejo user and token (`FORGEJO_USER`/`FORGEJO_TOKEN`), with or without repository.
+- `gitUrl`, `gitUsername`, `gitToken` (with `projectType: "git-clone"`): repository to clone. A URL of this platform's Forgejo (`<base>/git/<owner>/<repo>`) needs no token: the new workspace user is added as collaborator and works directly on that repository (e.g. to continue the work of a deleted workspace).
 - `proxyMode` (string, optional): Network proxy mode — `none` (default), `logging` (LLM Logging Proxy, unrestricted with recording), `security` (Security Proxy, whitelist-only)
 - `memoryLimit` (string, optional): Memory limit — `1g`, `2g` (default), `4g`, `8g`, `16g`
 - `cpuCores` (string, optional): CPU cores — `1`, `2` (default), `4`, `8`
@@ -411,27 +447,27 @@ Retrieves filtered Squid proxy logs for a specific workspace (only for proxy-ena
 ```json
 {
   "success": true,
-  "ipAddress": "172.30.0.5",
+  "ipAddress": "172.31.128.1",
   "logs": [
     {
       "timestamp": "1733234567.123",
       "duration": "4233",
-      "clientIP": "172.30.0.5",
+      "clientIP": "172.31.128.1",
       "status": "TCP_TUNNEL/200",
       "bytes": "5688",
       "method": "CONNECT",
       "url": "opencode.ai:443",
-      "rawLine": "1733234567.123   4233 172.30.0.5 TCP_TUNNEL/200 5688 CONNECT opencode.ai:443 - HIER_DIRECT/172.65.90.22 -"
+      "rawLine": "1733234567.123   4233 172.31.128.1 TCP_TUNNEL/200 5688 CONNECT opencode.ai:443 - HIER_DIRECT/172.65.90.22 -"
     },
     {
       "timestamp": "1733234888.186",
       "duration": "0",
-      "clientIP": "172.30.0.5",
+      "clientIP": "172.31.128.1",
       "status": "TCP_DENIED/403",
       "bytes": "3369",
       "method": "GET",
       "url": "http://blocked-site.com/",
-      "rawLine": "1733234888.186      0 172.30.0.5 TCP_DENIED/403 3369 GET http://blocked-site.com/ - HIER_NONE/- text/html"
+      "rawLine": "1733234888.186      0 172.31.128.1 TCP_DENIED/403 3369 GET http://blocked-site.com/ - HIER_NONE/- text/html"
     }
   ]
 }
@@ -563,7 +599,7 @@ Retrieves current resource limit configuration for workspace management.
 **Usage**:
 ```bash
 # Check current resource limits
-curl http://localhost/api/limits
+curl -b cookies.txt http://localhost/api/limits
 ```
 
 This endpoint is used by the frontend to dynamically populate resource selection options, ensuring users can only choose values within configured limits.
@@ -631,7 +667,22 @@ password-protected (see [Authentication](#authentication)).
 
 **Parameters**:
 - `count` (integer, required): Number of clones to create (1–50)
-- `password` (string, optional): Password for all cloned workspaces (min 8, max 50 chars)
+- `password` (string, **required**): Password for all cloned workspaces (min 8, max 50 chars).
+  Clones are typically handed to participants and can reach each other's ports inside
+  the Docker network, so code-server must be protected.
+- `sudoEnabled` (boolean, optional): allow sudo in the clones; defaults to `WORKSPACE_SUDO_ENABLED`
+- `keepAiLogins` (boolean, optional, default `false`): keep the AI tool logins and
+  conversation histories of the source (e.g. to distribute a shared workshop API key).
+
+**Credential cleanup**: before the clones are created, the snapshot is sanitized once in a
+throwaway container without network. Always removed: code-server password files, git
+credentials (`~/.git-credentials`, `~/.netrc`, tokens embedded in git remote URLs), GitHub
+CLI tokens, npm auth tokens, SSH private keys (`known_hosts` is kept) and shell histories.
+Unless `keepAiLogins` is set, also removed: logins and transcripts of Claude Code, Codex,
+OpenCode, Qwen Code, Crush, Pi, Continue (API keys in `config.yaml`) and Aider (`~/.env`,
+`~/.aider.conf.yml`, chat histories). Platform environment variables of the source (e.g.
+`GIT_ACCESS_TOKEN`) are blanked in the clones. Project files and secrets the user put into
+other files (e.g. a `.env` in the project) are not touched.
 
 **Response** (Success - 202):
 ```json
@@ -668,7 +719,7 @@ password-protected (see [Authentication](#authentication)).
 - Snapshot image is ephemeral and cleaned up automatically after cloning
 - Clone names follow the pattern `{sourceName} 1`, `{sourceName} 2`, etc.
 - Workspace limit is checked all-or-nothing before any clones are created
-- **Git branches**: If the source has a Forgejo repo, each clone gets its own branch (`clone/<sanitized-name>`) pushed to the shared repo. Students work on their branch and can create PRs to `main` via Forgejo's web UI. If branch creation fails, the clone still works on `main`.
+- **Git repositories**: Each clone gets its own Forgejo user and token. If the source works with this Forgejo (a recorded repository or a Forgejo `origin`), the clone gets its own **private** repository with the source's state and history, and `origin` points there. Clones cannot see or overwrite each other's work.
 
 **Error Cases**:
 - `404`: Source project not found
@@ -687,7 +738,7 @@ Returns all domains recorded by mitmproxy for a workspace using LLM Logging Prox
 {
   "success": true,
   "projectId": "abc-123",
-  "ipAddress": "172.30.0.5",
+  "ipAddress": "172.30.128.1",
   "domains": {
     "pypi.org": {"count": 15, "first_seen": "2026-02-14T10:00:00Z", "last_seen": "2026-02-14T11:30:00Z"},
     "api.anthropic.com": {"count": 3, "first_seen": "2026-02-14T10:05:00Z", "last_seen": "2026-02-14T11:00:00Z"}
@@ -1018,10 +1069,11 @@ Returns all active claims and release history. Requires admin password.
 
 **Endpoint**: `GET /api/workshop/claims`
 
-**Headers**: `X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (percent-encoded;
-plain ASCII passwords without `%` can be sent as is). The password is not
-accepted as a query parameter. Returns `401` for a wrong password and `503` if
-`WORKSHOP_ADMIN_PASSWORD` is not set (admin endpoints are disabled then).
+**Auth**: an admin session (dashboard login) **or** the header
+`X-Admin-Password: <WORKSHOP_ADMIN_PASSWORD>` (percent-encoded; plain ASCII
+passwords without `%` can be sent as is). The password is not accepted as a
+query parameter. Returns `401` for a wrong password and `503` if there is no
+session and `WORKSHOP_ADMIN_PASSWORD` is not set.
 
 **Response**:
 ```json
@@ -1179,7 +1231,7 @@ Currently, no rate limiting is implemented. Future versions may include:
 curl http://localhost/api/health
 
 # 2. Create a new Python Flask project
-curl -X POST http://localhost/api/projects/create \
+curl -b cookies.txt -X POST http://localhost/api/projects/create \
   -H "Content-Type: application/json" \
   -d '{
     "projectName": "my-web-app",
@@ -1190,26 +1242,26 @@ curl -X POST http://localhost/api/projects/create \
   }'
 
 # 3. Get project details
-curl http://localhost/api/projects/abc123def456
+curl -b cookies.txt http://localhost/api/projects/abc123def456
 
 # 4. List all projects
-curl http://localhost/api/projects/
+curl -b cookies.txt http://localhost/api/projects/
 
 # 5. Stop the workspace (with password)
-curl -X POST http://localhost/api/projects/abc123def456/stop \
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123def456/stop \
   -H "Content-Type: application/json" \
   -d '{"password": "secure123!"}'
 
 # 6. Start the workspace again
-curl -X POST http://localhost/api/projects/abc123def456/start
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123def456/start
 
 # 7. Clone workspace for a workshop (20 student copies)
-curl -X POST http://localhost/api/projects/abc123def456/clone \
+curl -b cookies.txt -X POST http://localhost/api/projects/abc123def456/clone \
   -H "Content-Type: application/json" \
   -d '{"count": 20, "password": "student-pw-123"}'
 
 # 8. Delete the project (with password)
-curl -X DELETE http://localhost/api/projects/abc123def456 \
+curl -b cookies.txt -X DELETE http://localhost/api/projects/abc123def456 \
   -H "Content-Type: application/json" \
   -d '{"password": "secure123!"}'
 ```

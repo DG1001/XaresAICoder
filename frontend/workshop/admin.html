@@ -231,7 +231,7 @@
 <div id="login-overlay">
   <div class="login-card">
     <h2>Workshop Admin</h2>
-    <p>Bitte Passwort eingeben</p>
+    <p>Workshop-Admin-Passwort eingeben &ndash; oder <a href="/">im Dashboard anmelden</a>, dann geht es ohne.</p>
     <div class="login-error" id="login-error">Falsches Passwort.</div>
     <form id="login-form">
       <input type="password" id="pw-input" placeholder="Passwort" autofocus>
@@ -347,8 +347,10 @@
 
   // The admin password goes in a header (never in the URL, where it would end
   // up in access logs and caches), percent-encoded for non-ASCII characters.
+  // Without a password the dashboard session cookie authenticates.
   function adminFetch(url, options = {}, pw = adminPassword) {
-    const headers = { ...(options.headers || {}), 'X-Admin-Password': encodeURIComponent(pw) };
+    const headers = { ...(options.headers || {}) };
+    if (pw) headers['X-Admin-Password'] = encodeURIComponent(pw);
     return fetch(url, { ...options, headers, cache: 'no-store' });
   }
 
@@ -525,18 +527,24 @@
   }
 
   // --- Auto-restore session ---
-  const saved = sessionStorage.getItem('workshopAdminPw');
-  if (saved) {
-    checkPassword(saved).then(ok => {
-      if (ok) {
-        adminPassword = saved;
-        document.getElementById('login-overlay').style.display = 'none';
-        document.getElementById('admin-ui').style.display = 'block';
-        loadData();
-        loadStatus();
-      }
-    });
+  function showAdminUi() {
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('admin-ui').style.display = 'block';
+    loadData();
+    loadStatus();
   }
+
+  // Logged in on the dashboard: no password needed. Otherwise try the
+  // password remembered for this tab.
+  (async () => {
+    const viaSession = await adminFetch('/api/workshop/claims', {}, '').then(r => r.ok).catch(() => false);
+    if (viaSession) return showAdminUi();
+    const saved = sessionStorage.getItem('workshopAdminPw');
+    if (saved && await checkPassword(saved)) {
+      adminPassword = saved;
+      showAdminUi();
+    }
+  })();
 </script>
 </body>
 </html>

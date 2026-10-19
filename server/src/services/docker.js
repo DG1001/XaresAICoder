@@ -1,6 +1,5 @@
 const Docker = require('dockerode');
 const { v4: uuidv4 } = require('uuid');
-const dns = require('dns').promises;
 
 // Header names whose values are credentials. Captures written before the
 // mitmproxy addon redacted them still contain raw keys, so they are also
@@ -45,6 +44,103 @@ function redactConversation(conv) {
   return conv;
 }
 
+// Every environment variable buildContainerSpec() may set. A clone container
+// inherits the snapshot's environment from its image, so any of these that
+// the clone does not set itself is overridden with an empty value (e.g. the
+// source's GIT_ACCESS_TOKEN or PASSWORD).
+const PLATFORM_ENV_KEYS = [
+  'PROJECT_TYPE', 'PROJECT_ID', 'VSCODE_PROXY_URI', 'PROXY_DOMAIN',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+  'NODE_EXTRA_CA_CERTS', 'PASSWORD',
+  'GIT_SERVER_ENABLED', 'GIT_SERVER_URL', 'GIT_ADMIN_USER', 'GIT_ADMIN_PASSWORD', 'GIT_SERVER_EXTERNAL_URL',
+  'FORGEJO_USER', 'FORGEJO_TOKEN',
+  'GIT_REPO_NAME', 'GIT_REMOTE_URL', 'GIT_WEB_URL',
+  'GIT_CLONE_URL', 'GIT_USERNAME', 'GIT_ACCESS_TOKEN',
+  'NVIDIA_VISIBLE_DEVICES', 'NVIDIA_DRIVER_CAPABILITIES'
+];
+
+// Prepends sandbox_mode = "danger-full-access" to ~/.codex/config.toml unless a
+// sandbox_mode is already configured. Under Docker's default seccomp profile
+// Codex's own sandbox (bubblewrap) cannot create user namespaces; the
+// workspace container is the sandbox. Prepended because TOML top-level keys
+// must precede any [table].
+const CODEX_SANDBOX_DEFAULT_SCRIPT = `
+f="$HOME/.codex/config.toml"
+mkdir -p "$HOME/.codex"
+if ! grep -qs '^[[:space:]]*sandbox_mode[[:space:]]*=' "$f"; then
+  {
+    echo '# Set by XaresAICoder: this workspace container is the sandbox. Codex'"'"'s own'
+    echo '# sandbox (bubblewrap) needs user namespaces, which the container blocks.'
+    echo 'sandbox_mode = "danger-full-access"'
+    if [ -f "$f" ]; then cat "$f"; fi
+  } > "$f.tmp" && mv "$f.tmp" "$f"
+fi
+`;
+
+// Runs (as root, without network) in a throwaway container created from a
+// clone snapshot. Removes the source workspace's credentials and histories so
+// they are not handed to every clone. AI tool logins and transcripts are only
+// removed when KEEP_AI_LOGINS != 1 (the teacher can opt in to distributing a
+// workshop key). Paths were collected from real workspaces of this platform.
+const CLONE_CLEANUP_SCRIPT = `
+H=/home/coder
+# Platform and git credentials, shell histories (always)
+rm -rf "$H/.code-server-auth" "$H/.git-credentials" "$H/.netrc" "$H/.pypirc" \\
+  "$H/.bash_history" "$H/.zsh_history" "$H/.python_history" "$H/.node_repl_history" \\
+  "$H/.lesshst" "$H/.local/state/lesshst" "$H/.local/share/fish/fish_history" \\
+  "$H/.config/gh/hosts.yml" "$H/.local/state/gh"
+if [ -d "$H/.ssh" ]; then find "$H/.ssh" -mindepth 1 ! -name known_hosts -exec rm -rf {} +; fi
+if [ -f "$H/.npmrc" ]; then sed -i '/_authToken/d; /_auth *=/d; /_password *=/d' "$H/.npmrc"; fi
+if [ -f "$H/.config/code-server/config.yaml" ]; then
+  sed -i '/^password:/d; /^hashed-password:/d; s/^auth: password/auth: none/' "$H/.config/code-server/config.yaml"
+fi
+# Credentials embedded in git remote URLs (https://user:token@host/...)
+find /workspace "$H" -maxdepth 4 -path '*/.git/config' -type f 2>/dev/null | while read -r f; do
+  sed -i -E 's#(url = [A-Za-z][A-Za-z0-9+.-]*://)[^/@[:space:]]+@#\\1#' "$f"
+done
+if [ "\${KEEP_AI_LOGINS:-0}" != 1 ]; then
+  # Claude Code
+  rm -rf "$H/.claude/.credentials.json" "$H/.claude.json" "$H/.claude/backups" "$H/.claude/projects" \\
+    "$H/.claude/history.jsonl" "$H/.claude/file-history" "$H/.claude/paste-cache" "$H/.claude/shell-snapshots" \\
+    "$H/.claude/session-env" "$H/.claude/sessions" "$H/.claude/todos" "$H/.claude/tasks" "$H/.claude/plans" \\
+    "$H/.claude/mcp-needs-auth-cache.json"
+  # OpenAI Codex
+  rm -rf "$H/.codex/auth.json" "$H/.codex/sessions" "$H/.codex/history.jsonl" "$H/.codex/memories" \\
+    "$H/.codex/log" "$H/.codex"/state_*.sqlite*
+  # OpenCode
+  rm -rf "$H/.local/share/opencode/auth.json" "$H/.local/share/opencode/storage" "$H/.local/share/opencode/log" \\
+    "$H/.local/share/opencode/snapshot" "$H/.local/share/opencode"/opencode.db*
+  # Qwen Code, Crush, Pi, Cline
+  rm -rf "$H/.qwen/oauth_creds.json" "$H/.qwen/projects" "$H/.qwen/tmp" \\
+    "$H/.local/share/crush/crush.json" "$H/.local/share/crush/hyper.json" "$H/.config/crush/crush.json" \\
+    "$H/.pi/agent/auth.json" "$H/.pi/agent/sessions" \\
+    "$H/.cline/data/secrets.json" "$H/.cline/data/tasks"
+  # Continue: legacy JSON config and .env; strip API keys from config.yaml
+  rm -rf "$H/.continue/config.json" "$H/.continue/.env" "$H/.continue/dev_data"
+  if [ -f "$H/.continue/config.yaml" ]; then sed -i -E '/^[[:space:]]*-?[[:space:]]*apiKey:/d' "$H/.continue/config.yaml"; fi
+  # Aider (reads keys from ~/.env and ~/.aider.conf.yml; histories live in the repo)
+  rm -rf "$H/.env" "$H/.aider.conf.yml" /workspace/.aider.chat.history.md /workspace/.aider.input.history \\
+    /workspace/.aider.tags.cache.v*
+fi
+echo cleanup-done
+`;
+
+// IPv4 address <-> number. Arithmetic instead of bit operators, which work on
+// signed 32-bit integers.
+function ipv4ToInt(ip) {
+  return ip.split('.').reduce((n, octet) => n * 256 + Number(octet), 0);
+}
+function intToIpv4(n) {
+  return [16777216, 65536, 256, 1].map(d => Math.floor(n / d) % 256).join('.');
+}
+// '172.30.0.0/16' -> { base, size }, or null for anything but IPv4 CIDR
+function parseIpv4Cidr(cidr) {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(cidr || '');
+  if (!m || Number(m[2]) > 30) return null;
+  const size = 2 ** (32 - Number(m[2]));
+  return { base: ipv4ToInt(m[1]) - (ipv4ToInt(m[1]) % size), size };
+}
+
 class DockerService {
   constructor() {
     this.docker = new Docker();
@@ -61,11 +157,24 @@ class DockerService {
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
     // Proxy configuration
     this.enableProxy = process.env.ENABLE_PROXY === 'true';
-    this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder_xares-internal'; // Internal network when proxy is enabled (compose prefixed)
+    // Internal networks for proxied workspaces (compose prefixed): one per
+    // proxy, so Security Proxy workspaces cannot reach the unrestricted mitmproxy
+    this.proxyNetwork = process.env.PROXY_NETWORK || 'xaresaicoder_xares-internal'; // LLM Logging Proxy
+    this.securityNetwork = process.env.SECURITY_PROXY_NETWORK || 'xaresaicoder_xares-security'; // Security Proxy
+    this.loggingDnsIp = process.env.DNSMASQ_IP || '172.30.0.2'; // dnsmasq on each internal network
+    this.securityDnsIp = process.env.SECURITY_DNSMASQ_IP || '172.31.255.254';
+    this.nginxContainerName = process.env.NGINX_CONTAINER_NAME || 'xaresaicoder-nginx';
     this.proxyHost = 'xaresaicoder-mitmproxy-logger:8080'; // mitmproxy container for LLM conversation logging
     this.squidProxyHost = 'xaresaicoder-squid-proxy:3128'; // Squid proxy container for security whitelist filtering
-    // Workspace sudo privileges configuration
+    // Default for workspaces that do not choose themselves (per-workspace sudoEnabled)
     this.workspaceSudoEnabled = process.env.WORKSPACE_SUDO_ENABLED === 'true';
+    // 'default' = Docker's default seccomp profile; 'unconfined' only if some
+    // tool really needs syscalls the default profile blocks
+    this.seccompMode = process.env.WORKSPACE_SECCOMP === 'unconfined' ? 'unconfined' : 'default';
+    // Per-workspace writable layer limit (e.g. '20G'); only enforceable on
+    // overlay2 backed by xfs with project quotas (see getHostCapabilities)
+    this.diskLimit = (process.env.WORKSPACE_DISK_LIMIT || '').trim();
+    this.hostCapabilities = null;
     // Security and isolation configuration
     this.securityConfig = {
       pidsLimit: parseInt(process.env.CONTAINER_PIDS_LIMIT) || 2048,
@@ -76,6 +185,277 @@ class DockerService {
     };
   }
 
+  // Docker network a workspace belongs on, by proxy mode
+  networkForProxyMode(proxyMode) {
+    if (proxyMode === 'security') return this.securityNetwork;
+    if (proxyMode === 'logging') return this.proxyNetwork;
+    return this.network;
+  }
+
+  // Every network the platform attaches workspaces to
+  workspaceNetworks() {
+    return [this.network, this.proxyNetwork, this.securityNetwork];
+  }
+
+  endpointConfig(containerName, fixedIp = null) {
+    return {
+      Aliases: [containerName],
+      ...(fixedIp && { IPAMConfig: { IPv4Address: fixedIp } })
+    };
+  }
+
+  // IPv4 subnet of the network for a proxy mode, plus the addresses in use
+  async getProxyNetworkInfo(proxyMode) {
+    const name = this.networkForProxyMode(proxyMode);
+    let info;
+    try {
+      info = await this.docker.getNetwork(name).inspect();
+    } catch (error) {
+      if (error.statusCode === 404) {
+        throw new Error(`Network '${name}' does not exist. Run ./deploy.sh first.`);
+      }
+      throw error;
+    }
+    const cfg = ((info.IPAM && info.IPAM.Config) || []).find(c => parseIpv4Cidr(c.Subnet));
+    if (!cfg) throw new Error(`Network '${name}' has no IPv4 subnet`);
+    const used = new Set([this.loggingDnsIp, this.securityDnsIp]);
+    for (const c of Object.values(info.Containers || {})) {
+      if (c.IPv4Address) used.add(c.IPv4Address.split('/')[0]);
+    }
+    return { name, subnet: cfg.Subnet, range: parseIpv4Cidr(cfg.Subnet), used };
+  }
+
+  ipInSubnet(ip, subnet) {
+    const range = parseIpv4Cidr(subnet);
+    if (!range || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip || '')) return false;
+    const n = ipv4ToInt(ip);
+    return n > range.base && n < range.base + range.size - 1;
+  }
+
+  // Picks a fixed address for a proxied workspace. mitmproxy and squid know a
+  // workspace only by its client IP; with Docker's dynamic addresses a
+  // restarted workspace could come back under another IP and lose its
+  // captures, or see those of another workspace. Fixed addresses come from
+  // the upper half of the subnet because Docker hands out dynamic ones
+  // (infrastructure containers) from the bottom. `taken` holds the addresses
+  // of all other projects, including stopped ones.
+  async allocateProxyIp(proxyMode, taken = new Set()) {
+    const { name, subnet, range, used } = await this.getProxyNetworkInfo(proxyMode);
+    const last = range.base + range.size - 2;
+    for (let n = range.base + range.size / 2; n <= last; n++) {
+      if (n % 256 === 0 || n % 256 === 255) continue;
+      const ip = intToIpv4(n);
+      if (!used.has(ip) && !taken.has(ip)) return ip;
+    }
+    throw new Error(`No free fixed address left in network '${name}' (${subnet})`);
+  }
+
+  // Current address of a running workspace on the network of its proxy mode
+  async getCurrentProxyIp(projectId, proxyMode) {
+    try {
+      const info = await this.docker.getContainer(`workspace-${projectId}`).inspect();
+      const entry = (info.NetworkSettings.Networks || {})[this.networkForProxyMode(proxyMode)];
+      return info.State.Running && entry && entry.IPAddress ? entry.IPAddress : null;
+    } catch (error) {
+      if (error.statusCode === 404) return null;
+      throw error;
+    }
+  }
+
+  // Single source of truth for workspace container settings. Used by both
+  // createWorkspaceContainer and createCloneContainer, so security and
+  // resource settings cannot drift apart between the two paths.
+  // Returns { containerName, useProxy, spec } where spec is the
+  // docker.createContainer() payload.
+  buildContainerSpec(projectId, {
+    image,
+    projectType,
+    memoryLimit = '2g',
+    cpuCores = '2',
+    passwordProtected = false,
+    password = null,
+    proxyMode = 'none',
+    gitRepository = null,
+    gitUrl = null,
+    gitUsername = null,
+    gitToken = null,
+    forgejo = null,
+    sudoEnabled = this.workspaceSudoEnabled,
+    proxyIp = null,
+    hostCapabilities = { ncpu: null, diskQuota: false }
+  }) {
+    const containerName = `workspace-${projectId}`;
+    const useProxy = proxyMode !== 'none';
+    const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
+    const hostSuffix = this.basePort !== '80' ? ':' + this.basePort : '';
+    let authFlag = 'none'; // Default to no auth
+    const envVars = [
+      `PROJECT_TYPE=${projectType}`,
+      `PROJECT_ID=${projectId}`,
+      `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${hostSuffix}/`,
+      `PROXY_DOMAIN=${projectId}.${this.baseDomain}${hostSuffix}`
+    ];
+
+    // Add proxy environment variables if THIS workspace uses proxy
+    if (useProxy) {
+      // Uppercase (used by some tools)
+      envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
+      envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
+      envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
+      // Lowercase (used by curl and many CLI tools)
+      envVars.push(`http_proxy=http://${activeProxyHost}`);
+      envVars.push(`https_proxy=http://${activeProxyHost}`);
+      envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
+      // Tell Node.js to trust the proxy CA certificate
+      envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
+    }
+
+    if (passwordProtected && password) {
+      authFlag = 'password';
+      envVars.push(`PASSWORD=${password}`);
+    }
+
+    // Git server: the workspace's own Forgejo user and token (never the
+    // admin account). GIT_ADMIN_USER/GIT_ADMIN_PASSWORD carry the same values
+    // for setup_local_remote in code-server images built before FORGEJO_*.
+    if (process.env.ENABLE_GIT_SERVER === 'true') {
+      const protocol = process.env.PROTOCOL || 'http';
+      const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+      const basePort = process.env.BASE_PORT || '80';
+
+      envVars.push(`GIT_SERVER_ENABLED=true`);
+      envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
+      if (forgejo && forgejo.user && forgejo.token) {
+        envVars.push(`FORGEJO_USER=${forgejo.user}`);
+        envVars.push(`FORGEJO_TOKEN=${forgejo.token}`);
+        envVars.push(`GIT_ADMIN_USER=${forgejo.user}`);
+        envVars.push(`GIT_ADMIN_PASSWORD=${forgejo.token}`);
+      }
+
+      // Build external Git server URL for display
+      let externalGitUrl;
+      if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
+        externalGitUrl = `${protocol}://${baseDomain}/git`;
+      } else {
+        externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
+      }
+      envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
+    }
+
+    // Add Git repository configuration to environment if available
+    if (gitRepository) {
+      envVars.push(`GIT_REPO_NAME=${gitRepository.name}`);
+      envVars.push(`GIT_REMOTE_URL=${gitRepository.internalCloneUrl}`);
+      envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
+    }
+
+    // Add Git clone configuration if available
+    if (gitUrl) {
+      envVars.push(`GIT_CLONE_URL=${gitUrl}`);
+      if (gitUsername) {
+        envVars.push(`GIT_USERNAME=${gitUsername}`);
+      }
+      if (gitToken) {
+        envVars.push(`GIT_ACCESS_TOKEN=${gitToken}`);
+      }
+    }
+
+    // Add GPU environment variables only if GPU is enabled
+    const enableGpu = process.env.ENABLE_GPU === 'true';
+    if (enableGpu) {
+      envVars.push('NVIDIA_VISIBLE_DEVICES=all');
+      envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
+    }
+
+    const workspaceNetwork = this.networkForProxyMode(proxyMode);
+
+    const spec = {
+      Image: image,
+      name: containerName,
+      Env: envVars,
+      ExposedPorts: {
+        '8082/tcp': {}, // code-server
+        '3000/tcp': {}, // Node.js apps
+        '5000/tcp': {}, // Flask/Python apps
+        '8000/tcp': {}, // Django/other Python apps
+        '8080/tcp': {}, // Spring Boot apps
+        '4200/tcp': {}, // Angular
+        '3001/tcp': {}, // React dev server alt
+        '9000/tcp': {}  // Various apps
+      },
+      HostConfig: {
+        Memory: this.parseMemoryLimit(memoryLimit),
+        // Hard CPU limit (CpuShares was only a relative weight under contention)
+        NanoCpus: this.cpuCoresToNanoCpus(cpuCores, hostCapabilities.ncpu),
+        NetworkMode: workspaceNetwork,
+        PidMode: '', // Isolated PID namespace (default, but explicit for security)
+        IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
+        PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
+        // Run docker-init (tini) as PID 1 so orphaned processes get reaped.
+        // code-server is a node process and does not call waitpid() for
+        // children it did not spawn itself, so every orphaned grandchild --
+        // AI tool helpers, headless browsers, dev servers -- stays behind as a
+        // zombie. Those consume PID slots and count against PidsLimit; long
+        // running workspaces accumulate dozens of them.
+        Init: true,
+        SecurityOpt: [
+          // Without sudo, block privilege escalation (setuid binaries) entirely
+          ...(sudoEnabled ? [] : ['no-new-privileges:true']),
+          // Docker's default seccomp profile unless explicitly configured otherwise
+          ...(this.seccompMode === 'unconfined' ? ['seccomp=unconfined'] : [])
+        ],
+        // Limit the container's writable layer where the host supports it
+        ...(this.diskLimit && hostCapabilities.diskQuota && {
+          StorageOpt: { size: this.diskLimit }
+        }),
+        // Drop all capabilities, then add back only what's needed for development
+        CapDrop: ['ALL'],
+        CapAdd: [
+          'CHOWN',           // Change file ownership
+          'DAC_OVERRIDE',    // Bypass file permission checks (needed for some dev tools)
+          'FOWNER',          // Bypass permission checks on file operations
+          'SETGID',          // Set GID (needed for some installers)
+          'SETUID',          // Set UID (needed for some installers)
+          'NET_BIND_SERVICE', // Bind to ports < 1024 (useful for web servers)
+          'AUDIT_WRITE'      // Write to audit logs (suppresses sudo audit warnings)
+        ],
+        // Resource limits to prevent abuse
+        // Note: nproc (RLIMIT_NPROC) is NOT used here because it counts threads per-UID
+        // system-wide across ALL containers sharing UID 1000, causing cross-container
+        // interference. Per-container process isolation is handled by PidsLimit (cgroup).
+        Ulimits: [
+          { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
+        ],
+        RestartPolicy: {
+          Name: 'unless-stopped'
+        },
+        // dnsmasq on the workspace's internal network (no route to public DNS)
+        ...(useProxy && {
+          Dns: [proxyMode === 'security' ? this.securityDnsIp : this.loggingDnsIp]
+        }),
+        // Only request GPU access if GPU is enabled
+        ...(enableGpu && {
+          DeviceRequests: [{
+            Driver: '',
+            Count: -1, // Request all available GPUs
+            Capabilities: [['gpu']]
+          }]
+        })
+      },
+      NetworkingConfig: {
+        EndpointsConfig: {
+          [workspaceNetwork]: this.endpointConfig(containerName, useProxy ? proxyIp : null)
+        }
+      },
+      // Explicit, because snapshots imported via export/import lose the image's USER
+      User: 'coder',
+      WorkingDir: '/workspace',
+      Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${hostSuffix}`, '/workspace']
+    };
+
+    return { containerName, useProxy, spec };
+  }
+
   async createWorkspaceContainer(projectId, projectType, authOptions = {}) {
     try {
       const containerName = `workspace-${projectId}`;
@@ -84,172 +464,14 @@ class DockerService {
       // Build the code-server image if it doesn't exist
       await this.ensureCodeServerImage();
 
-      // Setup authentication and Git configuration
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, gitRepository = null, gitUrl = null, gitUsername = null, gitToken = null, proxyMode = 'none' } = authOptions;
-      const useProxy = proxyMode !== 'none';
-      const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
-      let authFlag = 'none'; // Default to no auth
-      const envVars = [
-        `PROJECT_TYPE=${projectType}`,
-        `PROJECT_ID=${projectId}`,
-        `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
-        `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
-      ];
-
-      // Add proxy environment variables if THIS workspace uses proxy
-      if (useProxy) {
-        // Uppercase (used by some tools)
-        envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
-        envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
-        envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
-        // Lowercase (used by curl and many CLI tools)
-        envVars.push(`http_proxy=http://${activeProxyHost}`);
-        envVars.push(`https_proxy=http://${activeProxyHost}`);
-        envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
-        // Tell Node.js to trust the proxy CA certificate
-        envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
-      }
-
-      if (passwordProtected && password) {
-        authFlag = 'password';
-        envVars.push(`PASSWORD=${password}`);
-      }
-
-      // Add Git server URL to all containers when Git server is enabled
-      // This allows setup_local_remote script to work in any workspace
-      const gitServerEnabled = process.env.ENABLE_GIT_SERVER === 'true';
-      if (gitServerEnabled) {
-        const protocol = process.env.PROTOCOL || 'http';
-        const baseDomain = process.env.BASE_DOMAIN || 'localhost';
-        const basePort = process.env.BASE_PORT || '80';
-        const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
-        const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
-
-        // Build Git server URL (accessible from inside Docker network)
-        envVars.push(`GIT_SERVER_ENABLED=true`);
-        envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
-        envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
-        envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
-
-        // Build external Git server URL for display
-        let externalGitUrl;
-        if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
-          externalGitUrl = `${protocol}://${baseDomain}/git`;
-        } else {
-          externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
-        }
-        envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
-      }
-
-      // Add Git repository configuration to environment if available
-      if (gitRepository) {
-        envVars.push(`GIT_REPO_NAME=${gitRepository.name}`);
-        envVars.push(`GIT_REMOTE_URL=${gitRepository.internalCloneUrl}`);
-        envVars.push(`GIT_WEB_URL=${gitRepository.webUrl}`);
-      }
-
-      // Add Git clone configuration if available
-      if (gitUrl) {
-        envVars.push(`GIT_CLONE_URL=${gitUrl}`);
-        if (gitUsername) {
-          envVars.push(`GIT_USERNAME=${gitUsername}`);
-        }
-        if (gitToken) {
-          envVars.push(`GIT_ACCESS_TOKEN=${gitToken}`);
-        }
-      }
-
-      // Convert memory limit to bytes and CPU cores to shares
-      const memoryBytes = this.parseMemoryLimit(memoryLimit);
-      const cpuShares = this.parseCpuCores(cpuCores);
-
-      // Add GPU environment variables only if GPU is enabled
-      const enableGpu = process.env.ENABLE_GPU === 'true';
-      if (enableGpu) {
-        envVars.push('NVIDIA_VISIBLE_DEVICES=all');
-        envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
-      }
-
-      // Use internal network when THIS workspace uses proxy, otherwise use default network
-      const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      const container = await this.docker.createContainer({
-        Image: this.codeServerImage,
-        name: containerName,
-        Env: envVars,
-        ExposedPorts: {
-          '8082/tcp': {}, // code-server
-          '3000/tcp': {}, // Node.js apps
-          '5000/tcp': {}, // Flask/Python apps
-          '8000/tcp': {}, // Django/other Python apps
-          '8080/tcp': {}, // Spring Boot apps
-          '4200/tcp': {}, // Angular
-          '3001/tcp': {}, // React dev server alt
-          '9000/tcp': {}  // Various apps
-        },
-        HostConfig: {
-          Memory: memoryBytes,
-          CpuShares: cpuShares,
-          NetworkMode: workspaceNetwork,
-          PidMode: '', // Isolated PID namespace (default, but explicit for security)
-          IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
-          PidsLimit: this.securityConfig.pidsLimit, // Limit max processes (prevents fork bombs)
-          // Run docker-init (tini) as PID 1 so orphaned processes get reaped.
-          // code-server is a node process and does not call waitpid() for
-          // children it did not spawn itself, so every orphaned grandchild --
-          // AI tool helpers, headless browsers, dev servers -- stays behind as a
-          // zombie. Those consume PID slots and count against PidsLimit; long
-          // running workspaces accumulate dozens of them.
-          Init: true,
-          SecurityOpt: [
-            // Conditionally prevent privilege escalation based on sudo configuration
-            ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
-            'seccomp=unconfined' // Allow system calls needed for development tools (debuggers, etc.)
-          ],
-          // Drop all capabilities, then add back only what's needed for development
-          CapDrop: ['ALL'],
-          CapAdd: [
-            'CHOWN',           // Change file ownership
-            'DAC_OVERRIDE',    // Bypass file permission checks (needed for some dev tools)
-            'FOWNER',          // Bypass permission checks on file operations
-            'SETGID',          // Set GID (needed for some installers)
-            'SETUID',          // Set UID (needed for some installers)
-            'NET_BIND_SERVICE', // Bind to ports < 1024 (useful for web servers)
-            'AUDIT_WRITE'      // Write to audit logs (suppresses sudo audit warnings)
-          ],
-          // Resource limits to prevent abuse
-          // Note: nproc (RLIMIT_NPROC) is NOT used here because it counts threads per-UID
-          // system-wide across ALL containers sharing UID 1000, causing cross-container
-          // interference. Per-container process isolation is handled by PidsLimit (cgroup).
-          Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
-          ],
-          RestartPolicy: {
-            Name: 'unless-stopped'
-          },
-          // Add DNS server when THIS workspace uses proxy (use dnsmasq on internal network)
-          ...(useProxy && {
-            Dns: [process.env.DNSMASQ_IP || '172.30.0.2']  // dnsmasq container IP
-          }),
-          // Only request GPU access if GPU is enabled
-          ...(enableGpu && {
-            DeviceRequests: [{
-              Driver: '',
-              Count: -1, // Request all available GPUs
-              Capabilities: [['gpu']]
-            }]
-          })
-        },
-        NetworkingConfig: {
-          EndpointsConfig: {
-            [workspaceNetwork]: {
-              Aliases: [containerName]
-            }
-          }
-        },
-        WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
+      const { proxyMode = 'none' } = authOptions;
+      const { useProxy, spec } = this.buildContainerSpec(projectId, {
+        ...authOptions,
+        image: this.codeServerImage,
+        projectType,
+        hostCapabilities: await this.getHostCapabilities()
       });
+      const container = await this.docker.createContainer(spec);
 
       await container.start();
       console.log(`Container ${containerName} started`);
@@ -264,6 +486,7 @@ class DockerService {
 
       // Initialize git repository and project structure after container is ready
       await this.initializeProject(container, projectType, proxyMode);
+      await this.ensureCodexSandboxDefault(container);
       console.log(`Initialization completed for ${containerName}`);
 
       this.activeContainers.set(projectId, {
@@ -544,16 +767,29 @@ fi`.trim();
     return false;
   }
 
+  // nginx resolves the workspace name through Docker's DNS when it proxies a
+  // request. The API server shares no network with workspaces, so the lookup
+  // runs inside the nginx container.
   async waitForDnsReady(containerName, maxWaitTime = 10000) {
+    const nginx = this.docker.getContainer(this.nginxContainerName);
     const startTime = Date.now();
     while (Date.now() - startTime < maxWaitTime) {
       try {
-        await dns.lookup(containerName);
-        console.log(`DNS resolved for ${containerName}`);
-        return true;
+        const exec = await nginx.exec({
+          Cmd: ['getent', 'hosts', containerName],
+          AttachStdout: true,
+          AttachStderr: true
+        });
+        await this.streamToString(await exec.start({}));
+        const { ExitCode } = await exec.inspect();
+        if (ExitCode === 0) {
+          console.log(`DNS resolved for ${containerName}`);
+          return true;
+        }
       } catch {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // nginx not running (yet): retry until the deadline
       }
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
     console.warn(`DNS for ${containerName} not ready after ${maxWaitTime}ms, proceeding anyway`);
     return false;
@@ -788,7 +1024,7 @@ fi`.trim();
     return projectTypeVar ? projectTypeVar.split('=')[1] : 'unknown';
   }
 
-  // Get workspace container IP address from internal network (for proxy logs filtering)
+  // Get workspace container IP address on its proxy network (for proxy logs filtering)
   async getWorkspaceIPAddress(projectId) {
     const containerName = `workspace-${projectId}`;
 
@@ -796,11 +1032,10 @@ fi`.trim();
       const container = this.docker.getContainer(containerName);
       const inspectData = await container.inspect();
 
-      // Get IP from xares-internal network (proxy network)
-      const networks = inspectData.NetworkSettings.Networks;
-      const internalNetwork = networks[this.proxyNetwork];
+      const networks = inspectData.NetworkSettings.Networks || {};
+      const proxyNetwork = networks[this.proxyNetwork] || networks[this.securityNetwork];
 
-      return internalNetwork ? internalNetwork.IPAddress : null;
+      return proxyNetwork ? proxyNetwork.IPAddress : null;
     } catch (error) {
       console.error(`Error getting IP address for project ${projectId}:`, error);
       return null;
@@ -843,12 +1078,15 @@ fi`.trim();
   async resetProxyLogsForWorkspace(projectId) {
     try {
       const ip = await this.getWorkspaceIPAddress(projectId);
-      if (!ip) return;
-      await this.clearRecordedDomains(ip);
-      await this.archiveLLMConversations(ip);
+      if (ip) await this.resetProxyLogsForIp(ip);
     } catch (e) {
       console.warn(`Could not reset proxy logs for ${projectId}: ${e.message}`);
     }
+  }
+
+  async resetProxyLogsForIp(ip) {
+    await this.clearRecordedDomains(ip);
+    await this.archiveLLMConversations(ip);
   }
 
   // Moves the conversations stored under an IP to llm_conversations/_archive/
@@ -1206,7 +1444,8 @@ fi`.trim();
   }
 
   // Get squid logs filtered by workspace IP address
-  async getSquidLogsForWorkspace(ipAddress, lines = 50) {
+  // `since` (Date) hides lines from an earlier workspace that had this IP
+  async getSquidLogsForWorkspace(ipAddress, lines = 50, since = null) {
     try {
       // Find squid container dynamically (more robust than hardcoding name)
       const containers = await this.docker.listContainers();
@@ -1224,9 +1463,11 @@ fi`.trim();
       // Execute command to read and filter logs
       // Field 3 of the 'detailed' logformat is the client IP. Exact match, so
       // 172.30.0.1 does not also return 172.30.0.10–19 and 172.30.0.100+.
+      // Field 1 is the epoch timestamp.
+      const sinceEpoch = since ? Math.floor(new Date(since).getTime() / 1000) || 0 : 0;
       const exec = await squidContainer.exec({
-        Cmd: ['sh', '-c', 'tail -n 5000 /var/log/squid/access.log | awk -v ip="$1" \'$3 == ip\' | tail -n "$2"',
-          'sh', ipAddress, String(lines)],
+        Cmd: ['sh', '-c', 'tail -n 5000 /var/log/squid/access.log | awk -v ip="$1" -v since="$3" \'$3 == ip && $1 + 0 >= since + 0\' | tail -n "$2"',
+          'sh', ipAddress, String(lines), String(sinceEpoch)],
         AttachStdout: true,
         AttachStderr: true
       });
@@ -1242,9 +1483,8 @@ fi`.trim();
     }
   }
 
-  async startWorkspace(projectId, proxyMode = 'none') {
+  async startWorkspace(projectId, proxyMode = 'none', proxyIp = null) {
     const containerName = `workspace-${projectId}`;
-    const useProxy = proxyMode !== 'none';
 
     try {
       // Try to get container by name from Docker API
@@ -1255,15 +1495,11 @@ fi`.trim();
         return { success: true, message: 'Workspace is already running' };
       }
 
-      // Check if container is orphaned (not connected to network)
-      const isOrphaned = await this.isContainerOrphaned(container, useProxy);
-      if (isOrphaned) {
-        console.log(`Container ${containerName} is orphaned, attempting network recovery...`);
-        const recoveryResult = await this.recoverOrphanedContainer(container, containerName, useProxy);
-        if (!recoveryResult.success) {
-          throw new Error(`Network recovery failed: ${recoveryResult.error}`);
-        }
-        console.log(`Network recovery successful for ${containerName}`);
+      // Reattach if its network was recreated, move it if it is on the wrong one
+      try {
+        await this.ensureWorkspaceNetwork(containerName, proxyMode, proxyIp);
+      } catch (error) {
+        throw new Error(`Network recovery failed: ${error.message}`);
       }
 
       await container.start();
@@ -1287,7 +1523,8 @@ fi`.trim();
         status: 'running'
       };
     } catch (error) {
-      if (error.statusCode === 404) {
+      // Docker also answers 404 for a missing network, which is not this case
+      if (error.statusCode === 404 && /no such container/i.test(error.message)) {
         throw new Error('Workspace container not found');
       }
       console.error(`Error starting workspace ${projectId}:`, error);
@@ -1427,7 +1664,10 @@ fi`.trim();
   async commitContainer(projectId) {
     const containerName = `workspace-${projectId}`;
     const snapshotRepo = `clone-snapshot-${projectId}`;
-    const imageName = `${snapshotRepo}:latest`;
+    // Unique per clone batch: concurrent batches of the same source must not
+    // share (and delete) each other's snapshot
+    const snapshotTag = `raw-${Date.now()}`;
+    const imageName = `${snapshotRepo}:${snapshotTag}`;
 
     const container = this.docker.getContainer(containerName);
 
@@ -1435,7 +1675,7 @@ fi`.trim();
     try {
       await container.commit({
         repo: snapshotRepo,
-        tag: 'latest',
+        tag: snapshotTag,
         comment: `Snapshot for cloning workspace ${projectId}`,
         pause: true
       });
@@ -1456,7 +1696,7 @@ fi`.trim();
         });
       });
       await new Promise((resolve, reject) => {
-        this.docker.importImage(tarStream, { repo: snapshotRepo, tag: 'latest' }, (err, stream) => {
+        this.docker.importImage(tarStream, { repo: snapshotRepo, tag: snapshotTag }, (err, stream) => {
           if (err) return reject(err);
           stream.resume();
           stream.on('end', resolve);
@@ -1471,6 +1711,76 @@ fi`.trim();
     }
   }
 
+  // See CODEX_SANDBOX_DEFAULT_SCRIPT. Only needed with the default seccomp
+  // profile; non-fatal.
+  async ensureCodexSandboxDefault(container) {
+    if (this.seccompMode !== 'default') return;
+    try {
+      const exec = await container.exec({
+        Cmd: ['sh', '-c', CODEX_SANDBOX_DEFAULT_SCRIPT],
+        User: 'coder',
+        Env: ['HOME=/home/coder'],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+      await this.streamToString(await exec.start());
+    } catch (error) {
+      console.warn(`Could not set Codex sandbox default: ${error.message}`);
+    }
+  }
+
+  /**
+   * Remove the source workspace's credentials from a raw clone snapshot.
+   * Runs CLONE_CLEANUP_SCRIPT once in a throwaway container (as root, no
+   * network) and commits the result. The commit also restores the base
+   * image's entrypoint/cmd/user, which an export/import snapshot would lack.
+   * Removes the raw snapshot; returns the sanitized image name.
+   */
+  async sanitizeSnapshot(rawImage, { keepAiLogins = false } = {}) {
+    const [repo] = rawImage.split(':');
+    const sanitizedTag = `clean-${Date.now()}`;
+    const sanitizedImage = `${repo}:${sanitizedTag}`;
+
+    let base = {};
+    try {
+      base = (await this.docker.getImage(this.codeServerImage).inspect()).Config || {};
+    } catch (e) {
+      console.warn(`Could not inspect base image ${this.codeServerImage}: ${e.message}`);
+    }
+
+    const temp = await this.docker.createContainer({
+      Image: rawImage,
+      Entrypoint: ['/bin/sh', '-c'],
+      Cmd: [CLONE_CLEANUP_SCRIPT],
+      User: 'root',
+      Env: [`KEEP_AI_LOGINS=${keepAiLogins ? 1 : 0}`],
+      HostConfig: { NetworkMode: 'none' }
+    });
+    try {
+      await temp.start();
+      const { StatusCode } = await temp.wait();
+      const logs = (await temp.logs({ stdout: true, stderr: true })).toString('utf8');
+      if (StatusCode !== 0 || !logs.includes('cleanup-done')) {
+        throw new Error(`clone cleanup failed (exit ${StatusCode}): ${logs.slice(-500)}`);
+      }
+      // _query/_body: dockerode would otherwise send the options as query only
+      await temp.commit({
+        _query: { container: temp.id, repo, tag: sanitizedTag, comment: 'Sanitized clone snapshot' },
+        _body: {
+          Entrypoint: base.Entrypoint || ['/usr/local/bin/entrypoint.sh'],
+          Cmd: base.Cmd || ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', 'none', '/workspace'],
+          User: base.User || 'coder',
+          WorkingDir: base.WorkingDir || '/workspace'
+        }
+      });
+    } finally {
+      await temp.remove({ force: true }).catch(() => {});
+      await this.removeSnapshotImage(rawImage);
+    }
+    console.log(`Sanitized clone snapshot ${sanitizedImage} (AI logins ${keepAiLogins ? 'kept' : 'removed'})`);
+    return sanitizedImage;
+  }
+
   /**
    * Create a clone container from a committed snapshot image.
    * Similar to createWorkspaceContainer but uses the snapshot and skips project initialization.
@@ -1480,124 +1790,19 @@ fi`.trim();
       const containerName = `workspace-${projectId}`;
       const port = await this.findAvailablePort(8080);
 
-      const { memoryLimit = '2g', cpuCores = '2', passwordProtected = false, password = null, proxyMode = 'none' } = options;
-      const useProxy = proxyMode !== 'none';
-      const activeProxyHost = proxyMode === 'security' ? this.squidProxyHost : this.proxyHost;
-      let authFlag = 'none';
-      const envVars = [
-        `PROJECT_TYPE=clone`,
-        `PROJECT_ID=${projectId}`,
-        `VSCODE_PROXY_URI=${this.protocol}://${projectId}-{{port}}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}/`,
-        `PROXY_DOMAIN=${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`
-      ];
-
-      // Proxy environment variables
-      if (useProxy) {
-        envVars.push(`HTTP_PROXY=http://${activeProxyHost}`);
-        envVars.push(`HTTPS_PROXY=http://${activeProxyHost}`);
-        envVars.push(`NO_PROXY=localhost,127.0.0.1,forgejo`);
-        envVars.push(`http_proxy=http://${activeProxyHost}`);
-        envVars.push(`https_proxy=http://${activeProxyHost}`);
-        envVars.push(`no_proxy=localhost,127.0.0.1,forgejo`);
-        envVars.push(`NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/squid-ca.crt`);
-      }
-
-      if (passwordProtected && password) {
-        authFlag = 'password';
-        envVars.push(`PASSWORD=${password}`);
-      }
-
-      // Add Git server env vars (same as createWorkspaceContainer)
-      const gitServerEnabled = process.env.ENABLE_GIT_SERVER === 'true';
-      if (gitServerEnabled) {
-        const protocol = process.env.PROTOCOL || 'http';
-        const baseDomain = process.env.BASE_DOMAIN || 'localhost';
-        const basePort = process.env.BASE_PORT || '80';
-        const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
-        const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
-
-        envVars.push(`GIT_SERVER_ENABLED=true`);
-        envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
-        envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
-        envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
-
-        let externalGitUrl;
-        if ((protocol === 'http' && basePort === '80') || (protocol === 'https' && basePort === '443')) {
-          externalGitUrl = `${protocol}://${baseDomain}/git`;
-        } else {
-          externalGitUrl = `${protocol}://${baseDomain}:${basePort}/git`;
-        }
-        envVars.push(`GIT_SERVER_EXTERNAL_URL=${externalGitUrl}`);
-      }
-
-      const memoryBytes = this.parseMemoryLimit(memoryLimit);
-      const cpuShares = this.parseCpuCores(cpuCores);
-
-      const enableGpu = process.env.ENABLE_GPU === 'true';
-      if (enableGpu) {
-        envVars.push('NVIDIA_VISIBLE_DEVICES=all');
-        envVars.push('NVIDIA_DRIVER_CAPABILITIES=compute,utility');
-      }
-
-      const workspaceNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      const container = await this.docker.createContainer({
-        Image: snapshotImage,
-        name: containerName,
-        Env: envVars,
-        ExposedPorts: {
-          '8082/tcp': {},
-          '3000/tcp': {},
-          '5000/tcp': {},
-          '8000/tcp': {},
-          '8080/tcp': {},
-          '4200/tcp': {},
-          '3001/tcp': {},
-          '9000/tcp': {}
-        },
-        HostConfig: {
-          Memory: memoryBytes,
-          CpuShares: cpuShares,
-          NetworkMode: workspaceNetwork,
-          PidMode: '',
-          IpcMode: 'private',
-          PidsLimit: this.securityConfig.pidsLimit,
-          Init: true, // reap orphaned processes -- see createWorkspaceContainer
-          SecurityOpt: [
-            ...(this.workspaceSudoEnabled ? [] : ['no-new-privileges:true']),
-            'seccomp=unconfined'
-          ],
-          CapDrop: ['ALL'],
-          CapAdd: [
-            'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID',
-            'NET_BIND_SERVICE', 'AUDIT_WRITE'
-          ],
-          Ulimits: [
-            { Name: 'nofile', Soft: this.securityConfig.maxFileDescriptors, Hard: this.securityConfig.maxFileDescriptorsHard }
-          ],
-          RestartPolicy: { Name: 'unless-stopped' },
-          ...(useProxy && {
-            Dns: [process.env.DNSMASQ_IP || '172.30.0.2']
-          }),
-          ...(enableGpu && {
-            DeviceRequests: [{
-              Driver: '',
-              Count: -1,
-              Capabilities: [['gpu']]
-            }]
-          })
-        },
-        NetworkingConfig: {
-          EndpointsConfig: {
-            [workspaceNetwork]: {
-              Aliases: [containerName]
-            }
-          }
-        },
-        User: 'coder',
-        WorkingDir: '/workspace',
-        Cmd: ['code-server', '--bind-addr', '0.0.0.0:8082', '--auth', authFlag, '--proxy-domain', `${projectId}.${this.baseDomain}${this.basePort !== '80' ? ':' + this.basePort : ''}`, '/workspace']
+      const { useProxy, spec } = this.buildContainerSpec(projectId, {
+        ...options,
+        image: snapshotImage,
+        projectType: 'clone',
+        hostCapabilities: await this.getHostCapabilities()
       });
+      // The snapshot's image config still carries the source's environment;
+      // container env only overrides keys it sets, so blank out the rest
+      const setKeys = new Set(spec.Env.map(e => e.split('=')[0]));
+      for (const key of PLATFORM_ENV_KEYS) {
+        if (!setKeys.has(key)) spec.Env.push(`${key}=`);
+      }
+      const container = await this.docker.createContainer(spec);
 
       await container.start();
       console.log(`Clone container ${containerName} started`);
@@ -1607,6 +1812,7 @@ fi`.trim();
 
       // Wait for code-server to be ready (no project initialization needed — filesystem is cloned)
       await this.waitForWorkspaceReady(containerName);
+      await this.ensureCodexSandboxDefault(container);
       console.log(`Clone workspace ${containerName} is ready`);
 
       this.activeContainers.set(projectId, {
@@ -1635,25 +1841,58 @@ fi`.trim();
    * The clone already has the source's git remote (credentials baked into snapshot).
    * Non-throwing: returns false on error so clone still works without its own branch.
    */
-  async setupCloneBranch(projectId, branchName) {
-    const containerName = `workspace-${projectId}`;
-    try {
-      const container = this.docker.getContainer(containerName);
-      const safeBranch = branchName.replace(/'/g, "'\\''");
-      const exec = await container.exec({
-        Cmd: ['bash', '-c', `cd /workspace && git checkout -b '${safeBranch}' && git push -u origin '${safeBranch}' 2>&1`],
-        AttachStdout: true,
-        AttachStderr: true,
-        Env: ['HOME=/home/coder', 'USER=coder']
-      });
-      const stream = await exec.start();
-      const output = await this.streamToString(stream);
-      console.log(`Setup clone branch '${branchName}' for ${containerName}: ${output.trim()}`);
-      return true;
-    } catch (error) {
-      console.warn(`Failed to setup clone branch for ${containerName}:`, error.message);
+  // Runs a bash script as the workspace user. Resolves { exitCode, output }.
+  async execInWorkspace(projectId, script, args = []) {
+    const container = this.docker.getContainer(`workspace-${projectId}`);
+    const exec = await container.exec({
+      Cmd: ['bash', '-c', script, 'bash', ...args],
+      AttachStdout: true,
+      AttachStderr: true,
+      User: 'coder',
+      WorkingDir: '/workspace',
+      Env: ['HOME=/home/coder', 'USER=coder', 'GIT_TERMINAL_PROMPT=0']
+    });
+    const output = await this.streamToString(await exec.start({}));
+    const { ExitCode } = await exec.inspect();
+    return { exitCode: ExitCode, output: output.trim() };
+  }
+
+  // Remotes of /workspace that point to the platform's Forgejo:
+  // [{ name, owner, repo }] (credentials are not returned)
+  async listForgejoRemotes(projectId) {
+    const { exitCode, output } = await this.execInWorkspace(projectId,
+      'git -C /workspace rev-parse --git-dir >/dev/null 2>&1 || exit 0; git -C /workspace remote -v');
+    if (exitCode !== 0) return [];
+    const remotes = new Map();
+    for (const line of output.split('\n')) {
+      const m = /^(\S+)\s+https?:\/\/(?:[^@\s]+@)?forgejo:3000\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\s+\((?:fetch|push)\)$/.exec(line.trim());
+      if (m) remotes.set(m[1], { name: m[1], owner: m[2], repo: m[3] });
+    }
+    return [...remotes.values()];
+  }
+
+  async setGitRemote(projectId, name, url) {
+    const { exitCode, output } = await this.execInWorkspace(projectId,
+      'git -C /workspace remote set-url "$1" "$2" 2>/dev/null || git -C /workspace remote add "$1" "$2"', [name, url]);
+    if (exitCode !== 0) throw new Error(`Setting remote ${name} failed: ${output}`);
+  }
+
+  // Points origin at the clone's own repository and pushes all branches and
+  // tags (nothing to push without commits). Returns false and logs why if
+  // that fails.
+  async pushToOwnRepo(projectId, url) {
+    const { exitCode, output } = await this.execInWorkspace(projectId, [
+      'cd /workspace 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 || git init -q -b main /workspace || exit 3',
+      'cd /workspace',
+      'git remote set-url origin "$1" 2>/dev/null || git remote add origin "$1" || exit 4',
+      'git rev-parse --verify HEAD >/dev/null 2>&1 || { echo "no commits to push"; exit 0; }',
+      'git push -u origin --all 2>&1 && git push origin --tags 2>&1'
+    ].join('\n'), [url]);
+    if (exitCode !== 0) {
+      console.warn(`Pushing workspace-${projectId} to its own repository failed (${exitCode}): ${output.replace(/\/\/[^@\s]+@/g, '//***@')}`);
       return false;
     }
+    return true;
   }
 
   /**
@@ -1762,76 +2001,127 @@ fi`.trim();
     }
   }
 
-  async isContainerOrphaned(container, useProxy = false) {
+  // Attaches a workspace container to the network of its proxy mode and
+  // detaches it from the other workspace networks. Covers containers whose
+  // network was removed and recreated by `docker compose down/up`, and
+  // containers created before the proxy networks were split. Returns true
+  // if anything changed.
+  async ensureWorkspaceNetwork(containerName, proxyMode = 'none', proxyIp = null) {
+    const required = this.networkForProxyMode(proxyMode);
+    const fixedIp = proxyMode === 'none' ? null : proxyIp;
+    const info = await this.docker.getContainer(containerName).inspect();
+    const attached = { ...(info.NetworkSettings.Networks || {}) };
+    let changed = false;
+
+    let requiredId;
     try {
-      const containerInfo = await container.inspect();
-      const networks = containerInfo.NetworkSettings.Networks;
-
-      // Determine which network the container should be on
-      const requiredNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      // Check if container is connected to the correct network
-      if (!networks || !networks[requiredNetwork]) {
-        return true; // Orphaned - not connected to required network
-      }
-
-      // Check if the network actually exists
-      const networkExists = await this.ensureNetworkExists();
-      if (!networkExists) {
-        return true; // Network doesn't exist, container is orphaned
-      }
-
-      return false; // Container is properly connected
+      requiredId = (await this.docker.getNetwork(required).inspect()).Id;
     } catch (error) {
-      console.error('Error checking container orphan status:', error);
-      return true; // Assume orphaned on error to be safe
+      if (error.statusCode === 404) {
+        throw new Error(`Network '${required}' does not exist. Run ./deploy.sh (or ./setup-network.sh) first.`);
+      }
+      throw error;
     }
+
+    // A stopped container keeps the ID of a network that `docker compose
+    // down/up` has since recreated under the same name, and Docker then
+    // refuses to start it ("network ... not found"). Disconnecting by name
+    // drops the stale entry so the container can be reattached.
+    const entry = attached[required];
+    if (entry && entry.NetworkID && entry.NetworkID !== requiredId) {
+      await this.docker.getNetwork(required).disconnect({ Container: info.Id, Force: true });
+      delete attached[required];
+      console.log(`Dropped stale entry for recreated network ${required} from ${containerName}`);
+    }
+
+    // Pin the fixed address, otherwise Docker assigns a dynamic one on the
+    // next start. A running workspace that already uses it keeps running
+    // undisturbed and is pinned on its next start.
+    const current = attached[required];
+    let reattached = false;
+    if (current && fixedIp) {
+      const pinned = current.IPAMConfig && current.IPAMConfig.IPv4Address;
+      if (pinned !== fixedIp && !(info.State.Running && current.IPAddress === fixedIp)) {
+        await this.docker.getNetwork(required).disconnect({ Container: info.Id, Force: true });
+        delete attached[required];
+        reattached = true;
+      }
+    }
+
+    if (!attached[required]) {
+      try {
+        await this.docker.getNetwork(required).connect({
+          Container: info.Id,
+          EndpointConfig: this.endpointConfig(containerName, fixedIp)
+        });
+      } catch (error) {
+        // Address taken (running container): stay reachable, report it
+        if (reattached) {
+          await this.docker.getNetwork(required).connect({
+            Container: info.Id,
+            EndpointConfig: this.endpointConfig(containerName)
+          }).catch(() => {});
+        }
+        throw new Error(`Could not attach ${containerName} to ${required}` +
+          (fixedIp ? ` with address ${fixedIp}` : '') + `: ${error.message}`);
+      }
+      console.log(`Connected ${containerName} to network ${required}` + (fixedIp ? ` (${fixedIp})` : ''));
+      changed = true;
+    }
+
+    for (const name of this.workspaceNetworks()) {
+      if (name === required || !attached[name]) continue;
+      try {
+        await this.docker.getNetwork(name).disconnect({ Container: info.Id, Force: true });
+      } catch (error) {
+        // The network itself is gone: the entry cannot be removed by name
+        if (error.statusCode !== 404) throw error;
+        console.warn(`Could not disconnect ${containerName} from missing network ${name}`);
+        continue;
+      }
+      console.log(`Disconnected ${containerName} from network ${name} (proxy mode: ${proxyMode})`);
+      changed = true;
+    }
+
+    return changed;
   }
 
-  async recoverOrphanedContainer(container, containerName, useProxy = false) {
-    try {
-      console.log(`Attempting to recover orphaned container: ${containerName}`);
-
-      // Determine which network the container should be on
-      const requiredNetwork = useProxy ? this.proxyNetwork : this.network;
-
-      // Ensure the network exists
-      const networkExists = await this.ensureNetworkExists();
-      if (!networkExists) {
-        return {
-          success: false,
-          error: `Required network '${requiredNetwork}' does not exist. Run ./setup-network.sh first.`
-        };
-      }
-
-      // Get the network object
-      const network = this.docker.getNetwork(requiredNetwork);
-
-      // Connect container to network with alias
-      await network.connect({
-        Container: containerName,
-        EndpointConfig: {
-          Aliases: [containerName]
+  // Runs ensureWorkspaceNetwork for every known workspace on server start.
+  // Failures are logged per workspace; startWorkspace retries them.
+  async migrateWorkspaceNetworks(projects) {
+    let moved = 0;
+    for (const project of projects) {
+      const containerName = `workspace-${project.projectId}`;
+      try {
+        if (await this.ensureWorkspaceNetwork(containerName, project.proxyMode || 'none', project.proxyIp)) moved++;
+      } catch (error) {
+        if (error.statusCode !== 404) {
+          console.warn(`Could not check network of ${containerName}: ${error.message}`);
         }
-      });
-
-      console.log(`Successfully connected ${containerName} to network ${requiredNetwork}`);
-      return { success: true, message: 'Container recovered successfully' };
-      
-    } catch (error) {
-      console.error(`Failed to recover container ${containerName}:`, error);
-      
-      // If connection failed, check if it's because it's already connected
-      if (error.message && error.message.includes('already exists')) {
-        console.log(`Container ${containerName} is already connected to network`);
-        return { success: true, message: 'Container was already connected' };
       }
-      
-      return { 
-        success: false, 
-        error: `Network recovery failed: ${error.message}` 
-      };
     }
+    if (moved > 0) console.log(`Updated the network attachment of ${moved} workspace(s)`);
+  }
+
+  // Subnets of all workspace networks with their gateways. nginx denies the
+  // platform API to these subnets; a gateway stays allowed because traffic
+  // from the host itself (and Docker Desktop's port forwarding) arrives from
+  // there.
+  async getWorkspaceNetworkRanges() {
+    const ranges = [];
+    for (const name of this.workspaceNetworks()) {
+      let info;
+      try {
+        info = await this.docker.getNetwork(name).inspect();
+      } catch (error) {
+        if (error.statusCode === 404) continue;
+        throw error;
+      }
+      for (const cfg of (info.IPAM && info.IPAM.Config) || []) {
+        if (cfg.Subnet) ranges.push({ network: name, subnet: cfg.Subnet, gateway: cfg.Gateway || null });
+      }
+    }
+    return ranges;
   }
 
   async validateNetworkHealth() {
@@ -1884,23 +2174,36 @@ fi`.trim();
     return memory;
   }
 
-  parseCpuCores(cpuCores) {
-    // Convert CPU cores string to CPU shares
-    // Docker CPU shares: 1024 shares = 1 CPU core
-    const coreMap = {
-      '1': 1024,  // 1 core
-      '2': 2048,  // 2 cores
-      '4': 4096,  // 4 cores
-      '8': 8192   // 8 cores
-    };
-    
-    const shares = coreMap[cpuCores];
-    if (!shares) {
-      console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
-      return coreMap['2'];
+  // Docker host facts needed for limits, read once: CPU count (NanoCpus must
+  // not exceed it) and whether per-container disk quotas are supported.
+  async getHostCapabilities() {
+    if (this.hostCapabilities) return this.hostCapabilities;
+    try {
+      const info = await this.docker.info();
+      const status = Object.fromEntries(info.DriverStatus || []);
+      // overlay2 size limits need xfs with project quotas ('pquota')
+      const diskQuota = info.Driver === 'overlay2' && status['Backing Filesystem'] === 'xfs';
+      if (this.diskLimit && !diskQuota) {
+        console.warn(`WORKSPACE_DISK_LIMIT=${this.diskLimit} is ignored: storage driver ${info.Driver} on ` +
+          `${status['Backing Filesystem'] || 'unknown'} does not support per-container quotas (needs overlay2 on xfs with pquota)`);
+      }
+      this.hostCapabilities = { ncpu: info.NCPU || null, diskQuota };
+    } catch (error) {
+      console.warn(`Could not read Docker host info: ${error.message}`);
+      this.hostCapabilities = { ncpu: null, diskQuota: false };
     }
+    return this.hostCapabilities;
+  }
 
-    return shares;
+  // CPU cores ('1'|'2'|'4'|'8') -> NanoCpus, capped at the host's CPU count
+  cpuCoresToNanoCpus(cpuCores, hostCpus = null) {
+    let cores = parseInt(cpuCores, 10);
+    if (![1, 2, 4, 8].includes(cores)) {
+      console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
+      cores = 2;
+    }
+    if (hostCpus) cores = Math.min(cores, hostCpus);
+    return cores * 1e9;
   }
 
   // Returns sorted list of TCP ports the workspace container is listening on.

@@ -19,7 +19,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | Paket | Inhalt | Status |
 |-------|--------|--------|
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
-| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | offen – braucht Entscheidung zum Vertrauensmodell |
+| 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
 
 ---
@@ -594,11 +594,617 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 
 ### Beobachtete, vorbestehende Probleme (Backlog)
 
-- **Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
-  `git push` mit „src refspec … does not match any“ scheitert (Workspace ohne Commits).
-- **`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen – der Workspace
-  war trotzdem sofort über nginx erreichbar; der Check scheint nicht zu greifen.
+- **„Error loading disk usage“ bei Seiten-Reloads**: Lädt das Dashboard neu, während
+  die Disk-Usage-Abfragen laufen, bricht der Browser sie ab und die App meldet jeden
+  Abbruch als Fehler in der Konsole (harmlos, vorbestehend; beim E2E-Test 2.6/2.8 sichtbar).
+- ~~**Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
+  `git push` scheitert~~ – entfallen in 2.7 (eigenes Repo pro Klon, Exit-Code geprüft).
+- ~~**`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen~~ – behoben in
+  2.4: Der Server konnte die Namen von Proxy-Workspaces nie auflösen (anderes Netz);
+  die Prüfung läuft jetzt in nginx.
 - **Alias direkt nach dem Anlegen** liefert kurz 404 (nginx-Reload ist asynchron); das
   API meldet bereits Erfolg.
 - Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env
   (bekannt, Paket 2).
+
+### Vorgemerkte Feature-Ideen
+
+- **XaresAICoder als MCP-Server** (vorgemerkt 2026-10-19): Ein KI-Agent – z. B. Claude
+  im Chat – soll sich per MCP mit einem Workspace verbinden können, wenn er „mehr
+  braucht“, ohne die Cloud-Umgebung des Anbieters zu nutzen. Kernfunktionen: Dateien
+  hoch-/herunterladen, Programme/Befehle im Workspace ausführen (Ausgabe zurück).
+  Optional später: Workspace anlegen. Zu klären: Transport (Streamable HTTP über nginx),
+  Authentifizierung (eigener Token pro Agent/Workspace statt Admin-Session, vgl. 2.6),
+  Begrenzung auf freigegebene Workspaces, Zeit-/Ausgabelimits, Protokollierung.
+
+---
+
+## Paket 2 – Isolation (Variante 2: Teilnehmer gelten als nicht vertrauenswürdig)
+
+Branch `security/paket-2`, aufgesetzt auf `security/paket-1` (PR #3 am 2026-10-18 in `main` gemergt).
+
+### Entscheidungen vorab (2026-10-03)
+
+| Frage | Entscheidung |
+|-------|--------------|
+| Vertrauensmodell | **Variante 2**: Wer einen Workspace bekommt, soll weder die Plattform-API, noch den Proxy, noch fremde Repos oder Zugangsdaten der Lehrkraft erreichen. |
+| AI-Tool-Logins beim Klonen | Standardmäßig **entfernen**; Häkchen im Clone-Dialog, um sie bewusst mitzukopieren (Workshop-Key). Git-Tokens, Forgejo-Zugang, Passwörter, Shell-History werden immer entfernt. |
+| sudo in Workspaces | **Pro Workspace wählbar** (Default aus `WORKSPACE_SUDO_ENABLED`), beim Erstellen und Klonen überschreibbar. |
+| Workspace ↔ Workspace | Erreichbarkeit über Ports wird **akzeptiert**, dafür **Passwortpflicht für Klone**. Ein Netz pro Workspace wäre bei vielen Workspaces nicht tragfähig. |
+
+### Plan
+
+| Schritt | Inhalt | Abhängigkeit |
+|---------|--------|--------------|
+| 2.1 | `buildContainerSpec()`: ein Container-Bauplan für Create und Clone (behebt die bereits auseinanderlaufenden Pfade) | – |
+| 2.2 | Klon-Snapshot bereinigen (Env + Dateien), Opt-in für AI-Logins, Passwortpflicht für Klone | 2.1 |
+| 2.3 | Härtung: sudo pro Workspace, echtes CPU-Limit (`NanoCpus`), seccomp-Standardprofil (konfigurierbar), Disk-Quota wo das Host-Dateisystem es kann | 2.1 |
+| 2.4 | Netzsegmentierung: API-Server nur noch im Control-Netz, getrennte interne Netze für Security- und Logging-Proxy, nginx sperrt `/api/` für Workspace-Subnetze, Migration bestehender Workspaces beim Start | 2.1 |
+| 2.5 | Feste IPs für Proxy-Workspaces → Mitschnitte bleiben dauerhaft beim richtigen Projekt | 2.4 |
+| 2.6 | API-Login (vorgezogen, schließt das Restrisiko aus 2.4) | 2.4 |
+| 2.7 | Forgejo: eigener Nutzer + Token pro Workspace, kein `GIT_ADMIN_PASSWORD` mehr in Workspaces; Klone bekommen einen **Fork** statt eines Branches im gemeinsamen Repo (Vorschlag, siehe dort) | 2.4 |
+| 2.8 | Doku, Upgrade-Hinweise, Live-Test | alle |
+
+### 2.1 Ein Container-Bauplan für Create und Clone
+
+**Problem**: `createWorkspaceContainer` und `createCloneContainer` enthielten je ~130
+Zeilen fast identischer Env- und HostConfig-Logik, die bereits auseinanderliefen (nur
+Clone setzte `User`, Docker-init kam im Upstream nachträglich in beide Kopien). Jede
+Härtung aus Paket 2 hätte doppelt gebaut werden müssen.
+
+**Änderung** (`server/src/services/docker.js`): `buildContainerSpec(projectId, opts)`
+liefert `{ containerName, useProxy, spec }`; beide Pfade rufen nur noch diese Methode
+auf. `User: 'coder'` gilt jetzt für beide (das Image nutzt ohnehin `coder`; nötig, weil
+per export/import erzeugte Snapshots den `USER` verlieren).
+
+**Test**: Vorher/Nachher-Vergleich der `createContainer`-Payloads für 24 Fälle (Create/
+Clone × kein/Security/Logging-Proxy × mit/ohne Passwort × mit/ohne GPU): Clone
+identisch, Create unterscheidet sich ausschließlich durch `User: 'coder'`.
+
+### 2.2 Klone ohne Zugangsdaten der Vorlage, Passwortpflicht
+
+**Problem**: `docker commit` übernahm Env und Dateisystem der Vorlage in jeden Klon:
+`GIT_ACCESS_TOKEN` (privates Repo der Lehrkraft), Token in `.git/config`,
+`~/.code-server-auth`, Shell-History – und die AI-Tool-Logins der Lehrkraft. Klone
+ohne Passwort waren im Docker-Netz für andere Workspaces offen. Außerdem teilten sich
+parallele Klon-Batches derselben Quelle einen Snapshot-Tag (der erste Batch löschte den
+Snapshot des zweiten), und der export/import-Fallback verlor `ENTRYPOINT`/`USER`.
+
+**Änderung**
+- `docker.js`:
+  - `commitContainer` erzeugt pro Batch einen eindeutigen Tag (`raw-<ts>`).
+  - Neu `sanitizeSnapshot(raw, { keepAiLogins })`: startet einmal pro Batch einen
+    Wegwerf-Container aus dem Snapshot (root, `NetworkMode: none`), führt
+    `CLONE_CLEANUP_SCRIPT` aus, prüft Exit-Code und Abschlussmarker, committet nach
+    `clean-<ts>` und setzt dabei Entrypoint/Cmd/User/WorkingDir aus dem Basis-Image
+    (repariert nebenbei den export/import-Fallback). Der Roh-Snapshot wird gelöscht.
+  - Klon-Container: Alle Plattform-Env-Variablen (`PLATFORM_ENV_KEYS`), die der Klon
+    nicht selbst setzt, werden mit leerem Wert überschrieben.
+- `workspace.js`: Ohne bereinigten Snapshot wird **kein** Klon erstellt (alle Klone →
+  `error`) – lieber ein fehlgeschlagener Klon als verteilte Lehrer-Tokens.
+- `routes/projects.js`: `password` ist Pflicht (400), neues Feld `keepAiLogins`.
+- Frontend: Passwort im Clone-Dialog vorbelegt (generiert) und Pflicht; Häkchen „Copy AI
+  tool logins of the source“ (Standard aus).
+- Doku: `docs/API.md` (Clone).
+
+**Was das Skript entfernt** (Pfade aus `docker diff` echter Workspaces dieser Plattform
+ermittelt, nur Dateinamen angesehen):
+- *Immer*: `~/.code-server-auth`, Passwort in code-server-`config.yaml`,
+  `~/.git-credentials`, `~/.netrc`, `~/.pypirc`, `~/.config/gh/hosts.yml`, npm-
+  `_authToken`-Zeilen, `~/.ssh/*` außer `known_hosts`, Shell-/REPL-Histories,
+  Zugangsdaten in Git-Remote-URLs (`/workspace` und `~`, Tiefe 4).
+- *Ohne Opt-in*: Claude Code (`.credentials.json`, `~/.claude.json`, Projekte/History/
+  Sessions/…), Codex (`auth.json`, Sessions, Memories, State-DB), OpenCode (`auth.json`,
+  Storage, DB), Qwen (`oauth_creds.json`), Crush (`crush.json`, `hyper.json`), Pi
+  (`auth.json`, Sessions), Continue (`config.json`, `.env`, `apiKey`-Zeilen in
+  `config.yaml`), Aider (`~/.env`, `~/.aider.conf.yml`, Histories im Repo).
+- Einstellungen ohne Geheimnisse (z. B. `~/.claude/settings.json`) bleiben erhalten.
+
+**Entscheidungen**
+- **Env leeren statt entfernen**: Beim Commit füllt Docker fehlende Env-Variablen aus
+  dem Container-Config wieder auf; entfernen lässt sich nichts. Container-Env überschreibt
+  aber Image-Env pro Schlüssel → leere Werte. Der Snapshot selbst wird nach dem Batch
+  gelöscht.
+- **Einmal pro Batch** bereinigen statt in jedem Klon: schneller, und kein Klon läuft je
+  mit ungereinigten Daten.
+- **Cline** speichert API-Keys nicht im Dateisystem (in `~/.cline/data/globalState.json`
+  stehen nur Einstellungen; vermutlich Secret Storage von code-server) – wird daher nicht
+  mitkopiert. `~/.cline/data/secrets.json` wird vorsorglich entfernt.
+- **Nicht erkannt** werden Geheimnisse in beliebigen Dateien (z. B. `.env` im Projekt);
+  das ist in der API-Doku vermerkt.
+
+**Live-Test**: Quelle mit Passwort, `GIT_ACCESS_TOKEN` und platzierten Fake-Zugangsdaten
+(Claude, Codex, OpenCode, Pi, Continue-`apiKey`, Aider-`.env`, History, Git-Credentials,
+SSH-Key, gh-Token, npm-Token, Remote mit Token). Clone ohne Passwort → 400. Zwei
+**parallele** Batches derselben Quelle (ohne/mit Opt-in) → beide erfolgreich, Snapshots
+aufgeräumt. Klon ohne Opt-in: alle Zugangsdaten weg, `settings.json`/`known_hosts`/
+Projektdatei vorhanden, Remote ohne Token, `GIT_ACCESS_TOKEN` leer, keine `FAKE`-Werte in
+der Env. Klon mit Opt-in: AI-Logins vorhanden, Rest bereinigt. Entrypoint/User korrekt,
+Login nur mit Klon-Passwort. Quelle unverändert. Test-Workspaces gelöscht.
+
+### 2.3 Härtung: sudo pro Workspace, echtes CPU-Limit, seccomp, Disk-Quota
+
+**Problem**: `CpuShares` ist nur eine relative Gewichtung (ein Workspace konnte alle
+CPUs belegen), es gab kein Disk-Limit (ein Workspace kann die Host-Platte füllen),
+`seccomp=unconfined` öffnete die volle Kernel-Angriffsfläche, und sudo war nur global
+schaltbar.
+
+**Änderung**
+- `buildContainerSpec`:
+  - `NanoCpus` (harte Grenze) statt `CpuShares`, gekappt auf die CPU-Zahl des Hosts
+    (`getHostCapabilities()` liest `docker info` einmal). `parseCpuCores` entfernt.
+  - `sudoEnabled` pro Workspace: ohne sudo `no-new-privileges:true`.
+  - seccomp: Docker-Standardprofil; `WORKSPACE_SECCOMP=unconfined` als Opt-out.
+  - `StorageOpt.size` aus `WORKSPACE_DISK_LIMIT`, aber nur wenn der Host es kann
+    (overlay2 auf xfs); sonst einmalige Warnung im Log.
+- Codex: Neue Workspaces und Klone bekommen `sandbox_mode = "danger-full-access"`
+  vorangestellt in `~/.codex/config.toml`, sofern dort noch kein `sandbox_mode` steht.
+- API/UI: `sudoEnabled` bei Create und Clone (Checkboxen, vorbelegt aus
+  `GET /api/config` → `workspaceSudoDefault`); Projekt speichert/liefert `sudoEnabled`.
+- `docker-compose.yml` reicht `WORKSPACE_SECCOMP` und `WORKSPACE_DISK_LIMIT` durch;
+  `.env.example` dokumentiert beide.
+
+**Entscheidung seccomp (mit dir abgestimmt)**: Standardprofil. Es sperrt unprivilegierte
+User-Namespaces – eine der häufigsten Quellen für Kernel-Exploits/Container-Ausbrüche.
+Folge: Die eigene Sandbox von Codex (bubblewrap) kann nicht starten (live nachgewiesen:
+`bwrap: No permissions to create a new namespace`; mit `unconfined` funktioniert sie).
+Der Workspace-Container ist ohnehin die Sandbox, daher läuft Codex darin ohne eigene.
+Chrome braucht `--no-sandbox` (Playwright-Default).
+
+**Gilt nur für neu erstellte Workspaces/Klone** – bestehende Container behalten ihre
+HostConfig, bis sie neu erstellt werden.
+
+**Tests**
+- Spec-Vergleich (24 Fälle): nur die beabsichtigten Änderungen (`NanoCpus` statt
+  `CpuShares`, kein `seccomp=unconfined`, `no-new-privileges` je nach sudo).
+- Unit: sudo aus/an → `["no-new-privileges:true"]`/`[]`; 8 Kerne auf 4-Kern-Host → 4;
+  Quota unterstützt → `{"size":"20G"}`, nicht unterstützt → kein `StorageOpt`;
+  `WORKSPACE_SECCOMP=unconfined` → wie bisher.
+- Live (Standard-seccomp, ohne sudo): `cpu.max` = `200000 100000` (2 Kerne), seccomp-Modus
+  2, sudo blockiert; Node, Python, Git, `npm install`, `pip install --user`,
+  `node --inspect`, Multiprocessing und alle 7 CLI-Agents (`--version`) funktionieren;
+  `unshare --user` blockiert. Mit sudo: `sudo` funktioniert.
+- Codex-Konfiguration: Live-Test fand einen Fehler im ersten Skript (fehlende Datei →
+  `[ -f ] && cat` als letzter Befehl → Exit 1 → `mv` lief nie); korrigiert. Danach alle
+  drei Fälle geprüft (keine Datei; Datei mit `[table]` → Eintrag davor; vorhandenes
+  `sandbox_mode` bleibt). `codex login status` liest die Datei fehlerfrei; ein
+  ungültiger Wert wird von Codex abgelehnt (Gegenprobe).
+- Auf Docker Desktop (Backing FS `extfs`) ist Disk-Quota nicht verfügbar – nur die
+  Erkennung/Warnung ist getestet.
+
+### 2.4 Netzsegmentierung: API-Server, Proxy-Netze, `/api/` aus Workspaces
+
+**Problem**
+- Workspaces ohne Proxy hingen mit dem API-Server im selben Netz und erreichten
+  `server:3000` direkt – an nginx und einer äußeren Zugangskontrolle vorbei.
+- Security- und Logging-Proxy teilten sich `xares-internal`: Ein Security-Workspace
+  konnte statt squid einfach den uneingeschränkten mitmproxy (`172.30.0.5:8080`)
+  nutzen und so die Whitelist komplett umgehen.
+- nginx hängt zwangsläufig in jedem Workspace-Netz (es leitet code-server und App-Ports
+  weiter); `/api/` war darüber für jeden Workspace offen – inkl. `PUT /api/whitelist`.
+
+**Änderung**
+- `docker-compose.yml`: neues Netz `xares-control` (nginx, Server, Forgejo); der Server
+  hängt **nur** noch dort. Neues internes Netz `xares-security`
+  (`SECURITY_NETWORK_SUBNET`, Standard `172.31.0.0/16`) für Security-Workspaces mit
+  squid, nginx und dnsmasq; `xares-internal` bleibt für Logging-Workspaces und
+  mitmproxy (squid ist dort raus). dnsmasq hängt in beiden internen Netzen.
+- squid: `xares-entrypoint.sh` setzt die ACL `internal_network` beim Start aus
+  `SECURITY_NETWORK_SUBNET` (vorher fest `172.30.0.0/16` in `squid.conf`); der
+  Whitelist-Generator definiert die ACL nicht mehr ein zweites Mal.
+- `docker.js`:
+  - `networkForProxyMode()` / `workspaceNetworks()`; `buildContainerSpec` wählt Netz
+    und DNS (dnsmasq im jeweiligen Netz) pro Modus. `getWorkspaceIPAddress` liest die
+    IP aus dem Logging- **oder** Security-Netz.
+  - `ensureWorkspaceNetwork()` ersetzt `isContainerOrphaned`/`recoverOrphanedContainer`:
+    verbindet mit dem Netz des Modus, trennt von den anderen Workspace-Netzen
+    (fremde Netze bleiben unberührt) und entfernt **veraltete Netz-IDs** (siehe unten).
+    Läuft bei jedem `start` und für alle Workspaces beim Serverstart
+    (`migrateWorkspaceNetworks`).
+  - `getWorkspaceNetworkRanges()` liefert Subnetze und Gateways der Workspace-Netze.
+  - `waitForDnsReady` fragt per `getent hosts` im nginx-Container (der Server teilt
+    kein Netz mehr mit Workspaces).
+- `aliasesService.writeApiAccessConfig()` schreibt `api-access.conf`
+  (`allow <Gateway>; … deny <Subnetz>; …`, Werte validiert); `nginx-base.conf.template`
+  bindet sie in `location /api/` ein (Glob → optional beim allerersten Boot).
+  `index.js` schreibt sie beim Start als Erstes, danach Migration und Alias-Config.
+- `deploy.sh`: `configure_proxy_subnet` prüft beide Proxy-Subnetze auf Konflikte (auch
+  gegeneinander) und schreibt Alternativen samt dnsmasq-Adresse in `.env`. Zwei
+  vorbestehende Fehler behoben: Im Alternativen-Check fing `except: pass` das
+  `sys.exit(1)` ab (jede Alternative galt als frei), und `x=$(…)` brach unter `set -e`
+  das Deploy ab, wenn keine Alternative gefunden wurde.
+- `.env.example`: `SECURITY_NETWORK_SUBNET`, `SECURITY_DNSMASQ_IP`,
+  `SECURITY_PROXY_NETWORK`; Hinweis zu `HOST_PORT=127.0.0.1:<port>`.
+- Doku: `SECURITY.md` (Network Isolation inkl. Restrisiken), `PROXY_ARCHITECTURE.md`.
+  Die übrigen Erwähnungen von `xares-internal`/`172.30` in der Doku folgen in 2.8.
+
+**Entscheidungen**
+- **Logging bleibt in `xares-internal`, Security bekommt das neue Netz**: Mitschnitte
+  hängen an der Client-IP. Ein Umzug der Logging-Workspaces hätte ihre IPs und damit die
+  Zuordnung der vorhandenen Mitschnitte verändert; Squid-Logs werden nur live gelesen.
+- **dnsmasq bleibt** für beide internen Netze: Ohne eigenen DNS-Server könnten externe
+  Namen je nach Docker-Version über den Host aufgelöst werden (Exfiltration per DNS).
+  Im Security-Netz liegt dnsmasq auf der **letzten** Adresse (`172.31.255.254`): nginx
+  und squid haben dort dynamische Adressen, squid bekam beim Deploy prompt `.2`.
+- **Sperre per Quell-Subnetz, Gateways erlaubt**: Vom Gateway kommen der Host selbst und
+  die Port-Weiterleitung von Docker Desktop (der Browser des Admins). Welches Netz nginx'
+  „Veröffentlichungsnetz“ ist, legt Docker selbst fest (hier `xares-aicoder-network`) –
+  die Gateway-Ausnahme macht die Regel davon unabhängig.
+- **Regeln aus den echten Netzen generiert** statt aus `.env`: Das Subnetz von
+  `xares-aicoder-network` wählt `setup-network.sh` ggf. selbst; IPv6-Subnetze werden mit
+  erfasst.
+- **Kein Ziel-Filter in mitmproxy**: Lokale Modelle (`host.docker.internal`, LAN-IPs)
+  sind ausdrücklich ein Logging-Feature; ein Filter auf private Ziele hätte es zerstört,
+  ein Filter nur auf `HOST_PORT` wäre bei `HOST_PORT=8000` (vLLM-Standard) ebenso
+  kollidiert und hätte direkte Workspaces (gleicher Weg ohne Proxy) nicht geschützt.
+
+**Beim Live-Test gefunden und behoben**: Gestoppte Proxy-Workspaces ließen sich nach
+einem Deploy **nicht mehr starten**. `docker compose down` entfernt `xares-internal`,
+wenn kein laufender Container daran hängt; der gestoppte Container behält die alte
+Netz-ID, Docker antwortet beim Start mit 404 („network … not found“), und die API
+meldete irreführend „Workspace container not found“. Betroffen war der vorhandene
+Workspace „newtest“. `ensureWorkspaceNetwork` trennt den veralteten Eintrag per Name
+und verbindet neu; die 404-Meldung gilt nur noch für fehlende Container.
+
+**Tests**
+- Unit (gemockte Docker-API): Netz/DNS pro Modus; Migration (alt→neu, verwaist,
+  falsches + fremdes Netz, idempotent); fehlendes Netz → klare Meldung; veraltete
+  Netz-ID → trennen + verbinden; fehlendes falsches Netz → Warnung; IP-Lookup;
+  `api-access.conf` inkl. IPv6 und Injection-Versuchen; DNS-Check über nginx;
+  Whitelist-Abschnitt ohne eigene ACL. `deploy.sh`: Subnetzwahl mit Fake-`docker` für
+  5 Fälle (frei, Re-Deploy, fremdes Netz auf 172.31 bzw. 172.30 bei belegtem
+  Security-Subnetz, alles belegt → kein Abbruch).
+- Live (Docker Desktop, Engine 28.5.1), nach Backup von `workspace_data`,
+  `nginx_dynamic`, `mitmproxy_logs`; Deploy mit `--enable-proxy --git-server
+  --skip-build --skip-env --skip-network`:
+  - Netze wie geplant; Server nur in `xares-control`; `api-access.conf` mit
+    `allow 172.19.0.1` und `deny` für 172.19/16, 172.30/16, 172.31/16 (interne Netze
+    haben kein Gateway). Health-Check vom Host → 200.
+  - Je ein Workspace pro Modus, in ~15 s bereit, DNS-Check über nginx sofort grün.
+    Erreichbarkeit:
+
+    | aus … | Server | `/api/` via nginx | mitmproxy | squid | Host-Gateway `/api/` |
+    |-------|--------|-------------------|-----------|-------|----------------------|
+    | ohne Proxy | – | 403 | – | erreichbar (400) | 403 |
+    | Security | – | 403 | **–** | ✔ | – |
+    | Logging | – | 403 | ✔ | – | – |
+    | Security via squid | 403 | 403 | | | 403 |
+    | Logging via mitmproxy | 502 | 403 | | | 403 |
+
+    Workspace-UI über nginx (302) und Forgejo-Web (`/git/`) bleiben erreichbar;
+    squid lässt `pypi.org` durch und sperrt `example.com`.
+  - Migration: laufender Security-Workspace künstlich ins alte Netz gehängt →
+    Serverstart verschiebt ihn; gestoppt → `start` verschiebt ihn; squid danach ✔,
+    mitmproxy –. „newtest“ (veraltete Netz-ID) beim Serverstart repariert, startet,
+    erreichbar, wieder gestoppt.
+  - Mitschnitt im Logging-Workspace (Fake-Key) → per API für das richtige Projekt,
+    Key redigiert; Recorded Domains über `172.30.0.3`; Squid-Logs des Security-
+    Workspaces gefiltert. Whitelist `PUT` → nur noch eine `internal_network`-ACL
+    (`172.31.0.0/16`), `squid -k parse` fehlerfrei, `example.org` danach erlaubt.
+  - Klon eines Security-Workspaces landet in `xares-security` mit dnsmasq-DNS.
+  - Docker-Verhalten (Wegwerf-Netze): interne Netze erreichen veröffentlichte Host-Ports
+    nicht; aus einem anderen Bridge-Netz gesperrt; aus demselben Netz wie nginx kommt die
+    Anfrage mit der eigenen Container-IP an (→ 403).
+  - Aufgeräumt: Test-Workspaces gelöscht, squid neu erstellt (Standard-Whitelist),
+    Test-Mitschnitte/Domain-Dateien entfernt; vorhandene Mitschnitte unverändert
+    (nichts archiviert). 27 Projekte wie vorher.
+
+**Restrisiko (bewusst offen, dokumentiert in `SECURITY.md`)**: Was über den
+**veröffentlichten Host-Port** zurückkommt, sieht für nginx aus wie der Host selbst.
+Unter Docker Desktop erreicht `host.docker.internal:80` die API aus direkten Workspaces
+und über mitmproxy (**200**); `HOST_PORT=127.0.0.1:…` hilft dort nicht (getestet).
+Unter Linux mit Docker 28 bleibt die Quelladresse erhalten (→ 403); ältere Versionen
+mit Userland-Proxy oder ein Reverse Proxy ohne Auth vor der öffentlichen URL öffnen den
+Weg wieder. Belastbar schließen lässt sich das nur mit einem **Login für die API** (als
+Feature vorgemerkt) oder per Host-Firewall – umgesetzt als Login in 2.6.
+
+**Gilt für bestehende Installationen**: Squid-Image wird neu gebaut (Entrypoint),
+`build/nginx.conf.template` von `deploy.sh` neu erzeugt. Migrierte Security-Workspaces
+behalten ihr altes `HostConfig.Dns` (`172.30.0.2`, im neuen Netz unerreichbar) – ohne
+Wirkung, da externe Namen dort ohnehin nicht auflösbar sind und Containernamen über
+Dockers DNS laufen.
+
+### 2.5 Feste IPs für Proxy-Workspaces
+
+**Problem**: mitmproxy und squid kennen einen Workspace nur über seine Client-IP, Docker
+vergibt sie aber bei jedem Start dynamisch. Ein neu gestarteter Workspace konnte unter
+einer anderen IP zurückkommen – seine Mitschnitte waren dann nicht mehr sichtbar, und
+unter der neuen IP lagen womöglich die eines anderen Workspaces (die Archivierung aus
+1.4 griff nur beim *Erstellen*). Für gestoppte Workspaces lieferte die API gar nichts
+(404), weil Docker die IP beim Stoppen freigibt. Squid-Logzeilen eines gelöschten
+Workspaces erschienen beim nächsten Besitzer derselben IP.
+
+**Änderung**
+- `docker.js`:
+  - `allocateProxyIp(mode, taken)`: niedrigste freie Adresse in der **oberen Hälfte**
+    des Subnetzes (z. B. ab `172.30.128.1`), ohne `.0`/`.255`, ohne belegte Adressen
+    im Netz, dnsmasq und die IPs aller anderen Projekte (auch gestoppter).
+  - `buildContainerSpec(…, proxyIp)` pinnt die Adresse per `IPAMConfig` (nur bei Proxy).
+  - `ensureWorkspaceNetwork(…, proxyIp)`: verbindet mit fester Adresse neu, wenn sie
+    nicht gepinnt ist – ein laufender Workspace, der sie schon nutzt, bleibt
+    ungestört und wird beim nächsten Start gepinnt. Schlägt das Verbinden fehl
+    (Adresse belegt), wird er dynamisch wieder angehängt und der Fehler gemeldet.
+  - `getSquidLogsForWorkspace(ip, lines, since)`: blendet Zeilen vor `since` aus.
+  - `resetProxyLogsForIp(ip)` aus `resetProxyLogsForWorkspace` herausgelöst.
+- `workspace.js`:
+  - `withProxyIpLock()` serialisiert die Vergabe; Create und Clone vergeben die IP
+    vor dem Speichern (`proxyIp`, `proxyIpSince` in `projects.json`). Clone ist
+    all-or-nothing: Gehen die Adressen aus, wird kein Klon registriert.
+  - `migrateWorkspaceNetworks()` beim Serverstart: Proxy-Workspaces ohne gültige IP
+    bekommen eine – ein **laufender** behält seine aktuelle (Mitschnitte bleiben
+    zugeordnet), ein gestoppter oder einer, dessen IP schon vergeben ist, bekommt
+    eine neue (deren alte Logs werden archiviert/geleert). Liegt eine gespeicherte
+    IP nach einer Subnetz-Änderung außerhalb des Netzes, wird neu vergeben.
+  - `getProxyIp()` / `getProxyIpSince()` als Quelle für alle Log-Routen.
+- `routes/projects.js`: alle sechs Log-Routen nutzen die gespeicherte IP; Squid-Logs
+  mit `since`.
+- Doku: `LLM_CONVERSATION_LOGGING.md` (IP-to-Project Mapping, Troubleshooting,
+  „Static IP Assignment“ aus Future Enhancements entfernt), `SECURITY.md`.
+
+**Entscheidungen**
+- **IP behalten statt Logs auf Projekt-IDs umstellen**: mitmproxy und squid sehen
+  nur die Client-IP; eine Projekt-ID müsste aus der IP abgeleitet werden – genau
+  das, was eine feste IP liefert, ohne Änderungen an Addon und Log-Format.
+- **Obere Hälfte**: Docker vergibt dynamische Adressen (nginx und squid im Security-
+  Netz, alte Workspaces) von unten; fest vergebene liegen damit außerhalb.
+- **Laufende Alt-Workspaces behalten ihre IP**, auch wenn sie in der unteren Hälfte
+  liegt: Im Logging-Netz haben alle Infrastruktur-Container feste Adressen, eine
+  Kollision ist dort ausgeschlossen; Security-Workspaces gibt es vor 2.5 nur aus der
+  Migration von 2.4, und die bekommen dabei ohnehin eine neue Adresse.
+- **Kein Aufräumen beim Löschen**: Mitschnitte bleiben auf der Platte, bis die IP neu
+  vergeben wird (dann archiviert) – wie bisher.
+
+**Tests**
+- Unit: Vergabe (obere Hälfte, belegt/vergeben/dnsmasq/`.0`/`.255` übersprungen,
+  `/29`, erschöpft, fehlendes Netz); `ipInSubnet`; Spec pinnt nur bei Proxy; Pinning
+  (gestoppt, laufend mit übernommener IP, laufend mit falscher IP, belegte Adresse →
+  dynamischer Fallback + Fehler, schon gepinnt); 12 parallele Vergaben → 12 IPs,
+  Sperre übersteht Fehler; Boot-Migration (behalten, laufend übernehmen, gestoppt/
+  belegt/außerhalb des Subnetzes neu, Logs neuer IPs zurückgesetzt); Squid-`since`-
+  Filter mit dem echten awk-Befehl. Regressionstests aus 2.4 weiter grün.
+- Live (Backup von `workspace_data` vorher):
+  - Serverstart: „newtest“ (gestoppt, Logging) bekommt `172.30.128.1`, in Docker
+    gepinnt.
+  - Drei Logging-Workspaces **gleichzeitig** angelegt → `.128.2`, `.128.3`, `.128.4`;
+    Security → `172.31.128.1`.
+  - Mitschnitt (Fake-Key) und Squid-Logs auch nach dem **Stoppen** per API abrufbar;
+    nach API-Start und nach `docker restart` (ohne API) dieselbe IP.
+  - Klon ×2 eines Security-Workspaces → `.128.2`, `.128.3`.
+  - Logging- und Security-Workspace gelöscht und neu angelegt: Die Nachfolger erben
+    die IPs; der Mitschnitt des Vorgängers liegt in `_archive/`, die API zeigt 0
+    Gespräche; die Squid-Zeile des Vorgängers ist im Log, wird aber ausgeblendet.
+  - Aufgeräumt: Test-Workspaces gelöscht, Test-Mitschnitte und Domain-Dateien
+    entfernt, 27 Projekte wie vorher.
+
+**Gilt für bestehende Installationen**: Beim ersten Start vergibt der Server die
+Adressen (Log: `Fixed proxy IP for …`). Mitschnitte gestoppter Alt-Workspaces, die
+unter ihrer früheren dynamischen IP liegen, werden ihnen nicht zugeordnet – das war
+schon vorher nicht verlässlich der Fall.
+
+### 2.6 API-Login
+
+**Problem**: Die Plattform-API hatte keine Anmeldung – wer das Dashboard erreichte,
+konnte alle ungeschützten Workspaces steuern, die Whitelist ändern usw. Die
+Netzsegmentierung (2.4) hält Workspaces nur fern, solange sie nicht über den
+veröffentlichten Host-Port kommen; unter Docker Desktop ging das per
+`host.docker.internal` (live nachgewiesen), hinter einem Reverse Proxy ohne Auth
+über die öffentliche URL.
+
+**Entscheidungen vorab (2026-10-19, mit dir abgestimmt)**
+
+| Frage | Entscheidung |
+|-------|--------------|
+| Login-Modell | **Ein gemeinsames Admin-Passwort** (`ADMIN_PASSWORD`), Session-Cookie, Login-Dialog im Dashboard. Rollen später. |
+| Ohne Passwort | **API gesperrt** (503); `deploy.sh` erzeugt eins. |
+| Workspace-Passwörter | **Weiter abfragen**, auch für eingeloggte Admins. |
+| Workshop-Admin-Seite | Nimmt **zusätzlich** die Dashboard-Session; `WORKSHOP_ADMIN_PASSWORD` bleibt optional. |
+
+**Änderung**
+- `services/auth.js` (neu): signierte Session-Tokens (`<Ablauf>.<Nonce>.<HMAC>`),
+  Schlüssel aus `/app/workspaces/.session-secret` (0600, überlebt Neustarts) gemischt
+  mit dem Passwort → Passwortwechsel beendet alle Sessions. Cookie `xares_admin`:
+  HttpOnly, SameSite=Strict, host-only, `Secure` bei `PROTOCOL=https`, Laufzeit
+  `ADMIN_SESSION_HOURS` (12). Logout widerruft die Nonce. Rate-Limit: 10 Fehlversuche
+  pro Client (`X-Real-IP`) in 15 Minuten → 429. Middleware `requireLogin` für
+  `/api/*` außer Health, `/api/auth/*`, `/api/workshop/*` (dort eigene Prüfung).
+- **CSRF**: Workspace-Apps laufen auf Subdomains – *same-site*, der Browser schickt
+  SameSite=Strict-Cookies mit. Schreibende Requests mit fremdem `Origin`-Hostnamen,
+  `Origin: null` oder `Sec-Fetch-Site: same-site/cross-site` → 403. Clients ohne
+  diese Header (curl) sind keine Browser und brauchen ohnehin das Cookie.
+- `routes/auth.js` (neu): `POST /login`, `POST /logout`, `GET /status`.
+- `routes/workshop.js`: `requireAdmin` akzeptiert die Session (nicht bei Cross-Site-
+  Schreibzugriffen) oder wie bisher `X-Admin-Password`.
+- Frontend: Login-Dialog (blockierend) und Logout-Button. Ein Wrapper um `fetch`
+  öffnet bei `401 LOGIN_REQUIRED` den Dialog und sendet die Anfrage nach dem Login
+  erneut – alle bestehenden Aufrufe funktionieren ohne Änderung; parallele Anfragen
+  teilen sich einen Dialog. Bei `LOGIN_NOT_CONFIGURED` erklärt der Dialog, was zu
+  tun ist. Workshop-Admin-Seite probiert zuerst die Session; Convo-Viewer meldet
+  „Nicht angemeldet“ statt nach einem Workspace-Passwort zu fragen.
+- `deploy.sh`: `ensure_admin_password` erzeugt ein Passwort (24 Zeichen, a–z/A–Z/0–9)
+  in `.env`, auch mit `--skip-env`, und zeigt es am Ende einmalig an.
+  `docker-compose.yml` reicht `ADMIN_PASSWORD`/`ADMIN_SESSION_HOURS` durch;
+  `.env.example` dokumentiert beide. `tests/test-resource-limits.sh` meldet sich an.
+- Doku: `API.md` (Authentication, Workshop-Claims), `SECURITY.md`.
+
+**Tests**
+- Integration (Express, echte Router): ohne Passwort 503, Health/Status öffentlich;
+  401 `LOGIN_REQUIRED`; Workshop-Teilnehmer-Endpunkte öffentlich; falsches/leeres
+  Passwort 401; Login mit Umlaut-Passwort → Cookie-Attribute; manipulierte
+  Ablaufzeit/Signatur/Müll → 401; CSRF (curl-artig und same-origin ✔, fremde
+  Subdomain/same-site/cross-site/`null` → 403, GET unberührt); Workshop-Admin per
+  Session/Passwort, ohne beides 401/503, Cross-Site-Schreibzugriff mit Session → 401;
+  Logout widerruft; Passwortwechsel beendet Sessions; Rate-Limit 429 nur für den
+  betroffenen Client; `Secure` bei https.
+- Live (Deploy mit `--skip-env`): Passwort generiert und in `.env`; ohne Login
+  `/api/projects/` → 401, Health/Workshop-Status 200; Login → 27 Projekte; CSRF von
+  einer Workspace-Subdomain → 403; Workshop-Claims mit Session 200.
+  **Die Lücke aus 2.4 ist zu**: Direkter Workspace und Logging-Workspace über
+  mitmproxy → `host.docker.internal/api/projects/` → `401 LOGIN_REQUIRED`.
+- Headless-Chrome-E2E: Dialog ohne Session, keine Projekte; falsches Passwort →
+  Fehlermeldung; Login per Enter → Projektliste, Logout-Button, Cookie HttpOnly/Strict
+  und für JS unsichtbar; Reload bleibt eingeloggt; Cookie mitten in der Nutzung
+  gelöscht → Dialog, Anfrage nach Login erneut gesendet; Workshop-Admin-Seite öffnet
+  mit Session ohne Passwortabfrage; Logout → Dialog, Workshop-Admin fragt wieder;
+  Convo-Viewer ohne Session → „Nicht angemeldet“, kein Prompt. Konsolenfehler nur
+  „Error loading disk usage“ bei Seiten-Reloads (vom Browser abgebrochene Requests,
+  unabhängig vom Login).
+- Aufgeräumt: Test-Workspaces gelöscht, 27 Projekte.
+
+**Bewusst offen**
+- Keine Rollen: Jeder Admin sieht und steuert alle Workspaces.
+- Rate-Limit pro `X-Real-IP`: Unter Docker Desktop kommen Browser und Workspaces
+  (über `host.docker.internal`) mit derselben Gateway-Adresse an – ein Workspace
+  könnte den Login dort für 15 Minuten sperren. Unter Linux haben Workspaces eigene
+  Adressen (und erreichen `/api/` ohnehin nicht).
+- `app.use(cors())` erlaubt weiter jede Origin für **nicht** authentifizierte
+  Antworten; mit Cookie scheitern Cross-Origin-Requests am fehlenden
+  `Allow-Credentials`.
+
+**Gilt für bestehende Installationen (Breaking Change)**: Nach dem Update ist die API
+ohne `ADMIN_PASSWORD` gesperrt. `./deploy.sh` erzeugt es automatisch; wer ohne
+`deploy.sh` deployt, muss es in `.env` setzen. Skripte, die die API nutzen, brauchen
+das Cookie (siehe `API.md`).
+
+### 2.7 Forgejo: eigener Nutzer und Token pro Workspace
+
+**Problem**: Jeder Workspace bekam `GIT_ADMIN_USER`/`GIT_ADMIN_PASSWORD` des Forgejo-
+**Administrators** in die Umgebung, Workspaces mit Repo zusätzlich in die Remote-URL.
+Live: ein einziger Nutzer `developer` (Admin), 22 Repos (18 öffentlich), Passwort noch
+der Standardwert `admin123!`. Jeder Teilnehmer hatte damit Vollzugriff auf alle Repos
+und die Forgejo-Administration. Klone legten einen Branch im gemeinsamen Repo an
+(jeder konnte jeden überschreiben); seit 2.2 fehlten den Klon-Remotes die Zugangsdaten,
+der Branch-Push scheiterte still (Backlog-Punkt).
+
+**Entscheidungen vorab (2026-10-19, mit dir abgestimmt)**
+
+| Frage | Entscheidung |
+|-------|--------------|
+| Klone | **Eigenes privates Repo pro Klon**, Stand inkl. History per Push |
+| Workspaces ohne Repo | Bekommen **immer** Nutzer + Token (`setup_local_remote` legt Repos im eigenen Namensraum an) |
+| Löschen | Nutzer und Repos **bleiben**, nur der Token wird widerrufen. Weiterarbeiten: neuen Workspace aus der Repo-URL anlegen |
+| Bestand | **Migrieren** und das Admin-Passwort **rotieren** |
+
+**Änderung**
+- `git.js` neu: Admin-Zugang nur noch serverseitig (Basic Auth). Pro Workspace
+  `ensureWorkspaceUser` (Name `<projekt-slug>-<8 hex>`, zufälliges, nicht gespeichertes
+  Passwort, Profil *private*), `issueToken` (`write:repository`, `write:user`),
+  `revokeTokens` (nur Plattform-Tokens), `createRepoForUser` (privat, Namenskonflikt →
+  Suffix), `transferRepo`, `addCollaborator`, `parseLocalRepoUrl` (externe `/git/…`- und
+  interne `forgejo:3000`-URLs).
+- `docker.js`: Env `FORGEJO_USER`/`FORGEJO_TOKEN`, dazu `GIT_ADMIN_USER`/
+  `GIT_ADMIN_PASSWORD` mit **denselben Workspace-Werten** für ältere Images – das
+  Admin-Passwort erreicht keinen Workspace mehr. `setupCloneBranch` ersetzt durch
+  `pushToOwnRepo` (prüft Exit-Code); `execInWorkspace`, `listForgejoRemotes`,
+  `setGitRemote`.
+- `workspace.js`:
+  - Create: Nutzer + Token; Repo auf Wunsch privat im eigenen Namensraum. Ist die
+    Klon-URL ein Repo dieses Forgejo, wird der neue Nutzer Collaborator und klont mit
+    seinem Token (kein Token im Formular nötig).
+  - Clone: Nutzer + Token vor dem Container-Start (Env), danach eigenes Repo und Push.
+  - Delete: Tokens widerrufen, Nutzer/Repos bleiben.
+  - `migrateForgejoUsers` (Serverstart) + `completeForgejoMigration` (sobald der
+    Container läuft, sonst nach dem nächsten `start`): Repos unter dem Admin, die nur
+    zu diesem Workspace gehören, werden übertragen und Remotes auf den Token
+    umgeschrieben; ein Klon (oder ein von mehreren Projekten genutztes Repo) bekommt
+    für `origin` eine eigene Kopie. Fremde Remotes bleiben unberührt. Die Boot-
+    Migration läuft nach der nginx-Konfiguration und wartet bis zu 3 Minuten, bis
+    Forgejo (startet gleichzeitig) mit dem Admin-Konto antwortet.
+- `workspace-init.sh` (Image): `setup_local_remote` nutzt `FORGEJO_*` (Fallback
+  `GIT_ADMIN_*`), legt private Repos an und kodiert den Auth-Header mit `base64 -w0`
+  (GNU `base64` bricht nach 76 Zeichen um – mit `Nutzer:Token` wäre der Header
+  kaputt). **Erfordert neu gebautes Code-Server-Image.**
+- `deploy.sh`: `rotate_git_admin_password` ersetzt `admin123!` einmalig durch ein
+  zufälliges Passwort (Forgejo-CLI, `.env`, Server neu erstellt);
+  `--rotate-git-password` erzwingt es.
+- `.env.example`: Admin-Konto muss Forgejo-Admin sein (alte Empfehlung „kein Admin,
+  Token statt Passwort“ galt nur, solange es in Workspaces landete). Frontend:
+  Git-Hilfe auf `FORGEJO_*`, Hinweis „Weiterarbeiten“. Doku: `SECURITY.md`, `API.md`,
+  `ARCHITECTURE.md`.
+
+**API-Verhalten vorher geprüft** (Wegwerf-Nutzer, danach gelöscht): Der Admin kann per
+Basic Auth Tokens für andere Nutzer anlegen (auch mit einem Admin-Token als Passwort,
+nicht per `Authorization: token`), Repos für Nutzer anlegen, Repos sofort übertragen
+(alter Pfad → 307); ein Nutzer-Token bekommt 403 auf die Admin-API.
+
+**Tests**
+- Unit (gefälschter Forgejo-Server): Nutzername (lesbar, ≤ 40 Zeichen, gültig),
+  Nutzer idempotent und privat, Tokens, Widerruf nur von Plattform-Tokens, Repo privat
+  + Suffix bei Konflikt, Übertragung, Collaborator, URL-Erkennung (extern/intern/fremd/
+  falscher Port/Unterpfad), Container-Env ohne Admin-Passwort, Migrationsentscheidungen
+  (eigenes Repo übertragen, Quelle mit Klonen übertragen, Klon und geteiltes Repo →
+  eigene Kopie, eigenes Repo nur Token tauschen, fremde Remotes unberührt).
+  Regression 2.4–2.6 grün.
+- Live (Backup von `workspace_data`, `forgejo_data` und `.env` vorher):
+  - Deploy: `admin123!` rotiert (alt → 401, neu → 200, Server nutzt das neue);
+    27 Workspace-Nutzer angelegt, Migration für alle (gestoppt) offen.
+  - Alt-Simulation: Workspace mit Admin-Remote auf öffentliches `developer`-Repo
+    (laufend) → beim Serverstart übertragen, Remote mit Token; Alt-Klon (gestoppt,
+    Remote ohne Zugangsdaten) → beim `start` eigenes privates Repo mit Stand.
+  - Isolation: Push ins fremde Repo → „not found“; fremdes (sogar öffentliches) Repo
+    lesen → 404, weil der Besitzer privat ist; Admin-API → 403.
+  - Neu: Workspace mit Repo → privat, Push mit Token; Klon ×2 → je eigenes privates
+    Repo mit History, Push ✔; Vorlage gelöscht → Nutzer/Repo bleiben, 0 Plattform-
+    Tokens; neuer Workspace aus `http://localhost/git/<nutzer>/<repo>.git` ohne Token →
+    History da, Push mit eigenem Token ✔.
+  - Code-Server-Image neu gebaut (ohne Cache, aktuelles Basis-Image, Debian trixie):
+    `setup_local_remote` in einem Workspace ohne Repo → privates Repo im eigenen
+    Namensraum, `origin` mit Token, Push ✔. Grundcheck: UI 302, Node 22.23.3 mit
+    gebündeltem npm 10.9.9 (kein Upgrade), alle sieben CLI-Agents starten.
+  - Aufgeräumt: Test-Workspaces gelöscht, Test-Nutzer in Forgejo samt Repos entfernt
+    (`purge`); 27 Projekte, 28 Forgejo-Nutzer (27 + Admin).
+
+**Gilt für bestehende Installationen**
+- Beim ersten Start bekommt jeder Workspace einen Forgejo-Nutzer; Repos und Remotes
+  werden umgestellt, sobald der Workspace läuft. In alten Containern bleibt das
+  (rotierte, damit wertlose) Admin-Passwort in der Umgebung, und `setup_local_remote`
+  funktioniert dort erst nach Neuerstellung (alte Images lesen nur `GIT_ADMIN_*`).
+- Neue Workspaces brauchen das neu gebaute Code-Server-Image für `setup_local_remote`.
+- Das Forgejo-Admin-Passwort steht nach der Rotation nur in `.env`.
+- Öffentliche Alt-Repos bleiben öffentlich, sind aber für andere Workspace-Nutzer
+  unsichtbar (Besitzer privat). Für anonyme Besucher von `/git/` ebenso.
+- Unverändert: Security-/Logging-Proxy-Workspaces erreichen Forgejo nicht (nicht in
+  ihren internen Netzen).
+
+### 2.8 Doku, Upgrade-Hinweise, Abschluss-Live-Test
+
+**Doku**
+- `DEPLOYMENT.md`: neuer Abschnitt **„Upgrading Existing Installations“** – Backup,
+  Deploy mit `deploy.sh`, Tabelle aller Änderungen aus Paket 1 und 2 mit nötigen
+  Schritten, verbleibende Grenzen. `README.md`: „Security Hardening“ unter Recent
+  Updates, Login-Hinweis beim Schnellstart, Forgejo-Login aus `.env`, Klone mit
+  eigenem Repo.
+- curl-Beispiele (36 in 10 Dateien) senden das Session-Cookie; je Datei ein Hinweis,
+  wie man sich per curl anmeldet.
+- `INSTALLATION.md`: Git-Admin-Abschnitt neu (Admin-Konto bleibt auf dem Server, muss
+  Forgejo-Admin sein, Rotation). `PROXY_ARCHITECTURE.md`: Workspace-Env `FORGEJO_*`.
+  `NETWORK_TROUBLESHOOTING.md`: vier Netze, automatische Reparatur beim Start; der
+  dokumentierte Endpunkt `/api/system/network-health` existierte nie – ersetzt.
+  `OUTGOING_PROXY.md`: Hinweis auf die aktuelle Topologie. `TROUBLESHOOTING.md`:
+  Forgejo-Beispiele ohne `admin123!`. Beispiel-IPs in `API.md`/`LLM_CONVERSATION_LOGGING.md`
+  an Security- bzw. Logging-Netz und feste IPs angepasst.
+
+**Paket 2 – Upgrade-Hinweise (Breaking Changes)**: siehe `docs/DEPLOYMENT.md` →
+„Upgrading Existing Installations“. Kurz: Admin-Login (API ohne `ADMIN_PASSWORD`
+gesperrt), Security-Proxy-Workspaces in neuem Netz `xares-security` (Subnetz prüfen),
+feste Proxy-IPs, Forgejo-Admin-Passwort wird rotiert und bleibt auf dem Server,
+Code-Server-Image neu bauen, Klone brauchen ein Passwort.
+
+**Abschluss-Live-Test (Docker Desktop, Engine 28.5.1)**
+- Erneutes Deploy mit dem finalen Stand: idempotent – kein neues Admin-Passwort,
+  keine erneute Forgejo-Rotation, 27 Projekte, 28 Forgejo-Nutzer, API-Sperrliste da.
+- Alle Testsuiten gegen den finalen Code: Netze (10), feste IPs (8), Login (10),
+  Forgejo (6), Subnetzwahl in `deploy.sh` (5 Fälle) – grün.
+- Ein Workspace pro Modus: Netz und feste IP wie erwartet (direkt dynamisch,
+  Security `172.31.128.1`, Logging `172.30.128.2`), harte CPU-Grenze, eigener
+  Forgejo-Nutzer überall. Erreichbarkeitsmatrix identisch mit 2.4 (Server nie
+  erreichbar, `/api/` über nginx 403, kein Proxy-Hopping, Squid-Whitelist greift).
+  Hinweis: `pypi.org/simple/` (Gesamtindex, viele MB) läuft über den puffernden
+  mitmproxy in den Timeout des Probe-Skripts; einzelne Paketseiten und `pip download`
+  funktionieren.
+- Direkter Workspace mit Repo: Push mit eigenem Token, Admin-API 403. Klon eines
+  Security-Workspaces: feste IP `172.31.128.2`, eigener Forgejo-Nutzer, PyPI über
+  squid ✔ (Forgejo ist aus Proxy-Netzen wie bisher nicht erreichbar).
+- Headless-Chrome-E2E (Login, falsches Passwort, Reload, Session-Verlust, Workshop-
+  Admin, Logout, Convo-Viewer): alle 8 Schritte ✔.
+- Aufgeräumt: Test-Workspaces, Forgejo-Test-Nutzer und Probe-Artefakte in
+  `/var/log/mitmproxy` entfernt; Zustand wie vorher (27 Projekte, 28 Forgejo-Nutzer).

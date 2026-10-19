@@ -22,7 +22,13 @@ NC='\033[0m' # No Color
 
 # Test 1: Check /api/limits endpoint
 echo "Test 1: Checking /api/limits endpoint..."
-LIMITS_RESPONSE=$(curl -s "${API_URL}/limits" || echo "ERROR")
+# The API requires the admin login (ADMIN_PASSWORD from the environment or .env)
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-$(grep "^ADMIN_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2-)}
+COOKIE_JAR=$(mktemp)
+trap 'rm -f "$COOKIE_JAR"' EXIT
+curl -s -c "$COOKIE_JAR" -H 'Content-Type: application/json' \
+    -d "{\"password\":\"${ADMIN_PASSWORD}\"}" "${API_URL}/auth/login" > /dev/null
+LIMITS_RESPONSE=$(curl -s -b "$COOKIE_JAR" "${API_URL}/limits" || echo "ERROR")
 
 if [[ "$LIMITS_RESPONSE" == *"maxConcurrentWorkspaces"* ]]; then
     echo -e "${GREEN}✓ PASS${NC} - /api/limits endpoint is working"

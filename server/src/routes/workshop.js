@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const { writeJsonAtomic, readJson } = require('../services/persistence');
+const auth = require('../services/auth');
 
 const router = express.Router();
 
@@ -67,13 +68,15 @@ function safeEqual(a, b) {
 }
 
 // Admin endpoints expose participant names and emails, so they fail closed:
-// without WORKSHOP_ADMIN_PASSWORD they are disabled. The password is only
-// accepted in the X-Admin-Password header (percent-encoded), never in the URL,
-// where it would end up in access logs and caches.
+// they need a dashboard login or WORKSHOP_ADMIN_PASSWORD. The password is
+// only accepted in the X-Admin-Password header (percent-encoded), never in
+// the URL, where it would end up in access logs and caches.
 function requireAdmin(req, res) {
+  // Logged-in platform admins need no extra password
+  if (auth.isAdminRequest(req)) return true;
   const adminPassword = (process.env.WORKSHOP_ADMIN_PASSWORD || '').trim();
   if (!adminPassword) {
-    res.status(503).json({ error: 'Workshop admin is disabled. Set WORKSHOP_ADMIN_PASSWORD to enable it.' });
+    res.status(503).json({ error: 'Workshop admin is disabled. Log in on the dashboard or set WORKSHOP_ADMIN_PASSWORD.' });
     return false;
   }
   let provided = req.get('X-Admin-Password') || '';

@@ -313,7 +313,7 @@ sequenceDiagram
         Server->>Docker: Create container from snapshot
         Docker-->>Server: Container running
         opt Source has Forgejo repo
-            Server->>Docker: git checkout -b clone/<name> && git push
+            Server->>Docker: own Forgejo repo per clone, git push --all
             Docker-->>Server: Branch created
             Server->>Server: Set clone gitRepository with branch
         end

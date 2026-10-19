@@ -5,6 +5,8 @@ require('dotenv').config();
 const projectsRouter = require('./routes/projects');
 const workspaceRouter = require('./routes/workspace');
 const workshopRouter = require('./routes/workshop');
+const authRouter = require('./routes/auth');
+const auth = require('./services/auth');
 
 const app = express();
 const PORT = 3000;
@@ -12,6 +14,11 @@ const PORT = 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Admin login for everything under /api except health, login itself and the
+// workshop endpoints (see services/auth.js)
+app.use('/api', auth.requireLogin);
+app.use('/api/auth', authRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -26,7 +33,9 @@ app.get('/api/config', (req, res) => {
     enableProxy: process.env.ENABLE_PROXY === 'true',
     baseDomain: process.env.BASE_DOMAIN || 'localhost',
     basePort: process.env.BASE_PORT || '80',
-    protocol: process.env.PROTOCOL || 'http'
+    protocol: process.env.PROTOCOL || 'http',
+    // Default for the per-workspace "allow sudo" choice
+    workspaceSudoDefault: process.env.WORKSPACE_SUDO_ENABLED === 'true'
   };
 
   if (config.gitServerEnabled) {
@@ -109,7 +118,16 @@ app.listen(PORT, '0.0.0.0', async () => {
   try {
     const aliasesService = require('./services/aliasesService');
     const workspaceService = require('./services/workspace');
+    const dockerService = require('./services/docker');
+    // Deny the API to workspace networks before anything else, then give
+    // proxied workspaces fixed IPs and move them to their network
+    try {
+      await aliasesService.writeApiAccessConfig(await dockerService.getWorkspaceNetworkRanges());
+    } catch (err) {
+      console.error('Could not write API access rules for workspace networks:', err);
+    }
     await workspaceService.whenReady.catch(() => {});
+    await workspaceService.migrateWorkspaceNetworks();
     await aliasesService.generateNginxConfig(workspaceService);
     await aliasesService.reloadNginx().catch(err =>
       console.warn('Initial nginx reload skipped:', err.message)
@@ -118,6 +136,11 @@ app.listen(PORT, '0.0.0.0', async () => {
   } catch (err) {
     console.error('Failed to regenerate alias config on boot:', err);
   }
+
+  // Per-workspace Forgejo users for workspaces created before them. Last,
+  // because it waits for Forgejo, which starts together with this server.
+  require('./services/workspace').migrateForgejoUsers().catch(err =>
+    console.error('Forgejo user migration failed:', err));
 });
 
 module.exports = app;

@@ -307,6 +307,41 @@ To switch between environments:
    # OR: docker-compose up --build -d
    ```
 
+## Upgrading Existing Installations
+
+The security hardening (packages 1 and 2, see `docs/DEVLOG.md`) changes how the
+platform is accessed. Before upgrading:
+
+1. **Back up** the volumes `xaresaicoder_workspace_data`, `xaresaicoder_forgejo_data`,
+   `xaresaicoder_mitmproxy_logs` and your `.env`.
+2. **Deploy with `./deploy.sh`** (not a bare `docker compose up`): it generates
+   `ADMIN_PASSWORD`, checks the new network subnet, rotates the default Forgejo admin
+   password and builds the images. Rebuild the code-server image (no `--skip-build`)
+   so `setup_local_remote` works with per-workspace Git accounts.
+
+What changes:
+
+| Area | Change | Action |
+|------|--------|--------|
+| Dashboard / API | Admin login required; without `ADMIN_PASSWORD` the API is locked (503) | Use the password `deploy.sh` prints (also in `.env`); scripts log in once and send the cookie (`curl -c/-b cookies.txt`, see API.md) |
+| Networks | API server only on `xares-control`; Security Proxy workspaces move to the new internal network `xares-security` (`SECURITY_NETWORK_SUBNET`, default `172.31.0.0/16`) | Nothing — workspaces are moved automatically on server/workspace start |
+| Proxy IPs | Proxied workspaces get fixed IPs; logs stay with the workspace | Stopped workspaces get a new address; their older recordings are not linked to them |
+| Forgejo | Every workspace gets its own Forgejo user and token, repositories private; the default admin password `admin123!` is replaced | Log in to `/git/` with `GIT_ADMIN_USER` / `GIT_ADMIN_PASSWORD` from `.env`; repositories move to the workspace users when each workspace runs next |
+| Clones | Credentials are stripped from snapshots; a clone password is required; each clone gets its own repository | Pass `password` when cloning via API; tick "Copy AI tool logins" if participants should share the teacher's AI logins |
+| Workspaces | Hard CPU limit, Docker's default seccomp profile, sudo chosen per workspace (default `WORKSPACE_SUDO_ENABLED`) | Applies to new and recreated workspaces only |
+| Workshop admin | Dashboard session or `X-Admin-Password` header (never in the URL) | — |
+| Protected workspaces | API calls for clone, aliases, ports, logs, documentation need `X-Workspace-Password` | Update scripts |
+| Whitelist | IP addresses, URLs and single labels are rejected | Remove such entries |
+
+Old workspace containers keep the previous environment (incl. the rotated, now useless
+Forgejo admin password) until they are recreated; `setup_local_remote` works in them
+again only after recreation.
+
+**Remaining limits** (details in [SECURITY.md](SECURITY.md)): no roles — every admin
+manages every workspace; workspaces can reach each other's ports; Security/Logging Proxy
+workspaces cannot reach Forgejo; on Docker Desktop workspaces reach published host ports
+via `host.docker.internal` (the login still applies).
+
 ## 🔧 Troubleshooting
 
 ### Network Issues (New in v2)
@@ -421,6 +456,10 @@ If XaresAICoder fails to start:
 
 ### Health Checks
 
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
 # API health (replace with your domain:port)
 curl http://localhost/api/health
@@ -428,7 +467,7 @@ curl http://dev.mycompany.internal:8000/api/health
 curl https://coder.sensem.de/api/health
 
 # List projects
-curl http://localhost/api/projects/
+curl -b cookies.txt http://localhost/api/projects/
 
 # Create test workspace
 curl -X POST -H "Content-Type: application/json" \

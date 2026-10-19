@@ -54,13 +54,13 @@ The captured data enables:
 ┌──────────────────────────┐
 │  /var/log/mitmproxy/     │
 │  ├── llm_conversations/  │  (LLM API calls)
-│  │   ├── 172.30.0.5/    │
+│  │   ├── 172.30.128.1/    │
 │  │   │   ├── 2025-*.json│
 │  │   │   └── ...         │
-│  │   └── 172.30.0.6/    │
+│  │   └── 172.30.128.2/    │
 │  └── domains/            │  (ALL accessed domains)
-│      ├── 172.30.0.5.json │
-│      └── 172.30.0.6.json │
+│      ├── 172.30.128.1.json │
+│      └── 172.30.128.2.json │
 └──────────────────────────┘
            │
            ▼
@@ -173,7 +173,7 @@ The logger:
 Each conversation is stored as:
 ```json
 {
-  "client_ip": "172.30.0.5",
+  "client_ip": "172.30.128.1",
   "timestamp": "2025-01-15T10:30:45.123Z",
   "method": "POST",
   "url": "https://api.anthropic.com/v1/messages",
@@ -251,8 +251,12 @@ Each conversation is stored as:
 4. Documentation downloads automatically
 
 **Method 2: Via API**
+> The API needs the admin login. Log in once with curl and reuse the cookie:
+> `curl -c cookies.txt -H 'Content-Type: application/json' -d '{"password":"<ADMIN_PASSWORD from .env>"}' http://localhost/api/auth/login`
+> (see [API.md → Authentication](API.md#authentication)).
+
 ```bash
-curl -X POST http://localhost/api/projects/{projectId}/generate-documentation \
+curl -b cookies.txt -X POST http://localhost/api/projects/{projectId}/generate-documentation \
   -H "Content-Type: application/json" \
   -d '{"format":"markdown","type":"clean"}'
 ```
@@ -272,10 +276,10 @@ curl -X POST http://localhost/api/projects/{projectId}/generate-documentation \
 **Via API:**
 ```bash
 # Delete all
-curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
+curl -b cookies.txt -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
 
 # Delete specific conversation
-curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations/{timestamp}
+curl -b cookies.txt -X DELETE http://localhost/api/projects/{projectId}/llm-conversations/{timestamp}
 ```
 
 ## Domain Recording & Whitelist Generation
@@ -329,15 +333,15 @@ In addition to LLM conversation capture, mitmproxy records **every domain** acce
 **Via API:**
 ```bash
 # View recorded domains for a workspace
-curl http://localhost/api/projects/{projectId}/recorded-domains
+curl -b cookies.txt http://localhost/api/projects/{projectId}/recorded-domains
 
 # Apply domains as whitelist
-curl -X PUT http://localhost/api/whitelist \
+curl -b cookies.txt -X PUT http://localhost/api/whitelist \
   -H "Content-Type: application/json" \
   -d '{"domains": ["pypi.org", "api.anthropic.com", "github.com", "registry.npmjs.org"]}'
 
 # View current whitelist
-curl http://localhost/api/whitelist
+curl -b cookies.txt http://localhost/api/whitelist
 ```
 
 ## Documentation Types
@@ -488,7 +492,7 @@ GET /api/projects/:projectId/llm-conversations
 {
   "success": true,
   "projectId": "abc-123",
-  "ipAddress": "172.30.0.5",
+  "ipAddress": "172.30.128.1",
   "conversations": [...],
   "count": 50
 }
@@ -585,7 +589,7 @@ Conversations are stored indefinitely. To manage storage:
 **Manual cleanup:**
 ```bash
 # Delete all conversations for workspace
-curl -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
+curl -b cookies.txt -X DELETE http://localhost/api/projects/{projectId}/llm-conversations
 ```
 
 **Automated cleanup (future):**
@@ -629,11 +633,11 @@ This enables HTTPS interception without SSL errors.
 
 ```
 /var/log/mitmproxy/llm_conversations/
-├── 172.30.0.5/               # Workspace container IP
+├── 172.30.128.1/               # Workspace container IP
 │   ├── 2025-01-15T10-30-45-123Z.json
 │   ├── 2025-01-15T10-31-12-456Z.json
 │   └── ...
-├── 172.30.0.6/               # Different workspace
+├── 172.30.128.2/               # Different workspace
 │   └── 2025-01-15T11-00-00-789Z.json
 └── ...
 ```
@@ -649,33 +653,34 @@ Backend maps workspace IP to project ID:
 
 ```javascript
 // Get workspace IP from project ID
-const ipAddress = await dockerService.getWorkspaceIPAddress(projectId);
+const ipAddress = await workspaceService.getProxyIp(projectId); // fixed IP from projects.json
 
 // Files stored at: /var/log/mitmproxy/llm_conversations/{ipAddress}/
 ```
 
-**⚠️ Recordings are partitioned by container IP, not by a stable project ID.**
+**Recordings are partitioned by container IP; every proxy workspace has a fixed IP.**
 The mitmproxy logger keys every conversation (and domain record) on the client
-container's IP. Two workspaces running at the same time have different IPs and
-stay cleanly separated — but Docker assigns IPs dynamically from the subnet pool
-and the logs are never pruned automatically. Two consequences:
+container's IP. The server therefore gives each proxied workspace (and clone) a
+fixed address when it is created, stores it as `proxyIp` in `projects.json` and
+pins it in Docker (`IPAMConfig`), so the workspace keeps it across stop/start,
+`docker restart` and host reboots. Fixed addresses come from the upper half of
+the subnet (e.g. `172.30.128.1` upwards); Docker's dynamic addresses for
+infrastructure containers come from the bottom.
 
-- **IP reuse:** when a proxy workspace (or clone) is created, the server clears
-  the domain records stored under its new IP and moves any conversations stored
-  there to `llm_conversations/_archive/<ip>-<UTC timestamp>/` right after the
-  container starts. A new workspace therefore never sees recordings left by an
-  earlier workspace at the same address, and the earlier recordings are not lost
-  (they are no longer shown in the UI/API, but stay on disk).
-- **Known gap:** a workspace that is *restarted* and happens to receive an IP
-  previously used by another workspace still sees that workspace's recordings.
-  Fixing this properly requires keying logs on the project instead of the IP.
-- **Orphaned history:** if a workspace restarts and gets a different IP, its
-  earlier conversations remain under the old IP and no longer appear in the
-  API/UI for that project (see Troubleshooting → "IP Address Changed, Lost
-  Conversations").
-
-Keying logs on the project ID instead of the IP (see Future Enhancements →
-Static IP Assignment) would avoid the orphaned-history case.
+- **Readable while stopped:** the API looks up the stored address, so
+  conversations, recorded domains and Squid logs of a stopped workspace remain
+  available.
+- **IP reuse after deletion:** an address is only handed out again after its
+  workspace was deleted. When a new workspace gets it, the server clears the
+  domain records stored under it and moves its conversations to
+  `llm_conversations/_archive/<ip>-<UTC timestamp>/` (not shown in the UI/API,
+  but kept on disk). Squid log lines older than the new owner's IP assignment
+  are hidden.
+- **Upgrade:** workspaces created before fixed IPs get one on the first server
+  start. A running workspace keeps its current address (and its recordings); a
+  stopped one gets a new address — its recordings under the old, dynamic
+  address stay on disk but are no longer shown (see Troubleshooting → "IP
+  Address Changed, Lost Conversations").
 
 ### Session Grouping & Filtering
 
@@ -874,7 +879,9 @@ docker-compose up -d
 
 **Problem:** Workspace IP changed, can't find old conversations
 
-**Cause:** Docker reassigns IPs when containers restart
+**Cause:** Workspaces created before fixed proxy IPs got a dynamic address on
+every start. When they were migrated while stopped, they received a new fixed
+address; recordings made under earlier addresses are not linked to them.
 
 **Solution:**
 1. **Check old IP directories:**
@@ -890,9 +897,8 @@ docker-compose up -d
      find /var/log/mitmproxy/llm_conversations -name "*.json"
    ```
 
-3. **Prevention:**
-   - Use static IP assignment (future enhancement)
-   - Associate logs with project ID instead of IP
+3. **Prevention:** new workspaces have fixed IPs, so this only affects
+   recordings made before the upgrade.
 
 ## Future Enhancements
 
@@ -924,18 +930,13 @@ docker-compose up -d
    - Interactive prompt/response viewer
    - Diff tool for prompt iterations
 
-6. **Static IP Assignment**
-   - Assign fixed IPs to workspaces
-   - Persist conversation history across restarts
-   - Associate logs with project ID
-
-7. **Multiple Export Formats**
+6. **Multiple Export Formats**
    - PDF documentation
    - HTML with syntax highlighting
    - LaTeX for academic papers
    - JSON for programmatic access
 
-8. **Collaborative Features**
+7. **Collaborative Features**
    - Share conversations via link
    - Comment on specific prompts/responses
    - Team conversation library

@@ -11,6 +11,8 @@ class XaresAICoder {
         this.deferredPrompt = null; // PWA install prompt
         this.workspacePasswords = new Map(); // projectId -> password (memory only)
         this.passwordPrompts = new Map(); // projectId -> pending prompt promise
+        this.loginPrompt = null; // pending admin login (shared by all requests)
+        this.installLoginInterceptor();
         this.init();
     }
 
@@ -20,6 +22,82 @@ class XaresAICoder {
         return '/api';
     }
 
+    // The platform API needs an admin session. Any /api/ request answered
+    // with 401 LOGIN_REQUIRED opens the login dialog and is sent again once
+    // the user is logged in, so individual calls need no login handling.
+    installLoginInterceptor() {
+        const nativeFetch = window.fetch.bind(window);
+        this.nativeFetch = nativeFetch;
+        const isApi = input => {
+            const url = typeof input === 'string' ? input : input.url;
+            return new URL(url, window.location.href).pathname.startsWith('/api/');
+        };
+        window.fetch = async (input, init) => {
+            const response = await nativeFetch(input, init);
+            if (![401, 503].includes(response.status) || !isApi(input)) return response;
+            const body = await response.clone().json().catch(() => null);
+            if (!body || !['LOGIN_REQUIRED', 'LOGIN_NOT_CONFIGURED'].includes(body.code)) return response;
+            await this.requireLogin(body.code);
+            return nativeFetch(input, init);
+        };
+    }
+
+    // Resolves once logged in. Never resolves while login is not configured.
+    requireLogin(code) {
+        if (!this.loginPrompt) {
+            this.loginPrompt = new Promise(resolve => {
+                const modal = document.getElementById('loginModal');
+                const form = document.getElementById('loginForm');
+                const input = document.getElementById('loginPasswordInput');
+                const error = document.getElementById('loginError');
+                const notConfigured = code === 'LOGIN_NOT_CONFIGURED';
+
+                document.getElementById('loginMessage').textContent = notConfigured
+                    ? 'The admin login is not set up. Set ADMIN_PASSWORD in .env and redeploy (./deploy.sh generates one).'
+                    : 'Enter the admin password to use the dashboard.';
+                document.getElementById('loginInputGroup').style.display = notConfigured ? 'none' : '';
+                document.getElementById('loginBtn').style.display = notConfigured ? 'none' : '';
+                error.style.display = 'none';
+                modal.style.display = 'flex';
+                if (notConfigured) return;
+                input.value = '';
+                input.focus();
+
+                form.onsubmit = async (event) => {
+                    event.preventDefault();
+                    error.style.display = 'none';
+                    try {
+                        const res = await this.nativeFetch(`${this.apiBase}/auth/login`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: input.value })
+                        });
+                        if (res.ok) {
+                            form.onsubmit = null;
+                            modal.style.display = 'none';
+                            document.getElementById('logoutBtn').style.display = '';
+                            this.loginPrompt = null;
+                            resolve();
+                            return;
+                        }
+                        const data = await res.json().catch(() => ({}));
+                        error.textContent = res.status === 401 ? 'Wrong password.' : (data.error || 'Login failed.');
+                    } catch {
+                        error.textContent = 'Server not reachable.';
+                    }
+                    error.style.display = 'block';
+                    input.select();
+                };
+            });
+        }
+        return this.loginPrompt;
+    }
+
+    async logout() {
+        await this.nativeFetch(`${this.apiBase}/auth/logout`, { method: 'POST' }).catch(() => {});
+        window.location.reload();
+    }
+
     async init() {
         // Initialize theme
         this.initTheme();
@@ -27,8 +105,9 @@ class XaresAICoder {
         // Initialize PWA features
         this.initPWA();
 
-        // Load configuration first
+        // Load configuration first (opens the login dialog without a session)
         await this.loadConfiguration();
+        document.getElementById('logoutBtn').style.display = '';
 
         // Setup UI based on configuration
         this.setupUI();
@@ -192,6 +271,10 @@ class XaresAICoder {
     }
 
     setupUI() {
+        // Per-workspace sudo choice defaults to the server's global setting
+        const sudoCheckbox = document.getElementById('sudoEnabled');
+        if (sudoCheckbox) sudoCheckbox.checked = !!this.config.workspaceSudoDefault;
+
         // Show/hide Git server navigation based on configuration
         const gitServerNav = document.querySelector('.nav-item[data-tab="git-server"]');
         const gitServerTab = document.getElementById('git-server-tab');
@@ -226,6 +309,7 @@ class XaresAICoder {
         // Theme toggle
         const themeToggle = document.getElementById('themeToggle');
         themeToggle.addEventListener('click', () => this.toggleTheme());
+        document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
 
         // Tab navigation
         const navItems = document.querySelectorAll('.nav-item');
@@ -624,6 +708,8 @@ class XaresAICoder {
             requestBody.password = workspacePassword;
         }
 
+        requestBody.sudoEnabled = document.getElementById('sudoEnabled').checked;
+
         if (useGitRepository) {
             requestBody.gitUrl = gitUrl;
             if (gitUsername) {
@@ -667,6 +753,7 @@ class XaresAICoder {
             
             // Clear form
             e.target.reset();
+            document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
             
             // Hide password group and clear password input
             const passwordGroup = document.getElementById('passwordGroup');
@@ -762,6 +849,7 @@ class XaresAICoder {
 
             // Clear form
             e.target.reset();
+            document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
 
             // Show simple success message
             this.showCreateSuccess(project);
@@ -2681,7 +2769,10 @@ class XaresAICoder {
 
         // Reset form
         document.getElementById('cloneCount').value = 5;
-        document.getElementById('clonePassword').value = '';
+        // Pre-fill a generated password: clones are handed to participants
+        document.getElementById('clonePassword').value = this.generateSecurePasswordValue();
+        document.getElementById('cloneKeepAiLogins').checked = false;
+        document.getElementById('cloneSudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
         document.getElementById('cloneError').style.display = 'none';
         document.getElementById('cloneProgress').style.display = 'none';
         document.getElementById('confirmCloneBtn').disabled = false;
@@ -2730,8 +2821,8 @@ class XaresAICoder {
             errorEl.style.display = 'block';
             return;
         }
-        if (password && password.length < 8) {
-            errorEl.textContent = 'Password must be at least 8 characters long';
+        if (!password || password.length < 8) {
+            errorEl.textContent = 'A password with at least 8 characters is required for clones';
             errorEl.style.display = 'block';
             return;
         }
@@ -2740,8 +2831,12 @@ class XaresAICoder {
         document.getElementById('cloneProgress').style.display = 'block';
         document.getElementById('confirmCloneBtn').disabled = true;
 
-        const body = { count };
-        if (password) body.password = password;
+        const body = {
+            count,
+            password,
+            keepAiLogins: document.getElementById('cloneKeepAiLogins').checked,
+            sudoEnabled: document.getElementById('cloneSudoEnabled').checked
+        };
 
         try {
             const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/clone`, {
