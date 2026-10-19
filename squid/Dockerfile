@@ -1,4 +1,5 @@
-FROM ubuntu/squid:latest
+# squid 6.13 (Ubuntu 24.04 base); no version tag matches this build, so pinned by digest
+FROM ubuntu/squid:latest@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
 
 USER root
 
@@ -13,8 +14,11 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /etc/squid/certs /var/lib/squid/ssl_db && \
     chown -R proxy:proxy /etc/squid/certs /var/lib/squid/ssl_db
 
-# Copy Squid configuration
+# Copy Squid configuration (the whitelist itself lives on a volume, seeded
+# from the default by xares-entrypoint.sh)
 COPY squid.conf /etc/squid/squid.conf
+COPY whitelist-default.conf /etc/squid/whitelist-default.conf
+COPY logrotate.conf /etc/squid/logrotate.conf
 
 # Create log directory
 RUN mkdir -p /var/log/squid && \

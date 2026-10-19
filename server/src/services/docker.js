@@ -174,6 +174,14 @@ class DockerService {
     // Per-workspace writable layer limit (e.g. '20G'); only enforceable on
     // overlay2 backed by xfs with project quotas (see getHostCapabilities)
     this.diskLimit = (process.env.WORKSPACE_DISK_LIMIT || '').trim();
+    // Docker log rotation, same values as the compose services
+    this.logConfig = {
+      Type: 'json-file',
+      Config: {
+        'max-size': process.env.LOG_MAX_SIZE || '10m',
+        'max-file': process.env.LOG_MAX_FILE || '3'
+      }
+    };
     this.hostCapabilities = null;
     // Security and isolation configuration
     this.securityConfig = {
@@ -429,6 +437,7 @@ class DockerService {
         RestartPolicy: {
           Name: 'unless-stopped'
         },
+        LogConfig: this.logConfig,
         // dnsmasq on the workspace's internal network (no route to public DNS)
         ...(useProxy && {
           Dns: [proxyMode === 'security' ? this.securityDnsIp : this.loggingDnsIp]
@@ -2118,10 +2127,21 @@ fi`.trim();
         throw error;
       }
       for (const cfg of (info.IPAM && info.IPAM.Config) || []) {
-        if (cfg.Subnet) ranges.push({ network: name, subnet: cfg.Subnet, gateway: cfg.Gateway || null });
+        if (cfg.Subnet) ranges.push({ network: name, subnet: cfg.Subnet, gateway: this.networkGateway(info, cfg) });
       }
     }
     return ranges;
+  }
+
+  // Docker on Linux leaves a gateway it assigned itself out of IPAM.Config
+  // (Docker Desktop lists it); that is the subnet's first address, reserved
+  // by Docker. Internal networks get none: the host does not reach nginx
+  // through them, and the address could otherwise belong to a workspace.
+  networkGateway(info, cfg) {
+    if (cfg.Gateway) return cfg.Gateway;
+    if (info.Internal) return null;
+    const range = parseIpv4Cidr(cfg.Subnet);
+    return range ? intToIpv4(range.base + 1) : null;
   }
 
   async validateNetworkHealth() {

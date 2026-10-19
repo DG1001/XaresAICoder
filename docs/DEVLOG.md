@@ -20,7 +20,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 |-------|--------|--------|
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
-| 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups | offen |
+| 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 
 ---
 
@@ -169,9 +169,8 @@ falsches Passwort → erneuter Prompt mit Fehlermeldung, Abbruch → `null`.
   es eine `dst`-ACL. Falls „Select All“ in Recorded Domains IP-Literale enthält, muss
   man sie abwählen. Eine eigene `dst`-ACL für IPs wäre ein mögliches Folge-Feature.
 - **Einzel-Labels wie `.com` werden abgelehnt**, weil sie faktisch alles freigeben.
-- **Offen (Paket 2/3)**: Die Whitelist lebt nur im laufenden squid-Container und geht
-  beim Neuerstellen verloren; das Subnetz `172.30.0.0/16` ist weiterhin fest
-  eingetragen. Sauberer wäre eine per `include` eingebundene Datei auf einem Volume.
+- ~~**Offen (Paket 2/3)**: Whitelist nur im laufenden squid-Container, Subnetz fest
+  eingetragen~~ – erledigt: Subnetz per Env (2.4), Whitelist auf einem Volume (3.1).
 
 **Test**: Node-Test mit simuliertem squid-Container: gültige Schreibweisen werden
 normalisiert und dedupliziert; Newline-Injection, Leerzeichen, IP, `.com`, URL und
@@ -1208,3 +1207,261 @@ Code-Server-Image neu bauen, Klone brauchen ein Passwort.
   Admin, Logout, Convo-Viewer): alle 8 Schritte ✔.
 - Aufgeräumt: Test-Workspaces, Forgejo-Test-Nutzer und Probe-Artefakte in
   `/var/log/mitmproxy` entfernt; Zustand wie vorher (27 Projekte, 28 Forgejo-Nutzer).
+
+---
+
+## Paket 3 – Betrieb
+
+Branch `ops/paket-3`. Reihenfolge (mit dir abgestimmt, 2026-10-19): 1) generierte
+Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinning,
+3) Backups + Log-Rotation, 4) CI-Smoke-Test.
+
+### 3.1 Generierte Secrets und persistente Whitelist
+
+**Problem**
+- `docker-compose.yml` setzte `FORGEJO__security__SECRET_KEY` fest auf den öffentlich
+  bekannten Platzhalter `your-secret-key-change-this-in-production` – live auch in
+  `app.ini`. Forgejo signiert damit u. a. Sessions und CSRF-Tokens und verschlüsselt
+  2FA-, Mirror- und Actions-Secrets.
+- Eine per `PUT /api/whitelist` angewandte Whitelist lebte nur in der `squid.conf`
+  des Containers; jedes `deploy.sh` (Container neu erstellt) setzte sie zurück.
+
+**Änderung**
+- `docker-compose.yml`: `SECRET_KEY=${FORGEJO_SECRET_KEY:?…}` – ohne Wert bricht
+  `docker compose` mit klarer Meldung ab. Der leere `INTERNAL_TOKEN`-Eintrag ist raus
+  (Forgejo erzeugt ihn selbst).
+- `deploy.sh`: `ensure_generated_secret` (allgemein) erzeugt fehlende/leere Werte in
+  `.env`, auch mit `--skip-env`; genutzt für `ADMIN_PASSWORD` und neu
+  `FORGEJO_SECRET_KEY` (64 Zeichen). `.env.example` dokumentiert ihn.
+- squid: Der Whitelist-Abschnitt (ACLs + Access-Regeln) steht jetzt in
+  `squid/whitelist-default.conf`; `squid.conf` bindet
+  `/etc/squid/whitelist/whitelist.conf` per `include` ein. Diese Datei liegt auf dem
+  neuen Volume `squid_whitelist`; `xares-entrypoint.sh` befüllt es beim ersten Start
+  aus der Vorlage.
+- `whitelist.js`: liest/schreibt nur noch die Whitelist-Datei; Prüfung mit
+  `squid -k parse` gegen eine Kopie von `squid.conf`, die den Kandidaten einbindet;
+  Backup und Rollback wie bisher.
+
+**Entscheidungen**
+- **Leerer Schlüssel ist keine Option**: Test mit Wegwerf-Forgejo – ein leerer Wert
+  landet als leerer `SECRET_KEY` in `app.ini`, Forgejo läuft damit; einen eigenen
+  erzeugt es nicht. Daher harter Abbruch statt stiller Unsicherheit.
+- **Schlüsselwechsel auf Bestandsinstallationen**: Vorher geprüft – keine mit
+  `SECRET_KEY` verschlüsselten Daten (0 Actions-Secrets, Push-Mirrors, 2FA, Webhooks;
+  nur die drei eingebauten OAuth-Apps). Wer 2FA, Mirrors oder Actions-Secrets nutzt,
+  muss sie nach dem Wechsel neu einrichten (Upgrade-Hinweis).
+- **Volume statt Server-seitiger Wiederanwendung**: squid lädt die Datei selbst beim
+  Start; kein Zeitfenster mit Standard-Whitelist nach einem Neustart von squid.
+
+**Tests**
+- `deploy.sh`-Funktionen mit temporären `.env`: Schlüssel fehlt / leer / gesetzt →
+  erzeugt (24 bzw. 64 Zeichen) / erzeugt / unangetastet; kein Abbruch unter `set -e`.
+- Live (Backup von `forgejo_data` und `.env` vorher): Deploy erzeugt
+  `FORGEJO_SECRET_KEY`, `app.ini` übernimmt ihn, Platzhalter weg; Admin-Login und
+  Web-UI funktionieren. Whitelist auf dem Volume, `squid -k parse` fehlerfrei.
+  Security-Workspace: `PUT` mit `example.org` → erlaubt, `example.com` gesperrt;
+  squid neu erstellt → weiterhin erlaubt; komplettes Deploy → weiterhin erlaubt,
+  Secrets unverändert. Danach Standard-Whitelist wiederhergestellt, Test-Workspace
+  und Forgejo-Testnutzer entfernt.
+
+### 3.2 Sticky Feature-Flags, Node 22 / `npm ci`, Image-Pinning
+
+**Problem**
+- `deploy.sh` ohne `--git-server` bzw. `--enable-proxy` schrieb `ENABLE_*=false` in
+  `.env` – ein vergessenes Flag schaltete Git-Server oder Proxy unbemerkt ab.
+- Der API-Server lief auf `node:18-alpine` (seit April 2025 ohne Support) und
+  installierte mit `npm install` (nicht reproduzierbar, inkl. Dev-Abhängigkeiten).
+- `nginx:alpine`, `forgejo:9`, `mitmproxy:latest`, `dnsmasq:latest`,
+  `ubuntu/squid:latest`, `codercom/code-server:latest`: Jeder Rebuild konnte andere
+  Versionen bringen (in 2.7 kam so ungeplant ein neues Debian-Basisimage).
+
+**Änderung**
+- `deploy.sh`: `set_feature_flag` – Flag gesetzt → an, neue `--disable-git-server` /
+  `--disable-proxy` → aus, ohne Flag bleibt der Wert aus `.env`. Die Subnetzprüfung
+  läuft, wenn der Proxy *effektiv* aktiv ist, ebenso die CA-Erzeugung.
+- `server/Dockerfile`: `node:22-alpine`, `npm ci --omit=dev`.
+- Pinning auf die **laufenden** Versionen (kein Versionssprung): `nginx:1.29.0-alpine`,
+  `forgejo:9.0.3`, `mitmproxy:12.2.1`, `codercom/code-server:4.141.0`; dnsmasq
+  (2.84rc2) und squid (6.13) per Digest, weil kein Versions-Tag zum laufenden Build
+  passt (`ubuntu/squid:6.13-25.04_*` hat einen anderen Digest). Node nur auf die
+  Hauptversion – Sicherheits-Patches sollen mit Rebuilds kommen.
+- KI-Tools im Code-Server-Image bleiben bewusst auf `latest` (`update_ai_agents`).
+- Doku: `DEPLOYMENT.md` („Pinned versions“, Upgrade-Tabelle).
+
+**Tests (live)**
+- Deploy **ohne** Feature-Flags und ohne `--skip-env`: „Keeping … ENABLE_GIT_SERVER=true /
+  ENABLE_PROXY=true“, Subnetzprüfung lief, `.env` unverändert, Git-Server-Setup ✔.
+- Laufende Dienste genau in den gepinnten Versionen; Server Node 22.23.3, `npm ci`
+  (166 Pakete). Login, Projektliste, Whitelist ✔; Workspace mit Repo angelegt, UI 302,
+  gelöscht (Forgejo-Testnutzer entfernt).
+- Code-Server-Image mit gepinnter Basis gebaut: alle Schritte aus dem Cache, gleiche
+  Image-ID wie zuvor → Basis identisch mit dem bisherigen `latest`.
+
+### 3.3 Log-Rotation und Backups
+
+**Problem**
+- Kein Container hatte ein Limit für seine Docker-Logs (`json-file` ohne `max-size`).
+  dnsmasq (`--log-queries`), mitmproxy und squid schreiben eine Zeile pro Anfrage;
+  squid spiegelt sein `access.log` zusätzlich per `tail -F` auf stdout.
+- squids `access.log` liegt auf dem Volume `squid_logs` und wurde nie rotiert (live
+  38 MB, übersteht jeden Redeploy). `logrotate` und `cron` sind im Image, laufen aber
+  nicht.
+- Es gab kein Backup. Workspaces haben **keine Volumes**: Ihre Dateien liegen in der
+  beschreibbaren Schicht des Containers (live 27 Container, 10 MB bis 3,5 GB).
+
+**Änderung**
+- `docker-compose.yml`: YAML-Anker `x-logging` (`json-file`, `max-size`
+  `${LOG_MAX_SIZE:-10m}`, `max-file` `${LOG_MAX_FILE:-3}`) für alle sechs Dienste;
+  `docker.js` setzt dieselben Werte als `LogConfig` in `buildContainerSpec()` (Anlegen
+  und Klonen). `.env.example` dokumentiert beide Variablen.
+- squid: `squid/logrotate.conf` (täglich, ab 100 MB früher, 14 Generationen, gzip,
+  `delaycompress`, `postrotate` → `squid -k rotate`); `xares-entrypoint.sh` startet
+  eine Schleife, die stündlich `logrotate` aufruft, Statusdatei auf dem Volume.
+  `squid.conf` setzt `logfile_rotate 0` ausdrücklich (kam bisher nur aus `conf.d` des
+  Ubuntu-Pakets), damit `-k rotate` die Dateien nur neu öffnet.
+- Neues `backup.sh`:
+  - Ohne Option: `.env`, `squid/certs` (CA) und die Volumes `workspace_data`,
+    `forgejo_data`, `nginx_dynamic`, `squid_whitelist`, `mitmproxy_logs` nach
+    `backups/xares-<Zeit>/` (Modus 700/600, `MANIFEST`); erst in `.partial`, bei Erfolg
+    umbenannt, bei Abbruch gelöscht. `--keep N` (Standard 7) räumt ältere auf.
+  - `--workspaces`: pro Workspace `/workspace` und `/home/coder` per `docker cp` (auch
+    gestoppte Container), ohne Caches, Image-Anteile (`extensions`,
+    `CachedExtensionVSIXs`, OpenCode-Binary) und die code-server-Anmeldung;
+    `workspaces/index.tsv` mit ID und Projektname. Fehlgeschlagene Workspaces landen in
+    `workspaces/FAILED`, Exit-Code 1.
+  - `--restore`: stoppt die Plattform-Container (Compose-Label), sichert den aktuellen
+    Stand nach `xares-<Zeit>-before-restore`, spielt `.env`, CA und Volumes zurück
+    (fehlende Volumes mit Compose-Labels anlegen) und startet wieder – nicht, wenn sich
+    `.env` oder die CA geändert haben (dann `./deploy.sh`).
+  - `--restore-workspace BACKUP ID [--into ID]`: kopiert die Dateien per `docker cp -a`
+    zurück in denselben oder einen neuen Workspace.
+- `.gitignore`: `backups/`. Doku: `DEPLOYMENT.md` (Abschnitte „Logs“, „Backup and
+  Restore“, Upgrade-Tabelle), README, Hinweis in `SNAPSHOTS_AND_BACKUPS.md`.
+
+**Entscheidungen** (mit dir abgestimmt, 2026-10-19)
+- **Workspaces per Flag**: Standard nur Plattformdaten (klein, ~7 s), `--workspaces`
+  zusätzlich die Nutzerdaten. Volle Container-Snapshots wären bei dir ≈ 30 GB.
+- **Forgejo kurz stoppen** statt `docker pause` (crash-konsistent, mögliche `.lock`-
+  Dateien) oder `forgejo dump` (Restore aufwendig). Git ist dabei wenige Sekunden weg.
+- **Eigenes Skript mit Restore** statt Subcommand in `deploy.sh` (schon 1163 Zeilen).
+- **Aufbewahrung**: Docker 10 MB × 3, squid 14 Tage; LLM-Mitschnitte und `_archive`
+  sind Daten, keine Logs, und bleiben unangetastet.
+- **tar im gepinnten nginx-Image** (busybox): auf jeder Installation vorhanden, kein
+  weiteres Image; `--numeric-owner`, weil die Volumes UIDs aus anderen Images
+  enthalten (squid 13, Forgejo 1000). Die Archive werden dem aufrufenden Nutzer
+  übergeben (`chown`): Auf diesem Host legt root im Container root-eigene Dateien an.
+- **code-server-Anmeldung nicht im Backup**: `config.yaml`/`.code-server-auth` gehören
+  zum Container. Sonst würde `--into` Passwort bzw. Auth des Ziel-Workspace
+  überschreiben und ein Restore ein inzwischen geändertes Passwort zurückdrehen.
+- **Kein Neuanlegen von Containern**: Auf einem neuen Host stehen die Projekte wieder
+  in der Liste, ihre Container fehlen. Neue Workspaces anlegen und `--into` nutzen;
+  ein „Container zu bestehendem Projekt neu erzeugen“ wäre ein eigenes Feature.
+
+**Tests (live)**
+- Vorher manuelle Sicherung von `.env`, CA und Volumes
+  (`~/xares-backups/…/*-before-3.3*`). Deploy: alle Dienste mit
+  `{"max-file":"3","max-size":"10m"}`, Server kennt `LOG_MAX_*`; neuer Workspace
+  ebenso.
+- logrotate: Trockenlauf ok; erzwungene Rotation → `access.log.1`, squid schreibt
+  nach `-k rotate` in die neue Datei, `tail -F` folgt (`docker logs`); zweite Rotation
+  → `access.log.2.gz` (38 MB → 2,4 MB). Danach `-k rotate` stumm geschaltet (gab jedes
+  Mal alle Whitelist-Warnungen aus).
+- Backup ohne Workspaces: 7 s, 97 MB; Forgejo gestoppt/gestartet, danach `healthy`,
+  `/git/` 200. `--keep 2` löscht nur ältere reguläre Backups, nicht `-before-restore`
+  oder `.partial`.
+- `--workspaces` über 28 Workspaces: exit 0, knapp 10 min, 3,2 GB. Größter Brocken war
+  `CachedExtensionVSIXs` (bis 300 MB pro Workspace) → ausgeschlossen. Zweiter Lauf
+  (27 Workspaces): exit 0, 8,5 min, 1,2 GB, keine Cache-Pfade mehr in den Archiven.
+- Restore in denselben Workspace: veränderte/gelöschte Dateien zurück, Besitzer
+  `coder:coder`, Rechte 600 erhalten, neue Dateien bleiben, Container läuft wieder.
+  `--into` in einen passwortgeschützten Workspace: Dateien da, Login weiter verlangt.
+- Plattform-Restore: Projekt umbenannt und `example.org` auf die Whitelist gesetzt,
+  dann Restore (13 s) → Name und Whitelist (44 Einträge) wieder wie vorher, 29
+  Projekte, Forgejo `healthy`, Git 200, Workspace 302, `-before-restore` angelegt.
+- Restore in neue Volumes (Wegwerf-Projektname `xarestest`): Volumes mit Labels
+  `com.docker.compose.project/volume` angelegt, Pfade wie im Archiv, `gitea.db`
+  bitgleich, Hinweis „Start the platform with ./deploy.sh“.
+- Aufgeräumt: Test-Workspaces, ihre Forgejo-Nutzer, `xarestest_*`-Volumes und die
+  Test-Backups.
+
+### 3.4 CI-Smoke-Test, `.env` nur für den Eigentümer
+
+**Problem**
+- CI baute Images nur beim Release-Tag; ob die Plattform danach startet, Workspaces
+  anlegen kann und die Isolation greift, prüfte nichts. `tests/` enthielt nur alte
+  Ad-hoc-Skripte ohne echte Prüfung.
+- `deploy.sh` ohne Terminal (CI, cron, `</dev/null`) brach an der Frage „edit the
+  configuration?“ **still** ab: `read` liefert bei EOF 1, `set -e` beendet das Skript
+  ohne Meldung. Unbeaufsichtigt ging nur `--skip-env`.
+- `.env` (Admin-Passwort, Forgejo-Schlüssel und -Admin-Passwort) entstand per
+  `cp .env.example` mit der umask, meist `644` – für alle Nutzer des Hosts lesbar
+  (live so vorgefunden).
+
+**Änderung**
+- `tests/smoke-test.sh` (liest `.env`, prüft über nginx mit `--resolve`): API-Sperre
+  ohne Login, Login, Dashboard, Catch-all-404, Forgejo; Workspace ohne Proxy (VS Code
+  über nginx, neun KI-Tools, Log-Limit, `/api/` aus dem Workspace gesperrt, eigener
+  Forgejo-Nutzer, Stop/Start/Löschen); Security-Proxy-Workspace (`pypi.org` erlaubt,
+  `example.com` 403, kein direkter Internetzugang); Logging-Proxy-Workspace
+  (`example.com` über mitmproxy, Domain aufgezeichnet, kein direkter Zugang);
+  `--backup`: `backup.sh` + Restore, danach API, Login, `projects.json` unverändert,
+  Forgejo. Räumt beim Beenden alles ab (Workspaces, Forgejo-Nutzer per Admin-API,
+  Domain-Datei); Passwörter gehen per stdin an curl, nicht über die Kommandozeile.
+- `.github/workflows/smoke-test.yml`: bei PRs, Push auf `main` und manuell (vorerst
+  auch auf `ops/paket-3`). Statische Prüfungen (`bash -n`, `node --check`, Python-
+  Syntax des mitmproxy-Addons, `docker compose config` aller Profile), dann
+  `.env` aus `.env.example` und `./deploy.sh --git-server --enable-proxy </dev/null`,
+  dann `tests/smoke-test.sh --backup`; bei Fehlern Container- und Workspace-Logs.
+  Ein neuer Push bricht den laufenden Test desselben Branches ab.
+- `deploy.sh`: alle Rückfragen mit `|| REPLY=""` – ohne Terminal gilt die
+  Standardantwort. `ensure_admin_password` setzt `.env` auf `600`.
+- Doku: `DEVELOPMENT.md` (Smoke Test), `GITHUB_ACTIONS.md`, Upgrade-Tabelle.
+
+**Entscheidungen** (mit dir abgestimmt, 2026-10-19)
+- **Voller Durchlauf** statt nur Plattform ohne Workspaces: Die Kernfunktion
+  (Workspace anlegen) und die Isolation sind das, was kaputtgehen kann. Kostet bei
+  einem öffentlichen Repo nichts.
+- **Echter `deploy.sh`** statt eigenem Compose-Aufruf im Workflow: CI prüft so auch
+  den Weg, den Nutzer gehen (Secrets, CA, Netze, Forgejo-Setup, Passwort-Rotation).
+- **Ein Skript für CI und lokal**: gegen die eigene Installation in etwa einer Minute,
+  ohne Spuren; `--backup` nur auf Wunsch, weil es die Plattform kurz stoppt.
+- **Whitelist nicht verändern**: Der Security-Test nutzt die Standard-Domains
+  (`pypi.org` ist dort komplett frei), damit er eine angepasste Whitelist einer
+  echten Installation nicht anfasst.
+- Bekannt, nicht geändert: `--skip-env` ignoriert `--git-server`/`--enable-proxy`
+  (die Flags werden in `setup_environment` geschrieben). Vorbestehend seit 3.2.
+
+**Tests (live)**
+- Statische Prüfungen lokal sauber (Node 22 im Container, `compose config` mit
+  `.env.example` + Platzhalter-Schlüssel).
+- Erster Lauf gegen die Live-Umgebung: 28 von 29 grün; KI-Tool-Prüfung scheiterte am
+  Begrüßungstext der Login-Shell (→ Markierung `missing:`). Forgejo-Nutzer wurden
+  nicht entfernt: Der Container entsteht asynchron, `FORGEJO_USER` wurde vor dem
+  Start gelesen (→ erst nach `running`). Drei Testnutzer von Hand gelöscht.
+- Deploy ohne `--skip-env` mit `</dev/null`: läuft durch, `.env` von `644` auf `600`.
+- Zweiter Lauf mit `--backup`: alle 36 Prüfungen grün in 82 s; danach 27 Projekte,
+  27 Workspace-Container, 28 Forgejo-Nutzer wie vorher, keine Temp-Verzeichnisse.
+
+**CI auf GitHub** (fünf Läufe bis grün; die Job-Logs brauchen Admin-Rechte auf
+`DG1001/XaresAICoder`, daher Fehler jetzt auch als Annotationen)
+- Lauf 1 (`ubuntu-latest`): Deploy scheitert am Health-Check. Lauf 2 nur *scheinbar*
+  grün: Ohne ausdrückliches `shell: bash` laufen Schritte mit `bash -e` **ohne
+  `pipefail`**, `deploy.sh … | tee` zählte daher immer als Erfolg. → `shell: bash` für
+  den Job; bei Fehlern die Log-Enden, eine Health-Probe (`curl -v`,
+  `api-access.conf`, nginx-Netze) und bei Erfolg die Ergebniszeile als Annotation.
+- Lauf 3 zeigte die Ursache: **403** auf `/api/health`, `api-access.conf` ohne
+  `allow`-Zeile. Docker unter Linux trägt ein selbst vergebenes Gateway nicht in
+  `IPAM.Config` ein (Docker Desktop schon), `deny 172.19.0.0/16` sperrte so auch den
+  Host – **jede frische Linux-Installation seit 2.4** war über `localhost` ohne API,
+  `deploy.sh` brach ab. → `networkGateway()` in `docker.js`: fehlt das Gateway, gilt
+  bei nicht internen Netzen die erste Adresse des Subnetzes (Dockers Standard, von
+  Docker reserviert); interne Netze bekommen keine Ausnahme. Lokal unverändert
+  (gleiche `api-access.conf`, Health 200); Ausweichwerte mit Testdaten geprüft.
+- Lauf 4: Deploy grün, Smoke-Test 502 – `deploy.sh` erzeugt beim ersten Deploy am
+  Ende den Server neu (Rotation des Forgejo-Admin-Passworts), der Test kam zu früh.
+  → Der Smoke-Test wartet bis zu 60 s auf die API. Außerdem `tr`s harmloses „Broken
+  pipe“ (CI ignoriert `SIGPIPE`) aus dem Deploy-Log entfernt.
+- Lauf 5: Deploy 3:46 min, Smoke-Test 1 min, „All 36 checks passed“.
+- Runner fest auf `ubuntu-24.04` (`ubuntu-latest` wechselt ab 2026-10-19 auf Ubuntu
+  26), `actions/checkout@v5` (Node 24). Der vorübergehende Trigger auf `ops/paket-3`
+  ist vor dem Merge wieder entfernt.

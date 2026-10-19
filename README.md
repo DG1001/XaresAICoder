@@ -229,7 +229,14 @@ docker compose restart     # or docker-compose restart
 
 # Update deployment
 git pull && ./deploy.sh --skip-network
+
+# Back up (.env, CA, volumes; --workspaces adds workspace files)
+./backup.sh
+./backup.sh --restore backups/xares-<date>-<time>
 ```
+
+See [Backup and Restore](docs/DEPLOYMENT.md#backup-and-restore) for cron, workspace files
+and moving to a new host.
 
 ## 🌐 Port Forwarding & Application Access
 

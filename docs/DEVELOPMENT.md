@@ -447,6 +447,25 @@ COPY --chown=coder:coder setup-scripts/ setup-scripts/
 
 ## Testing
 
+### Smoke Test
+
+`tests/smoke-test.sh` checks a running installation end to end through nginx: API lock
+and admin login, dashboard, catch-all 404, a workspace without proxy (VS Code reachable,
+AI tools installed, log limit, platform API blocked from the workspace, own Forgejo
+user, stop/start/delete), a Security Proxy workspace (whitelisted domain allowed, other
+domains and direct internet blocked) and an LLM Logging Proxy workspace (traffic
+recorded). `--backup` adds `backup.sh` with a restore round trip, which stops the
+platform for a moment.
+
+```bash
+tests/smoke-test.sh            # about 1 minute, reads .env
+tests/smoke-test.sh --backup
+```
+
+It creates workspaces named `zz-smoke-*` and removes them, including their Forgejo
+users, when it ends. CI runs it on every pull request and push to `main`
+(`.github/workflows/smoke-test.yml`, see [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md)).
+
 ### Manual Testing
 
 **API Testing**:

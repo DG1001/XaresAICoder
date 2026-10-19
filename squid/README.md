@@ -12,7 +12,9 @@ The Squid proxy provides:
 
 ## Files
 
-- `squid.conf` - Main Squid configuration with default whitelist
+- `squid.conf` - Main Squid configuration; includes `/etc/squid/whitelist/whitelist.conf`
+- `whitelist-default.conf` - Default whitelist (ACLs + access rules), copied to the volume `squid_whitelist` on the first start; `PUT /api/whitelist` replaces it there, so it survives redeploys (delete the volume to return to the default)
+- `xares-entrypoint.sh` - Sets the client subnet from `SECURITY_NETWORK_SUBNET` and seeds the whitelist
 - `Dockerfile` - Squid container definition
 - `generate-ca-cert.sh` - Script to generate SSL CA certificate
 - `whitelist-minimal.conf` - Example minimal whitelist (package managers only)

@@ -11,4 +11,15 @@ if [ -n "$SECURITY_NETWORK_SUBNET" ]; then
     esac
     sed -i "s|^acl internal_network src .*|acl internal_network src $SECURITY_NETWORK_SUBNET|" /etc/squid/squid.conf
 fi
+# The applied whitelist is kept on a volume; start with the default
+mkdir -p /etc/squid/whitelist
+if [ ! -s /etc/squid/whitelist/whitelist.conf ]; then
+    cp /etc/squid/whitelist-default.conf /etc/squid/whitelist/whitelist.conf
+fi
+# Rotate the logs on the volume (daily, earlier at 100 MB, 14 kept)
+(
+    while sleep 3600; do
+        logrotate -s /var/log/squid/.logrotate.status /etc/squid/logrotate.conf || true
+    done
+) &
 exec entrypoint.sh "$@"

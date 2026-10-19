@@ -27,7 +27,23 @@ XaresAICoder includes GitHub Actions workflows that automatically build and push
 - `ghcr.io/[username]/xaresaicoder-server:latest` (always latest)
 - Same pattern for code-server image
 
-### 2. Release Documentation (`release.yml`)
+### 2. Smoke Test (`smoke-test.yml`)
+
+**Triggers:**
+- Pull requests, pushes to `main`, manual workflow dispatch
+
+**Steps:**
+- **Static checks**: `bash -n` for all shell scripts, `node --check` for the server,
+  syntax of the mitmproxy addon, `docker compose config` for all profiles
+- **Deploy**: `.env` from `.env.example`, then `./deploy.sh --git-server --enable-proxy`
+  without a terminal (builds both images for amd64, about 10–15 minutes)
+- **Smoke test**: `tests/smoke-test.sh --backup` (see
+  [DEVELOPMENT.md](DEVELOPMENT.md#smoke-test))
+- **Diagnostics** on failure: container list, service logs, workspace logs
+
+A newer push to the same branch cancels a running smoke test.
+
+### 3. Release Documentation (`release.yml`)
 
 **Triggers:**
 - GitHub releases (when you publish a release)

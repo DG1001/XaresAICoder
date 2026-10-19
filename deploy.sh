@@ -43,6 +43,10 @@ else
     sed_inplace() { command sed -i '' "$@"; }
 fi
 
+# Prompts read with '|| REPLY=""': without a terminal (CI, cron, </dev/null)
+# read fails at EOF, which would end the script silently under set -e; the
+# empty answer picks each prompt's default instead.
+
 # Function to detect and set Docker Compose command
 setup_docker_compose_cmd() {
     if command_exists docker && docker compose version >/dev/null 2>&1; then
@@ -105,7 +109,7 @@ build_code_server_image() {
     # Check if image already exists
     if docker images | grep -q "xares-aicoder-codeserver.*latest"; then
         print_warning "xares-aicoder-codeserver:latest already exists"
-        read -p "Do you want to rebuild it? (y/N): " -n 1 -r
+        read -p "Do you want to rebuild it? (y/N): " -n 1 -r || REPLY=""
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             print_status "Skipping image build"
@@ -130,8 +134,9 @@ build_code_server_image() {
 
 # Function to setup environment
 setup_environment() {
-    local enable_git_server=${1:-false}
-    local enable_proxy=${2:-false}
+    # true = enable, false = disable, empty = keep the value in .env
+    local enable_git_server=$1
+    local enable_proxy=$2
     
     print_status "Setting up environment configuration..."
     
@@ -144,7 +149,7 @@ setup_environment() {
         echo "  2. Internal development server"
         echo "  3. Custom configuration"
         echo
-        read -p "Choose an option (1-3): " -n 1 -r
+        read -p "Choose an option (1-3): " -n 1 -r || REPLY=""
         echo
         
         case $REPLY in
@@ -176,32 +181,13 @@ setup_environment() {
         print_success ".env file already exists"
     fi
     
-    # Configure Git server based on flag
-    if [ "$enable_git_server" = true ]; then
-        print_status "Enabling Git server configuration..."
-        if grep -q "^ENABLE_GIT_SERVER=" .env; then
-            sed_inplace 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=true/' .env
-        else
-            echo "ENABLE_GIT_SERVER=true" >> .env
-        fi
-    else
-        print_status "Disabling Git server configuration..."
-        if grep -q "^ENABLE_GIT_SERVER=" .env; then
-            sed_inplace 's/^ENABLE_GIT_SERVER=.*/ENABLE_GIT_SERVER=false/' .env
-        else
-            echo "ENABLE_GIT_SERVER=false" >> .env
-        fi
-    fi
+    # Feature flags are sticky: --git-server / --enable-proxy switch a feature
+    # on, --disable-git-server / --disable-proxy off, and without a flag the
+    # value in .env stays (a forgotten flag no longer turns a feature off).
+    set_feature_flag ENABLE_GIT_SERVER "$enable_git_server" "Git server"
+    set_feature_flag ENABLE_PROXY "$enable_proxy" "proxy"
 
-    # Configure proxy based on flag
-    if [ "$enable_proxy" = true ]; then
-        print_status "Enabling proxy configuration..."
-        if grep -q "^ENABLE_PROXY=" .env; then
-            sed_inplace 's/^ENABLE_PROXY=.*/ENABLE_PROXY=true/' .env
-        else
-            echo "ENABLE_PROXY=true" >> .env
-        fi
-
+    if [ "$(grep "^ENABLE_PROXY=" .env | cut -d'=' -f2)" = "true" ]; then
         # Check the subnets of both proxy networks for conflicts (with
         # existing Docker networks and with each other)
         local security_subnet=$(grep "^SECURITY_NETWORK_SUBNET=" .env | cut -d'=' -f2)
@@ -212,12 +198,6 @@ setup_environment() {
         configure_proxy_subnet SECURITY_NETWORK_SUBNET 172.31.0.0/16 xares-security \
             SECURITY_DNSMASQ_IP 255.254 "${internal_subnet:-172.30.0.0/16}" \
             "172.29.0.0/16 172.26.0.0/16 10.101.0.0/16"
-    else
-        if grep -q "^ENABLE_PROXY=" .env; then
-            sed_inplace 's/^ENABLE_PROXY=.*/ENABLE_PROXY=false/' .env
-        else
-            echo "ENABLE_PROXY=false" >> .env
-        fi
     fi
     
     # Ensure HOST_PORT is set (fallback to BASE_PORT if not defined)
@@ -241,28 +221,47 @@ setup_environment() {
     echo "----------------------------------------"
     
     # Ask if user wants to edit
-    read -p "Do you want to edit the configuration? (y/N): " -n 1 -r
+    read -p "Do you want to edit the configuration? (y/N): " -n 1 -r || REPLY=""
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         ${EDITOR:-nano} .env
     fi
 }
 
-# The platform API requires an admin login. Without ADMIN_PASSWORD it stays
-# locked, so generate one into .env if it is missing (also with --skip-env).
-GENERATED_ADMIN_PASSWORD=""
-ensure_admin_password() {
+# Writes a random value for an .env key that is missing or empty (also with
+# --skip-env). Prints the new value, nothing if the key was already set.
+#   $1 key   $2 length   $3 comment line for a newly appended key
+ensure_generated_secret() {
+    local key="$1" length="$2" comment="$3"
     [ -f .env ] || return 0
-    local current=$(grep "^ADMIN_PASSWORD=" .env | cut -d'=' -f2-)
+    local current=$(grep "^${key}=" .env | cut -d'=' -f2-)
     [ -n "$current" ] && return 0
 
-    GENERATED_ADMIN_PASSWORD=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)
-    if grep -q "^ADMIN_PASSWORD=" .env; then
-        sed_inplace "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$GENERATED_ADMIN_PASSWORD|" .env
+    local value=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$length")
+    if grep -q "^${key}=" .env; then
+        sed_inplace "s|^${key}=.*|${key}=$value|" .env
     else
-        printf '\n# Admin login for the dashboard/API (generated by deploy.sh)\nADMIN_PASSWORD=%s\n' "$GENERATED_ADMIN_PASSWORD" >> .env
+        printf '\n# %s\n%s=%s\n' "$comment" "$key" "$value" >> .env
     fi
-    print_success "Generated an admin password (ADMIN_PASSWORD in .env)"
+    echo "$value"
+}
+
+# The platform API requires an admin login (locked without ADMIN_PASSWORD).
+# Forgejo needs its own SECRET_KEY; the old compose file shipped a public
+# placeholder, which is replaced here as well.
+GENERATED_ADMIN_PASSWORD=""
+ensure_admin_password() {
+    GENERATED_ADMIN_PASSWORD=$(ensure_generated_secret ADMIN_PASSWORD 24 "Admin login for the dashboard/API (generated by deploy.sh)")
+    [ -n "$GENERATED_ADMIN_PASSWORD" ] && print_success "Generated an admin password (ADMIN_PASSWORD in .env)"
+    if [ -n "$(ensure_generated_secret FORGEJO_SECRET_KEY 64 "Forgejo SECRET_KEY (generated by deploy.sh; changing it invalidates Forgejo sessions and encrypted secrets)")" ]; then
+        print_success "Generated a Forgejo secret key (FORGEJO_SECRET_KEY in .env)"
+    fi
+    # .env holds these secrets and the Forgejo admin password: owner only
+    # (it was created from .env.example with the umask, mostly 644)
+    if [ -f .env ]; then
+        chmod 600 .env
+    fi
+    return 0
 }
 
 # Workspaces created before per-workspace Forgejo users received the admin
@@ -280,7 +279,7 @@ rotate_git_admin_password() {
         return 0
     fi
 
-    local new_password=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)
+    local new_password=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 24)
     if ! docker exec -u git xaresaicoder-forgejo forgejo admin user change-password \
             --username "$user" --password "$new_password" --must-change-password=false >/dev/null 2>&1; then
         print_warning "Could not change the Forgejo admin password - keeping the current one"
@@ -297,6 +296,24 @@ rotate_git_admin_password() {
     GIT_PASSWORD_ROTATED=true
     print_success "Rotated the Forgejo admin password (GIT_ADMIN_PASSWORD in .env)"
     $DOCKER_COMPOSE_CMD $compose_files $profiles up -d --no-deps server
+}
+
+# Sets an ENABLE_* key in .env: $2 is true, false, or empty to keep the
+# current value (false if the key is missing). $3 names it in the output.
+set_feature_flag() {
+    local key="$1" wanted="$2" label="$3"
+    local current=$(grep "^${key}=" .env | cut -d'=' -f2)
+    if [ -z "$wanted" ]; then
+        wanted=${current:-false}
+        print_status "Keeping $label setting from .env: $key=$wanted"
+    else
+        print_status "Setting $key=$wanted"
+    fi
+    if grep -q "^${key}=" .env; then
+        sed_inplace "s|^${key}=.*|${key}=$wanted|" .env
+    else
+        echo "${key}=$wanted" >> .env
+    fi
 }
 
 # Function to setup network
@@ -845,7 +862,7 @@ detect_registry_owner() {
     # If we couldn't detect, ask user
     if [ -z "$owner" ]; then
         print_warning "Could not auto-detect GitHub repository owner" >&2
-        read -p "Enter your GitHub username/organization: " owner >&2
+        read -p "Enter your GitHub username/organization: " owner >&2 || owner=""
         if [ -z "$owner" ]; then
             print_error "GitHub owner is required for registry images" >&2
             exit 1
@@ -883,7 +900,7 @@ setup_registry_images() {
         print_warning "2. You have access to the repository"
         print_warning "3. You are logged in to GitHub Container Registry if the repository is private"
         echo
-        read -p "Continue anyway? The build might fail. (y/N): " -n 1 -r
+        read -p "Continue anyway? The build might fail. (y/N): " -n 1 -r || REPLY=""
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             exit 1
@@ -899,7 +916,7 @@ setup_registry_images() {
         print_warning "2. You have access to the repository"
         print_warning "3. You are logged in to GitHub Container Registry if the repository is private"
         echo
-        read -p "Continue anyway? The build might fail. (y/N): " -n 1 -r
+        read -p "Continue anyway? The build might fail. (y/N): " -n 1 -r || REPLY=""
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             exit 1
@@ -990,6 +1007,8 @@ show_usage() {
     echo "  --build-only          Only build the code-server image, don't deploy"
     echo "  --git-server          Enable integrated Forgejo Git server"
     echo "  --enable-proxy        Enable Squid transparent proxy for network access control"
+    echo "  --disable-git-server  Turn the Git server off (without a flag the .env setting is kept)"
+    echo "  --disable-proxy       Turn the proxy off (without a flag the .env setting is kept)"
     echo "  --use-registry        Use pre-built images from GitHub Container Registry"
     echo "  --registry-owner      GitHub username/organization (default: auto-detect from git)"
     echo "  --registry-tag        Image tag to use from registry (default: latest)"
@@ -1014,8 +1033,8 @@ main() {
     local skip_env=false
     local skip_network=false
     local build_only=false
-    local enable_git_server=false
-    local enable_proxy=false
+    local enable_git_server=""   # true / false / empty = keep .env
+    local enable_proxy=""
     local use_registry=false
     local registry_owner=""
     local registry_tag="latest"
@@ -1045,6 +1064,14 @@ main() {
                 ;;
             --git-server)
                 enable_git_server=true
+                shift
+                ;;
+            --disable-git-server)
+                enable_git_server=false
+                shift
+                ;;
+            --disable-proxy)
+                enable_proxy=false
                 shift
                 ;;
             --enable-proxy)
@@ -1100,8 +1127,8 @@ main() {
         setup_registry_images "$registry_owner" "$registry_tag" "$repo_name"
     fi
 
-    # Generate proxy CA certificate if proxy is enabled
-    if [ "$enable_proxy" = true ]; then
+    # Generate proxy CA certificate if proxy is enabled (by flag or in .env)
+    if [ "$enable_proxy" = true ] || { [ -z "$enable_proxy" ] && grep -q "^ENABLE_PROXY=true" .env 2>/dev/null; }; then
         generate_proxy_cert
     fi
 

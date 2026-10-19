@@ -307,6 +307,96 @@ To switch between environments:
    # OR: docker-compose up --build -d
    ```
 
+## Pinned versions
+
+Service images and Dockerfile bases are pinned so a rebuild produces the same stack:
+`nginx:1.29.0-alpine`, `codeberg.org/forgejo/forgejo:9.0.3`, `mitmproxy/mitmproxy:12.2.1`
+(in `docker-compose.yml`), `andyshinn/dnsmasq` and `ubuntu/squid` by digest (no version
+tag matches the builds in use), `codercom/code-server:4.141.0`, and `node:22-alpine`
+for the API server (major pinned, patch updates come with rebuilds). To update, change
+the version, redeploy and test. The AI tools inside the code-server image deliberately
+stay on their latest releases (`update_ai_agents` inside a workspace).
+
+## Logs
+
+- **Docker logs** of every service and every workspace are rotated by size: at
+  `LOG_MAX_SIZE` (default `10m`) a new file starts, `LOG_MAX_FILE` (default `3`) files
+  are kept. Workspaces created before this setting keep unlimited logs until they are
+  recreated.
+- **Squid** writes `access.log` and `cache.log` to the volume `squid_logs`. They are
+  rotated daily (earlier at 100 MB) and kept compressed for 14 days
+  (`squid/logrotate.conf`, run hourly inside the container). The proxy log viewer shows
+  the current `access.log` only.
+- **LLM conversations and recorded domains** (volume `mitmproxy_logs`) are data, not
+  logs: they are kept until deleted in the dashboard. Conversations of an earlier
+  workspace on a reused IP address move to `llm_conversations/_archive/`.
+
+## Backup and Restore
+
+`./backup.sh` saves what is needed to rebuild the platform: `.env` (secrets), the proxy
+CA in `squid/certs` (every workspace image trusts it) and the volumes `workspace_data`,
+`forgejo_data`, `nginx_dynamic`, `squid_whitelist` and `mitmproxy_logs`. Forgejo is
+stopped for a few seconds while its volume is copied (SQLite and Git repositories are
+only consistent at rest); Git is unreachable meanwhile.
+
+```bash
+./backup.sh                       # → backups/xares-YYYYmmdd-HHMMSS/, keeps the newest 7
+./backup.sh --keep 14             # keep 14 (0 = keep all)
+./backup.sh --dir /mnt/backup     # other target directory
+./backup.sh --workspaces          # also the files of every workspace
+```
+
+Backups contain secrets (`.env`, the CA key, AI tool logins with `--workspaces`): the
+directory is created with mode 700; copy it off the host to an equally protected place.
+`backups/` is in `.gitignore`.
+
+**Workspaces** have no volumes; their files live in the container. With
+`--workspaces`, `/workspace` and `/home/coder` of every workspace (also stopped ones)
+are saved, without caches (`~/.cache`, `~/.npm`, cached extension packages), VS Code
+extensions and the OpenCode binary (both come with the image), and without the
+workspace's code-server login. Packages installed system-wide (`sudo apt install`) are
+not included. This takes a while: about 8 minutes and 1.2 GB for 27 workspaces on the
+reference machine.
+
+**Nightly via cron:**
+
+```bash
+0 3 * * * cd /path/to/XaresAICoder && ./backup.sh >> backups/backup.log 2>&1
+```
+
+The exit code is non-zero if anything failed, including single workspaces (listed in
+`workspaces/FAILED` of the backup).
+
+### Restoring the platform
+
+```bash
+./backup.sh --restore backups/xares-20261019-030000
+```
+
+Stops the platform containers (workspaces keep running), saves the current state to
+`backups/xares-<time>-before-restore` (not removed by `--keep`), restores `.env`, CA
+and volumes, and starts the platform again. If `.env` or the CA changed, it is not
+started; run `./deploy.sh` instead (without `--skip-build` if the CA changed, so the
+code-server image trusts it again).
+
+**New host:** clone the repository, copy the backup over, run
+`./backup.sh --restore <backup>` (creates the volumes), then `./deploy.sh`. The projects
+are listed again, but their containers do not exist on the new host: create new
+workspaces and copy the files in (below).
+
+### Restoring workspace files
+
+```bash
+./backup.sh --restore-workspace backups/xares-20261019-030000 <project-id>
+./backup.sh --restore-workspace backups/xares-20261019-030000 <old-id> --into <new-id>
+```
+
+Copies `/workspace` and `/home/coder` from the backup into the workspace container
+(stopped meanwhile if running). Files with the same name are overwritten, other files
+stay. `workspaces/index.tsv` in the backup lists project IDs and names. With `--into`,
+the new workspace keeps its own password and Git account; Git remotes copied from the
+old workspace still point to its repository.
+
 ## Upgrading Existing Installations
 
 The security hardening (packages 1 and 2, see `docs/DEVLOG.md`) changes how the
@@ -331,7 +421,13 @@ What changes:
 | Workspaces | Hard CPU limit, Docker's default seccomp profile, sudo chosen per workspace (default `WORKSPACE_SUDO_ENABLED`) | Applies to new and recreated workspaces only |
 | Workshop admin | Dashboard session or `X-Admin-Password` header (never in the URL) | — |
 | Protected workspaces | API calls for clone, aliases, ports, logs, documentation need `X-Workspace-Password` | Update scripts |
-| Whitelist | IP addresses, URLs and single labels are rejected | Remove such entries |
+| Whitelist | IP addresses, URLs and single labels are rejected; the applied whitelist now lives on the volume `squid_whitelist` and survives redeploys | Re-apply your whitelist once after the upgrade (it was reset by every deploy before); delete the volume to return to the default |
+| `deploy.sh` flags | Feature flags are sticky: `--git-server` / `--enable-proxy` switch on, the new `--disable-git-server` / `--disable-proxy` switch off; without a flag the `.env` value is kept | Scripts that relied on "no flag = off" must pass `--disable-…` |
+| Images | Server on Node 22 with `npm ci`; nginx, Forgejo, mitmproxy, squid, dnsmasq and the code-server base are pinned to fixed versions (see "Pinned versions") | Nothing; updates happen deliberately by editing the version |
+| Forgejo secret key | The compose file shipped a public placeholder as `SECRET_KEY`; `deploy.sh` now generates `FORGEJO_SECRET_KEY` | Everybody is logged out of the Forgejo web UI once; 2FA, push mirrors and Actions secrets set up before must be set up again. Without `deploy.sh`, set `FORGEJO_SECRET_KEY` in `.env` (compose refuses to start otherwise) |
+| Logs | Docker logs limited to `LOG_MAX_SIZE` × `LOG_MAX_FILE` (default 10 MB × 3); squid logs rotated daily, 14 days kept (see "Logs") | Existing workspaces keep unlimited Docker logs until recreated |
+| Backups | New `./backup.sh` with restore (see "Backup and Restore") | Set up a nightly cron job |
+| `.env` | `deploy.sh` makes it readable by its owner only (`chmod 600`); without a terminal (CI, cron, `</dev/null`) every prompt takes its default instead of ending the script silently | Tools reading `.env` must run as its owner |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
 Forgejo admin password) until they are recreated; `setup_local_remote` works in them
