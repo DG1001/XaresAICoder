@@ -130,7 +130,8 @@ Creates a new workspace with the specified configuration.
 - `passwordProtected` (boolean, optional): Enable password protection
 - `sudoEnabled` (boolean, optional): allow sudo in the workspace; defaults to `WORKSPACE_SUDO_ENABLED` (`GET /api/config` → `workspaceSudoDefault`)
 - `password` (string, conditional): Required if `passwordProtected` is true (min 8 chars)
-- `createGitRepo` (boolean, optional): Create Git repository (requires Git server)
+- `createGitRepo` (boolean, optional): Create a private Git repository owned by the workspace's own Forgejo user (requires Git server). With the Git server enabled, every workspace gets its own Forgejo user and token (`FORGEJO_USER`/`FORGEJO_TOKEN`), with or without repository.
+- `gitUrl`, `gitUsername`, `gitToken` (with `projectType: "git-clone"`): repository to clone. A URL of this platform's Forgejo (`<base>/git/<owner>/<repo>`) needs no token: the new workspace user is added as collaborator and works directly on that repository (e.g. to continue the work of a deleted workspace).
 - `proxyMode` (string, optional): Network proxy mode — `none` (default), `logging` (LLM Logging Proxy, unrestricted with recording), `security` (Security Proxy, whitelist-only)
 - `memoryLimit` (string, optional): Memory limit — `1g`, `2g` (default), `4g`, `8g`, `16g`
 - `cpuCores` (string, optional): CPU cores — `1`, `2` (default), `4`, `8`
@@ -718,7 +719,7 @@ other files (e.g. a `.env` in the project) are not touched.
 - Snapshot image is ephemeral and cleaned up automatically after cloning
 - Clone names follow the pattern `{sourceName} 1`, `{sourceName} 2`, etc.
 - Workspace limit is checked all-or-nothing before any clones are created
-- **Git branches**: If the source has a Forgejo repo, each clone gets its own branch (`clone/<sanitized-name>`) pushed to the shared repo. Students work on their branch and can create PRs to `main` via Forgejo's web UI. If branch creation fails, the clone still works on `main`.
+- **Git repositories**: Each clone gets its own Forgejo user and token. If the source works with this Forgejo (a recorded repository or a Forgejo `origin`), the clone gets its own **private** repository with the source's state and history, and `origin` points there. Clones cannot see or overwrite each other's work.
 
 **Error Cases**:
 - `404`: Source project not found

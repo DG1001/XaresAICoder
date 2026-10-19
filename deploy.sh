@@ -265,6 +265,40 @@ ensure_admin_password() {
     print_success "Generated an admin password (ADMIN_PASSWORD in .env)"
 }
 
+# Workspaces created before per-workspace Forgejo users received the admin
+# password. Replace the well-known default once, so the copies left in old
+# containers stop working (--rotate-git-password forces a new one). The API
+# server is recreated afterwards to pick it up.
+ROTATE_GIT_PASSWORD=false
+GIT_PASSWORD_ROTATED=false
+rotate_git_admin_password() {
+    local compose_files="$1" profiles="$2"
+    local user=$(grep "^GIT_ADMIN_USER=" .env | cut -d'=' -f2)
+    local current=$(grep "^GIT_ADMIN_PASSWORD=" .env | cut -d'=' -f2-)
+    user=${user:-developer}
+    if [ "$ROTATE_GIT_PASSWORD" != true ] && [ -n "$current" ] && [ "$current" != "admin123!" ]; then
+        return 0
+    fi
+
+    local new_password=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)
+    if ! docker exec -u git xaresaicoder-forgejo forgejo admin user change-password \
+            --username "$user" --password "$new_password" --must-change-password=false >/dev/null 2>&1; then
+        print_warning "Could not change the Forgejo admin password - keeping the current one"
+        return 0
+    fi
+    local key
+    for key in GIT_ADMIN_PASSWORD GIT_ADMIN_BOOTSTRAP_PASSWORD; do
+        if grep -q "^${key}=" .env; then
+            sed_inplace "s|^${key}=.*|${key}=$new_password|" .env
+        else
+            echo "${key}=$new_password" >> .env
+        fi
+    done
+    GIT_PASSWORD_ROTATED=true
+    print_success "Rotated the Forgejo admin password (GIT_ADMIN_PASSWORD in .env)"
+    $DOCKER_COMPOSE_CMD $compose_files $profiles up -d --no-deps server
+}
+
 # Function to setup network
 setup_network() {
     print_status "Setting up Docker network..."
@@ -716,6 +750,7 @@ deploy_application() {
     if [ "$git_server_enabled" = "true" ]; then
         if setup_git_server; then
             print_success "Git server setup completed successfully!"
+            rotate_git_admin_password "$compose_files" "$profiles"
         else
             print_warning "Git server setup failed - manual setup required"
             print_status "Visit http://localhost/git/ to complete the installation manually"
@@ -751,6 +786,11 @@ show_deployment_info() {
     echo "  🔧 API Health Check:"
     echo "     $MAIN_URL/api/health"
     echo
+    if [ "$GIT_PASSWORD_ROTATED" = true ]; then
+        echo "  🗂️  Forgejo admin password was rotated:"
+        echo "     log in to /git/ with GIT_ADMIN_USER / GIT_ADMIN_PASSWORD from .env"
+        echo
+    fi
     echo "  🔑 Admin login:"
     if [ -n "$GENERATED_ADMIN_PASSWORD" ]; then
         echo "     $GENERATED_ADMIN_PASSWORD   (new, stored in .env as ADMIN_PASSWORD)"
@@ -946,6 +986,7 @@ show_usage() {
     echo "  --skip-build          Skip building the code-server image"
     echo "  --skip-env            Skip environment setup (use existing .env)"
     echo "  --skip-network        Skip Docker network setup (use existing network)"
+    echo "  --rotate-git-password Set a new random Forgejo admin password (done automatically while it is the default)"
     echo "  --build-only          Only build the code-server image, don't deploy"
     echo "  --git-server          Enable integrated Forgejo Git server"
     echo "  --enable-proxy        Enable Squid transparent proxy for network access control"
@@ -992,6 +1033,10 @@ main() {
                 ;;
             --skip-network)
                 skip_network=true
+                shift
+                ;;
+            --rotate-git-password)
+                ROTATE_GIT_PASSWORD=true
                 shift
                 ;;
             --build-only)

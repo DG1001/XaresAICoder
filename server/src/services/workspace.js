@@ -20,13 +20,14 @@ function stripUrlCredentials(url) {
 }
 
 // Only these Git repository fields are persisted and exposed. In particular,
-// internalCloneUrl (which embeds the Forgejo admin credentials) is dropped –
+// internalCloneUrl (which embeds the workspace's Forgejo token) is dropped –
 // it is only needed transiently while the container is created.
 function sanitizeGitRepository(repo) {
   if (!repo) return null;
-  const { name, fullName, cloneUrl, webUrl, description, branch } = repo;
+  const { name, owner, fullName, cloneUrl, webUrl, description, branch } = repo;
   return {
     name,
+    ...(owner && { owner }),
     fullName,
     cloneUrl: stripUrlCredentials(cloneUrl),
     webUrl,
@@ -164,6 +165,81 @@ class WorkspaceService {
     await dockerService.migrateWorkspaceNetworks(this.projects.values());
   }
 
+  // Workspaces created before per-workspace Forgejo users work with the
+  // admin account (environment and remote URLs). On server start each gets
+  // its own user; once its container runs (now or after the next start) its
+  // repositories move to that user and the remotes switch to its token.
+  async migrateForgejoUsers() {
+    if (!gitService.isGitServerAvailable()) return;
+    if (!(await gitService.waitUntilReady())) {
+      console.warn('Forgejo not reachable with the admin account; Forgejo migration postponed to the next start');
+      return;
+    }
+    for (const project of this.projects.values()) {
+      if (project.forgejoUser) continue;
+      try {
+        project.forgejoUser = await gitService.ensureWorkspaceUser(project.projectId, project.projectName);
+        project.forgejoMigrationPending = true;
+      } catch (error) {
+        console.warn(`Forgejo user for ${project.projectId} failed: ${error.message}`);
+      }
+    }
+    await this.saveProjectsToDisk();
+    for (const project of this.projects.values()) {
+      if (!project.forgejoMigrationPending) continue;
+      const { status } = await dockerService.getProjectStatus(project.projectId).catch(() => ({}));
+      if (status !== 'running') continue;
+      await this.completeForgejoMigration(project).catch(e =>
+        console.warn(`Forgejo migration of ${project.projectId} failed: ${e.message}`));
+    }
+  }
+
+  // Needs the running container. Per Forgejo remote of /workspace that
+  // belongs to the admin account:
+  // - a repository of this workspace (not shared with other projects) is
+  //   transferred to the workspace user and the remote gets its token;
+  // - a shared one (a clone pointing at its source) is replaced, for
+  //   origin, by an own private repository with the current state.
+  async completeForgejoMigration(project) {
+    const user = project.forgejoUser;
+    const token = await gitService.issueToken(user);
+    const admin = gitService.adminUser;
+    const remotes = await dockerService.listForgejoRemotes(project.projectId);
+
+    const usedElsewhere = repo => [...this.projects.values()].some(p =>
+      p !== project && p.clonedFrom !== project.projectId &&
+      p.gitRepository && p.gitRepository.name === repo && (p.gitRepository.owner || admin) === admin);
+
+    for (const remote of remotes) {
+      let target = null;
+      if (remote.owner === user) {
+        target = gitService.repoInfo(user, remote.repo);
+      } else if (remote.owner === admin) {
+        const shared = project.clonedFrom || (project.gitRepository && project.gitRepository.branch) || usedElsewhere(remote.repo);
+        if (!shared) {
+          target = await gitService.repoExists(admin, remote.repo)
+            ? await gitService.transferRepo(admin, remote.repo, user)
+            : (await gitService.repoExists(user, remote.repo) ? gitService.repoInfo(user, remote.repo) : null);
+        } else if (remote.name === 'origin') {
+          const repo = await gitService.createRepoForUser(user, remote.repo, `Own copy of ${admin}/${remote.repo} (${project.projectName})`);
+          await dockerService.pushToOwnRepo(project.projectId, gitService.remoteUrl(user, token, repo.owner, repo.name));
+          project.gitRepository = { ...repo, private: true };
+          console.log(`Forgejo migration: ${project.projectName} got its own repository ${repo.fullName}`);
+          continue;
+        }
+      }
+      if (!target) continue;
+      await dockerService.setGitRemote(project.projectId, remote.name, gitService.remoteUrl(user, token, target.owner, target.name));
+      if (remote.name === 'origin' || (project.gitRepository && project.gitRepository.name === target.name)) {
+        project.gitRepository = target;
+      }
+      console.log(`Forgejo migration: ${project.projectName} remote ${remote.name} -> ${target.fullName}`);
+    }
+    if (project.gitRepository) project.gitRepository = sanitizeGitRepository(project.gitRepository);
+    project.forgejoMigrationPending = false;
+    await this.saveProjectsToDisk();
+  }
+
   async createProject(projectName, projectType, options = {}, userId = 'default') {
     try {
       // Validate input
@@ -272,30 +348,39 @@ class WorkspaceService {
       console.log(`Starting asynchronous workspace creation for project ${projectId}`);
       
       let gitRepository = null;
-      
-      // Create Git repository if requested and Git server is available
-      if (options.createGitRepo && gitService.isGitServerAvailable()) {
+      let forgejo = null;
+      let clone = { gitUrl: options.gitUrl || null, gitUsername: options.gitUsername || null, gitToken: options.gitToken || null };
+
+      // Forgejo: every workspace gets its own user and token; the repository
+      // (if requested) is private and belongs to that user. A repository of
+      // this platform's Forgejo given as clone URL (e.g. to continue the work
+      // of a deleted workspace) is shared with the new user instead.
+      const entry = this.projects.get(projectId);
+      if (entry && gitService.isGitServerAvailable()) {
         try {
-          console.log(`Creating Git repository for project ${projectId}`);
-          const project = this.projects.get(projectId);
-          if (project) {
-            const repoResult = await gitService.createGitRepository(
-              project.projectName,
-              `Repository for ${project.projectName} (${projectType})`,
-              false // public by default
-            );
-            
-            if (repoResult.success) {
-              gitRepository = repoResult.repository;
-              console.log(`Git repository created: ${gitRepository.name}`);
-            }
+          const user = await gitService.ensureWorkspaceUser(projectId, entry.projectName);
+          const token = await gitService.issueToken(user);
+          forgejo = { user, token };
+          entry.forgejoUser = user;
+
+          const local = projectType === 'git-clone' ? gitService.parseLocalRepoUrl(options.gitUrl) : null;
+          if (local) {
+            await gitService.addCollaborator(local.owner, local.repo, user);
+            clone = { gitUrl: `http://forgejo:3000/${local.owner}/${local.repo}.git`, gitUsername: user, gitToken: token };
+            entry.gitRepository = sanitizeGitRepository(gitService.repoInfo(local.owner, local.repo));
+            console.log(`Workspace ${projectId} continues on Forgejo repository ${local.owner}/${local.repo}`);
+          } else if (options.createGitRepo) {
+            const repo = await gitService.createRepoForUser(user, entry.projectName,
+              `Repository for ${entry.projectName} (${projectType})`);
+            gitRepository = { ...repo, internalCloneUrl: gitService.remoteUrl(user, token, repo.owner, repo.name) };
+            console.log(`Git repository created: ${repo.fullName}`);
           }
         } catch (gitError) {
-          console.error(`Failed to create Git repository for project ${projectId}:`, gitError);
-          // Continue with workspace creation even if Git repo creation fails
+          console.error(`Forgejo setup failed for project ${projectId}:`, gitError.message);
+          // Continue with workspace creation even if Forgejo setup fails
         }
       }
-      
+
       // Get project's proxyMode setting
       let project = this.projects.get(projectId);
       const proxyMode = project ? project.proxyMode : 'none';
@@ -307,9 +392,10 @@ class WorkspaceService {
         passwordProtected: options.passwordProtected || false,
         password: options.password || null,
         gitRepository: gitRepository,
-        gitUrl: options.gitUrl || null,
-        gitUsername: options.gitUsername || null,
-        gitToken: options.gitToken || null,
+        gitUrl: clone.gitUrl,
+        gitUsername: clone.gitUsername,
+        gitToken: clone.gitToken,
+        forgejo,
         proxyMode: proxyMode,
         proxyIp: project ? project.proxyIp : null,
         sudoEnabled: project ? project.sudoEnabled : undefined
@@ -320,7 +406,7 @@ class WorkspaceService {
       if (project) {
         project.status = 'running';
         project.workspaceUrl = workspace.workspaceUrl;
-        project.gitRepository = sanitizeGitRepository(gitRepository);
+        if (gitRepository) project.gitRepository = sanitizeGitRepository(gitRepository);
         project.lastAccessed = new Date();
 
         // Save updated project to disk
@@ -476,6 +562,19 @@ class WorkspaceService {
     try {
       for (const clone of clones) {
         try {
+          // Own Forgejo user and token (in the clone's environment)
+          let forgejo = null;
+          if (gitService.isGitServerAvailable()) {
+            try {
+              const user = await gitService.ensureWorkspaceUser(clone.projectId, clone.projectName);
+              forgejo = { user, token: await gitService.issueToken(user) };
+              const p = this.projects.get(clone.projectId);
+              if (p) p.forgejoUser = user;
+            } catch (gitError) {
+              console.warn(`Forgejo user for clone ${clone.projectName} failed: ${gitError.message}`);
+            }
+          }
+
           console.log(`Creating clone container: ${clone.projectName} (${clone.projectId})`);
           const workspace = await dockerService.createCloneContainer(clone.projectId, snapshotImage, {
             memoryLimit: clone.memoryLimit,
@@ -484,6 +583,7 @@ class WorkspaceService {
             password: options.password || null,
             proxyMode: clone.proxyMode,
             proxyIp: clone.proxyIp,
+            forgejo,
             sudoEnabled: clone.sudoEnabled
           });
 
@@ -495,33 +595,24 @@ class WorkspaceService {
             project.lastAccessed = new Date();
           }
 
-          // Set up a dedicated branch for this clone (if source has a Forgejo repo)
-          if (sourceGitRepo && gitService.isGitServerAvailable()) {
+          // Own private repository with the source's state and history, if
+          // the source works with this Forgejo (instead of a branch in the
+          // shared repository, which every clone could overwrite)
+          if (forgejo && project) {
             try {
-              const sanitizedName = gitService.validateRepositoryName(clone.projectName);
-              const branchName = `clone/${sanitizedName}`;
-              console.log(`Setting up branch '${branchName}' for clone ${clone.projectName}`);
-
-              const branchOk = await dockerService.setupCloneBranch(clone.projectId, branchName);
-
-              if (branchOk && project) {
-                // Copy source gitRepository metadata to clone, adding branch info
-                project.gitRepository = {
-                  ...sourceGitRepo,
-                  branch: branchName,
-                  webUrl: sourceGitRepo.webUrl + '/src/branch/' + encodeURIComponent(branchName)
-                };
-                console.log(`Branch '${branchName}' created for clone ${clone.projectName}`);
-              } else if (project) {
-                // Branch setup failed — clone still works, just shares main
-                console.warn(`Branch setup failed for clone ${clone.projectName}, sharing main branch`);
-                project.gitRepository = { ...sourceGitRepo };
+              const remotes = await dockerService.listForgejoRemotes(clone.projectId);
+              const origin = remotes.find(r => r.name === 'origin') || remotes[0];
+              const repoName = (sourceGitRepo && sourceGitRepo.name) || (origin && origin.repo);
+              if (repoName) {
+                const repo = await gitService.createRepoForUser(forgejo.user, repoName,
+                  `Clone of ${(sourceGitRepo && sourceGitRepo.fullName) || repoName} (${clone.projectName})`);
+                const pushed = await dockerService.pushToOwnRepo(clone.projectId,
+                  gitService.remoteUrl(forgejo.user, forgejo.token, repo.owner, repo.name));
+                project.gitRepository = sanitizeGitRepository(repo);
+                console.log(`Clone ${clone.projectName}: own repository ${repo.fullName}` + (pushed ? '' : ' (push failed, see log)'));
               }
             } catch (gitError) {
-              console.warn(`Branch setup failed for clone ${clone.projectName}, continuing without own branch:`, gitError.message);
-              if (project) {
-                project.gitRepository = { ...sourceGitRepo };
-              }
+              console.warn(`Own repository for clone ${clone.projectName} failed: ${gitError.message}`);
             }
           }
 
@@ -615,6 +706,10 @@ class WorkspaceService {
       const result = await dockerService.startWorkspace(projectId, project.proxyMode || 'none', project.proxyIp);
       project.status = result.status || 'running';
       project.lastAccessed = new Date();
+      if (project.forgejoMigrationPending) {
+        await this.completeForgejoMigration(project).catch(e =>
+          console.warn(`Forgejo migration of ${projectId} failed: ${e.message}`));
+      }
 
       return {
         success: true,
@@ -664,6 +759,13 @@ class WorkspaceService {
 
       // Save to disk
       await this.saveProjectsToDisk();
+
+      // The Forgejo user and its repositories stay (a new workspace can
+      // continue from the repository); only the workspace's token is revoked
+      if (project.forgejoUser && gitService.isGitServerAvailable()) {
+        await gitService.revokeTokens(project.forgejoUser).catch(e =>
+          console.warn(`Revoking Forgejo token of ${project.forgejoUser} failed: ${e.message}`));
+      }
 
       // Clean up any subdomain aliases tied to this workspace.
       // Lazy-require to avoid circular dependency.

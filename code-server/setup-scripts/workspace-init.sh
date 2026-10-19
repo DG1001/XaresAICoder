@@ -372,6 +372,16 @@ if [ -z "$GIT_SERVER_URL" ]; then
     exit 1
 fi
 
+# The workspace's own Forgejo account (token). GIT_ADMIN_* only exist in
+# containers created before per-workspace accounts.
+FORGEJO_USER="${FORGEJO_USER:-$GIT_ADMIN_USER}"
+FORGEJO_TOKEN="${FORGEJO_TOKEN:-$GIT_ADMIN_PASSWORD}"
+if [ -z "$FORGEJO_USER" ] || [ -z "$FORGEJO_TOKEN" ]; then
+    echo "❌ Error: this workspace has no Forgejo account"
+    echo "💡 Recreate the workspace, or create the repository at $GIT_SERVER_EXTERNAL_URL"
+    exit 1
+fi
+
 # Try to extract repository name from existing Git remote (GitHub, etc.)
 # Check 'origin' first, then 'github', then fall back to directory name
 DEFAULT_REPO_NAME=""
@@ -404,14 +414,14 @@ echo ""
 # Call Forgejo API to create repository
 echo "🔄 Creating repository on local Forgejo server..."
 
-# Create Basic Auth credentials
-AUTH_HEADER=$(echo -n "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" | base64)
+# Create Basic Auth credentials (the token works as password)
+AUTH_HEADER=$(echo -n "$FORGEJO_USER:$FORGEJO_TOKEN" | base64 -w0)
 
 # Call Forgejo API to create repository
 RESPONSE=$(curl -s -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Basic $AUTH_HEADER" \
-    -d "{\"name\":\"$REPO_NAME\",\"description\":\"Workspace repository\",\"private\":false,\"auto_init\":false,\"default_branch\":\"main\"}" \
+    -d "{\"name\":\"$REPO_NAME\",\"description\":\"Workspace repository\",\"private\":true,\"auto_init\":false,\"default_branch\":\"main\"}" \
     "$GIT_SERVER_URL/api/v1/user/repos" 2>/dev/null)
 
 # Check if curl succeeded
@@ -448,8 +458,8 @@ fi
 
 # Convert external clone URL to internal one
 # External: http://localhost/git/developer/repo.git
-# Internal: http://user:pass@forgejo:3000/developer/repo.git (no /git/ prefix)
-GIT_INTERNAL_URL=$(echo "$GIT_REMOTE_URL" | sed "s|https\?://[^/]*/git/|http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/|")
+# Internal: http://user:token@forgejo:3000/user/repo.git (no /git/ prefix)
+GIT_INTERNAL_URL=$(echo "$GIT_REMOTE_URL" | sed "s|https\?://[^/]*/git/|http://$FORGEJO_USER:$FORGEJO_TOKEN@forgejo:3000/|")
 
 echo "✅ Repository created successfully!"
 echo ""

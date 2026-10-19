@@ -241,7 +241,7 @@
                                     type="url"
                                     id="gitUrl"
                                     name="gitUrl"
-                                    placeholder="https://github.com/user/repo.git"
+                                    placeholder="https://github.com/user/repo.git or this server's /git/... URL"
                                     pattern="https?://.*"
                                     title="Please enter a valid HTTP or HTTPS Git URL"
                                 >
@@ -435,25 +435,25 @@
                             <h4>Workspace Git Commands</h4>
                             <p>Use these commands <strong>inside your workspace containers</strong> to work with Git repositories:</p>
                             
-                            <p>Every workspace already carries the credentials in the environment variables
-                                <code>$GIT_ADMIN_USER</code> and <code>$GIT_ADMIN_PASSWORD</code>, so the commands below
-                                work as-is — no need to type a password anywhere.</p>
+                            <p>Every workspace has its own Git account: <code>$FORGEJO_USER</code> with the access token
+                                <code>$FORGEJO_TOKEN</code> in its environment, so the commands below work as-is. It only
+                                reaches its own repositories (and those shared with it); new repositories are private.</p>
 
                             <div class="git-commands">
                                 <div class="command-section">
                                     <h5>🆕 Create New Repository</h5>
-                                    <code>curl -u "$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD" -X POST \<br>&nbsp;&nbsp;-H "Content-Type: application/json" \<br>&nbsp;&nbsp;-d '{"name":"my-project","description":"My new project","private":false}' \<br>&nbsp;&nbsp;http://forgejo:3000/api/v1/user/repos</code>
+                                    <code>curl -u "$FORGEJO_USER:$FORGEJO_TOKEN" -X POST \<br>&nbsp;&nbsp;-H "Content-Type: application/json" \<br>&nbsp;&nbsp;-d '{"name":"my-project","description":"My new project","private":true}' \<br>&nbsp;&nbsp;http://forgejo:3000/api/v1/user/repos</code>
                                     <p>Replace <code>my-project</code> with your desired repository name.</p>
                                 </div>
 
                                 <div class="command-section">
                                     <h5>🔗 Clone Repository</h5>
-                                    <code>git clone http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/$GIT_ADMIN_USER/repo.git</code>
+                                    <code>git clone http://$FORGEJO_USER:$FORGEJO_TOKEN@forgejo:3000/$FORGEJO_USER/repo.git</code>
                                 </div>
 
                                 <div class="command-section">
                                     <h5>📂 Add Remote to Existing Project</h5>
-                                    <code>git remote add origin http://$GIT_ADMIN_USER:$GIT_ADMIN_PASSWORD@forgejo:3000/$GIT_ADMIN_USER/repo.git</code>
+                                    <code>git remote add origin http://$FORGEJO_USER:$FORGEJO_TOKEN@forgejo:3000/$FORGEJO_USER/repo.git</code>
                                     <br>
                                     <code>git push -u origin main</code>
                                 </div>
@@ -469,9 +469,12 @@
                                     <h5>🌐 Web Access</h5>
                                     <p>Browse repositories in the web interface:</p>
                                     <code><a href="/git/" target="_blank" rel="noopener">/git/</a></code>
-                                    <p>The credentials in the workspace are meant for Git and the API. Depending on how
-                                        this instance is configured they may be an access token, which cannot be used to
-                                        sign in to the web interface.</p>
+                                    <p>The workspace token is meant for Git and the API; it cannot be used to sign in to the
+                                        web interface. Administrators sign in with <code>GIT_ADMIN_USER</code> and see all
+                                        repositories.</p>
+                                    <p><strong>Continue later:</strong> repositories stay when a workspace is deleted. Create a
+                                        new workspace with "Clone from Git Repository" and the repository's
+                                        <code>/git/…</code> URL — it gets access automatically, no token needed.</p>
                                 </div>
                             </div>
 

@@ -53,6 +53,7 @@ const PLATFORM_ENV_KEYS = [
   'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
   'NODE_EXTRA_CA_CERTS', 'PASSWORD',
   'GIT_SERVER_ENABLED', 'GIT_SERVER_URL', 'GIT_ADMIN_USER', 'GIT_ADMIN_PASSWORD', 'GIT_SERVER_EXTERNAL_URL',
+  'FORGEJO_USER', 'FORGEJO_TOKEN',
   'GIT_REPO_NAME', 'GIT_REMOTE_URL', 'GIT_WEB_URL',
   'GIT_CLONE_URL', 'GIT_USERNAME', 'GIT_ACCESS_TOKEN',
   'NVIDIA_VISIBLE_DEVICES', 'NVIDIA_DRIVER_CAPABILITIES'
@@ -278,6 +279,7 @@ class DockerService {
     gitUrl = null,
     gitUsername = null,
     gitToken = null,
+    forgejo = null,
     sudoEnabled = this.workspaceSudoEnabled,
     proxyIp = null,
     hostCapabilities = { ncpu: null, diskQuota: false }
@@ -313,20 +315,22 @@ class DockerService {
       envVars.push(`PASSWORD=${password}`);
     }
 
-    // Add Git server URL to all containers when Git server is enabled
-    // This allows setup_local_remote script to work in any workspace
+    // Git server: the workspace's own Forgejo user and token (never the
+    // admin account). GIT_ADMIN_USER/GIT_ADMIN_PASSWORD carry the same values
+    // for setup_local_remote in code-server images built before FORGEJO_*.
     if (process.env.ENABLE_GIT_SERVER === 'true') {
       const protocol = process.env.PROTOCOL || 'http';
       const baseDomain = process.env.BASE_DOMAIN || 'localhost';
       const basePort = process.env.BASE_PORT || '80';
-      const gitAdminUser = process.env.GIT_ADMIN_USER || 'developer';
-      const gitAdminPassword = process.env.GIT_ADMIN_PASSWORD || 'admin123!';
 
-      // Build Git server URL (accessible from inside Docker network)
       envVars.push(`GIT_SERVER_ENABLED=true`);
       envVars.push(`GIT_SERVER_URL=http://forgejo:3000`);
-      envVars.push(`GIT_ADMIN_USER=${gitAdminUser}`);
-      envVars.push(`GIT_ADMIN_PASSWORD=${gitAdminPassword}`);
+      if (forgejo && forgejo.user && forgejo.token) {
+        envVars.push(`FORGEJO_USER=${forgejo.user}`);
+        envVars.push(`FORGEJO_TOKEN=${forgejo.token}`);
+        envVars.push(`GIT_ADMIN_USER=${forgejo.user}`);
+        envVars.push(`GIT_ADMIN_PASSWORD=${forgejo.token}`);
+      }
 
       // Build external Git server URL for display
       let externalGitUrl;
@@ -1837,25 +1841,58 @@ fi`.trim();
    * The clone already has the source's git remote (credentials baked into snapshot).
    * Non-throwing: returns false on error so clone still works without its own branch.
    */
-  async setupCloneBranch(projectId, branchName) {
-    const containerName = `workspace-${projectId}`;
-    try {
-      const container = this.docker.getContainer(containerName);
-      const safeBranch = branchName.replace(/'/g, "'\\''");
-      const exec = await container.exec({
-        Cmd: ['bash', '-c', `cd /workspace && git checkout -b '${safeBranch}' && git push -u origin '${safeBranch}' 2>&1`],
-        AttachStdout: true,
-        AttachStderr: true,
-        Env: ['HOME=/home/coder', 'USER=coder']
-      });
-      const stream = await exec.start();
-      const output = await this.streamToString(stream);
-      console.log(`Setup clone branch '${branchName}' for ${containerName}: ${output.trim()}`);
-      return true;
-    } catch (error) {
-      console.warn(`Failed to setup clone branch for ${containerName}:`, error.message);
+  // Runs a bash script as the workspace user. Resolves { exitCode, output }.
+  async execInWorkspace(projectId, script, args = []) {
+    const container = this.docker.getContainer(`workspace-${projectId}`);
+    const exec = await container.exec({
+      Cmd: ['bash', '-c', script, 'bash', ...args],
+      AttachStdout: true,
+      AttachStderr: true,
+      User: 'coder',
+      WorkingDir: '/workspace',
+      Env: ['HOME=/home/coder', 'USER=coder', 'GIT_TERMINAL_PROMPT=0']
+    });
+    const output = await this.streamToString(await exec.start({}));
+    const { ExitCode } = await exec.inspect();
+    return { exitCode: ExitCode, output: output.trim() };
+  }
+
+  // Remotes of /workspace that point to the platform's Forgejo:
+  // [{ name, owner, repo }] (credentials are not returned)
+  async listForgejoRemotes(projectId) {
+    const { exitCode, output } = await this.execInWorkspace(projectId,
+      'git -C /workspace rev-parse --git-dir >/dev/null 2>&1 || exit 0; git -C /workspace remote -v');
+    if (exitCode !== 0) return [];
+    const remotes = new Map();
+    for (const line of output.split('\n')) {
+      const m = /^(\S+)\s+https?:\/\/(?:[^@\s]+@)?forgejo:3000\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\s+\((?:fetch|push)\)$/.exec(line.trim());
+      if (m) remotes.set(m[1], { name: m[1], owner: m[2], repo: m[3] });
+    }
+    return [...remotes.values()];
+  }
+
+  async setGitRemote(projectId, name, url) {
+    const { exitCode, output } = await this.execInWorkspace(projectId,
+      'git -C /workspace remote set-url "$1" "$2" 2>/dev/null || git -C /workspace remote add "$1" "$2"', [name, url]);
+    if (exitCode !== 0) throw new Error(`Setting remote ${name} failed: ${output}`);
+  }
+
+  // Points origin at the clone's own repository and pushes all branches and
+  // tags (nothing to push without commits). Returns false and logs why if
+  // that fails.
+  async pushToOwnRepo(projectId, url) {
+    const { exitCode, output } = await this.execInWorkspace(projectId, [
+      'cd /workspace 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 || git init -q -b main /workspace || exit 3',
+      'cd /workspace',
+      'git remote set-url origin "$1" 2>/dev/null || git remote add origin "$1" || exit 4',
+      'git rev-parse --verify HEAD >/dev/null 2>&1 || { echo "no commits to push"; exit 0; }',
+      'git push -u origin --all 2>&1 && git push origin --tags 2>&1'
+    ].join('\n'), [url]);
+    if (exitCode !== 0) {
+      console.warn(`Pushing workspace-${projectId} to its own repository failed (${exitCode}): ${output.replace(/\/\/[^@\s]+@/g, '//***@')}`);
       return false;
     }
+    return true;
   }
 
   /**

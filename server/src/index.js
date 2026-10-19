@@ -136,6 +136,11 @@ app.listen(PORT, '0.0.0.0', async () => {
   } catch (err) {
     console.error('Failed to regenerate alias config on boot:', err);
   }
+
+  // Per-workspace Forgejo users for workspaces created before them. Last,
+  // because it waits for Forgejo, which starts together with this server.
+  require('./services/workspace').migrateForgejoUsers().catch(err =>
+    console.error('Forgejo user migration failed:', err));
 });
 
 module.exports = app;

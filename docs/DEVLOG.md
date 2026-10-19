@@ -594,8 +594,8 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 
 ### Beobachtete, vorbestehende Probleme (Backlog)
 
-- **Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
-  `git push` mit „src refspec … does not match any“ scheitert (Workspace ohne Commits).
+- ~~**Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
+  `git push` scheitert~~ – entfallen in 2.7 (eigenes Repo pro Klon, Exit-Code geprüft).
 - ~~**`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen~~ – behoben in
   2.4: Der Server konnte die Namen von Proxy-Workspaces nie auflösen (anderes Netz);
   die Prüfung läuft jetzt in nginx.
@@ -1061,3 +1061,103 @@ veröffentlichten Host-Port kommen; unter Docker Desktop ging das per
 ohne `ADMIN_PASSWORD` gesperrt. `./deploy.sh` erzeugt es automatisch; wer ohne
 `deploy.sh` deployt, muss es in `.env` setzen. Skripte, die die API nutzen, brauchen
 das Cookie (siehe `API.md`).
+
+### 2.7 Forgejo: eigener Nutzer und Token pro Workspace
+
+**Problem**: Jeder Workspace bekam `GIT_ADMIN_USER`/`GIT_ADMIN_PASSWORD` des Forgejo-
+**Administrators** in die Umgebung, Workspaces mit Repo zusätzlich in die Remote-URL.
+Live: ein einziger Nutzer `developer` (Admin), 22 Repos (18 öffentlich), Passwort noch
+der Standardwert `admin123!`. Jeder Teilnehmer hatte damit Vollzugriff auf alle Repos
+und die Forgejo-Administration. Klone legten einen Branch im gemeinsamen Repo an
+(jeder konnte jeden überschreiben); seit 2.2 fehlten den Klon-Remotes die Zugangsdaten,
+der Branch-Push scheiterte still (Backlog-Punkt).
+
+**Entscheidungen vorab (2026-10-19, mit dir abgestimmt)**
+
+| Frage | Entscheidung |
+|-------|--------------|
+| Klone | **Eigenes privates Repo pro Klon**, Stand inkl. History per Push |
+| Workspaces ohne Repo | Bekommen **immer** Nutzer + Token (`setup_local_remote` legt Repos im eigenen Namensraum an) |
+| Löschen | Nutzer und Repos **bleiben**, nur der Token wird widerrufen. Weiterarbeiten: neuen Workspace aus der Repo-URL anlegen |
+| Bestand | **Migrieren** und das Admin-Passwort **rotieren** |
+
+**Änderung**
+- `git.js` neu: Admin-Zugang nur noch serverseitig (Basic Auth). Pro Workspace
+  `ensureWorkspaceUser` (Name `<projekt-slug>-<8 hex>`, zufälliges, nicht gespeichertes
+  Passwort, Profil *private*), `issueToken` (`write:repository`, `write:user`),
+  `revokeTokens` (nur Plattform-Tokens), `createRepoForUser` (privat, Namenskonflikt →
+  Suffix), `transferRepo`, `addCollaborator`, `parseLocalRepoUrl` (externe `/git/…`- und
+  interne `forgejo:3000`-URLs).
+- `docker.js`: Env `FORGEJO_USER`/`FORGEJO_TOKEN`, dazu `GIT_ADMIN_USER`/
+  `GIT_ADMIN_PASSWORD` mit **denselben Workspace-Werten** für ältere Images – das
+  Admin-Passwort erreicht keinen Workspace mehr. `setupCloneBranch` ersetzt durch
+  `pushToOwnRepo` (prüft Exit-Code); `execInWorkspace`, `listForgejoRemotes`,
+  `setGitRemote`.
+- `workspace.js`:
+  - Create: Nutzer + Token; Repo auf Wunsch privat im eigenen Namensraum. Ist die
+    Klon-URL ein Repo dieses Forgejo, wird der neue Nutzer Collaborator und klont mit
+    seinem Token (kein Token im Formular nötig).
+  - Clone: Nutzer + Token vor dem Container-Start (Env), danach eigenes Repo und Push.
+  - Delete: Tokens widerrufen, Nutzer/Repos bleiben.
+  - `migrateForgejoUsers` (Serverstart) + `completeForgejoMigration` (sobald der
+    Container läuft, sonst nach dem nächsten `start`): Repos unter dem Admin, die nur
+    zu diesem Workspace gehören, werden übertragen und Remotes auf den Token
+    umgeschrieben; ein Klon (oder ein von mehreren Projekten genutztes Repo) bekommt
+    für `origin` eine eigene Kopie. Fremde Remotes bleiben unberührt. Die Boot-
+    Migration läuft nach der nginx-Konfiguration und wartet bis zu 3 Minuten, bis
+    Forgejo (startet gleichzeitig) mit dem Admin-Konto antwortet.
+- `workspace-init.sh` (Image): `setup_local_remote` nutzt `FORGEJO_*` (Fallback
+  `GIT_ADMIN_*`), legt private Repos an und kodiert den Auth-Header mit `base64 -w0`
+  (GNU `base64` bricht nach 76 Zeichen um – mit `Nutzer:Token` wäre der Header
+  kaputt). **Erfordert neu gebautes Code-Server-Image.**
+- `deploy.sh`: `rotate_git_admin_password` ersetzt `admin123!` einmalig durch ein
+  zufälliges Passwort (Forgejo-CLI, `.env`, Server neu erstellt);
+  `--rotate-git-password` erzwingt es.
+- `.env.example`: Admin-Konto muss Forgejo-Admin sein (alte Empfehlung „kein Admin,
+  Token statt Passwort“ galt nur, solange es in Workspaces landete). Frontend:
+  Git-Hilfe auf `FORGEJO_*`, Hinweis „Weiterarbeiten“. Doku: `SECURITY.md`, `API.md`,
+  `ARCHITECTURE.md`.
+
+**API-Verhalten vorher geprüft** (Wegwerf-Nutzer, danach gelöscht): Der Admin kann per
+Basic Auth Tokens für andere Nutzer anlegen (auch mit einem Admin-Token als Passwort,
+nicht per `Authorization: token`), Repos für Nutzer anlegen, Repos sofort übertragen
+(alter Pfad → 307); ein Nutzer-Token bekommt 403 auf die Admin-API.
+
+**Tests**
+- Unit (gefälschter Forgejo-Server): Nutzername (lesbar, ≤ 40 Zeichen, gültig),
+  Nutzer idempotent und privat, Tokens, Widerruf nur von Plattform-Tokens, Repo privat
+  + Suffix bei Konflikt, Übertragung, Collaborator, URL-Erkennung (extern/intern/fremd/
+  falscher Port/Unterpfad), Container-Env ohne Admin-Passwort, Migrationsentscheidungen
+  (eigenes Repo übertragen, Quelle mit Klonen übertragen, Klon und geteiltes Repo →
+  eigene Kopie, eigenes Repo nur Token tauschen, fremde Remotes unberührt).
+  Regression 2.4–2.6 grün.
+- Live (Backup von `workspace_data`, `forgejo_data` und `.env` vorher):
+  - Deploy: `admin123!` rotiert (alt → 401, neu → 200, Server nutzt das neue);
+    27 Workspace-Nutzer angelegt, Migration für alle (gestoppt) offen.
+  - Alt-Simulation: Workspace mit Admin-Remote auf öffentliches `developer`-Repo
+    (laufend) → beim Serverstart übertragen, Remote mit Token; Alt-Klon (gestoppt,
+    Remote ohne Zugangsdaten) → beim `start` eigenes privates Repo mit Stand.
+  - Isolation: Push ins fremde Repo → „not found“; fremdes (sogar öffentliches) Repo
+    lesen → 404, weil der Besitzer privat ist; Admin-API → 403.
+  - Neu: Workspace mit Repo → privat, Push mit Token; Klon ×2 → je eigenes privates
+    Repo mit History, Push ✔; Vorlage gelöscht → Nutzer/Repo bleiben, 0 Plattform-
+    Tokens; neuer Workspace aus `http://localhost/git/<nutzer>/<repo>.git` ohne Token →
+    History da, Push mit eigenem Token ✔.
+  - Code-Server-Image neu gebaut (ohne Cache, aktuelles Basis-Image, Debian trixie):
+    `setup_local_remote` in einem Workspace ohne Repo → privates Repo im eigenen
+    Namensraum, `origin` mit Token, Push ✔. Grundcheck: UI 302, Node 22.23.3 mit
+    gebündeltem npm 10.9.9 (kein Upgrade), alle sieben CLI-Agents starten.
+  - Aufgeräumt: Test-Workspaces gelöscht, Test-Nutzer in Forgejo samt Repos entfernt
+    (`purge`); 27 Projekte, 28 Forgejo-Nutzer (27 + Admin).
+
+**Gilt für bestehende Installationen**
+- Beim ersten Start bekommt jeder Workspace einen Forgejo-Nutzer; Repos und Remotes
+  werden umgestellt, sobald der Workspace läuft. In alten Containern bleibt das
+  (rotierte, damit wertlose) Admin-Passwort in der Umgebung, und `setup_local_remote`
+  funktioniert dort erst nach Neuerstellung (alte Images lesen nur `GIT_ADMIN_*`).
+- Neue Workspaces brauchen das neu gebaute Code-Server-Image für `setup_local_remote`.
+- Das Forgejo-Admin-Passwort steht nach der Rotation nur in `.env`.
+- Öffentliche Alt-Repos bleiben öffentlich, sind aber für andere Workspace-Nutzer
+  unsichtbar (Besitzer privat). Für anonyme Besucher von `/git/` ebenso.
+- Unverändert: Security-/Logging-Proxy-Workspaces erreichen Forgejo nicht (nicht in
+  ihren internen Netzen).
