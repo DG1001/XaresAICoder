@@ -11,5 +11,6 @@
     }
   },
   "terminal.integrated.defaultProfile.linux": "bash",
-  "extensions.autoUpdate": false
+  "extensions.autoUpdate": false,
+  "security.workspace.trust.enabled": false
 }

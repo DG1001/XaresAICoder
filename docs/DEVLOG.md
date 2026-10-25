@@ -1698,6 +1698,28 @@ Beobachtung: neue Workspaces öffnen im Restricted Mode (Ordner nicht vertraut);
 „Trust“ starten Kilo, Cline usw. – für die Messung war die Trust-Abfrage nur in diesem
 Test-Container abgeschaltet. `tests/smoke-test.sh` lokal: 44/44 grün.
 
+### 4.6 Nachtrag: VS Code ohne Workspace-Trust-Abfrage (2026-10-25)
+
+**Problem**: Neue Workspaces öffneten VS Code im Restricted Mode (beim Messen in 4.5
+aufgefallen); Cline, Claude Code für VS Code und Kilo starteten erst nach einem Klick auf
+„Trust“.
+
+**Änderung**: `"security.workspace.trust.enabled": false` in `code-server/config/settings.json`
+(wird im Dockerfile als Benutzereinstellung kopiert). `SECURITY.md` (neuer Abschnitt „VS Code
+Workspace Trust“) und Upgrade-Zeile in `DEPLOYMENT.md`.
+
+**Entscheidungen** (auf deinen Wunsch): Die Trust-Abfrage schützt vor Einstellungen und
+Werkzeugen aus fremden Repositories. Ohne sie gelten `.vscode/settings.json` eines geklonten
+Repos, Erweiterungen können dort konfigurierte Programme starten – nur im Workspace-Container
+als `coder`, aber mit Zugriff auf dessen Logins und Forgejo-Token. Automatische Tasks bleiben
+aus: `task.allowAutomaticTasks` ist in VS Code 1.141 standardmäßig `off` und anwendungsweit,
+ein Repo kann es nicht einschalten. Nutzer können die Abfrage in ihren Einstellungen wieder
+einschalten.
+
+**Tests (live)**: neues Image; neuer Workspace im Browser (Puppeteer) ohne Restricted-Mode-
+Banner, Cline und Claude Code aktiviert (Extension-Host-Log), Symbole in der Aktivitätsleiste.
+`tests/smoke-test.sh` lokal: 44/44 grün.
+
 ## Backlog-Aufräumen (2026-10-25)
 
 **Alias sofort erreichbar**
