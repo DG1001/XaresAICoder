@@ -431,13 +431,14 @@ What changes:
 | Backups | New `./backup.sh` with restore (see "Backup and Restore") | Set up a nightly cron job |
 | `.env` | `deploy.sh` makes it readable by its owner only (`chmod 600`); without a terminal (CI, cron, `</dev/null`) every prompt takes its default instead of ending the script silently | Tools reading `.env` must run as its owner |
 | AI tools | Removed Continue, Aider and Qwen Code; added GitHub Copilot CLI and the VS Code extensions Cline, Kilo Code and Claude Code; OpenCode 2. CLI tools in `/opt/ai-tools` (owned by `coder`), one `update_ai_agents` without sudo, no automatic updates (see [AI_TOOLS.md](AI_TOOLS.md)) | Rebuild the code-server image (`./deploy.sh` without `--skip-build`); existing workspaces keep their old tools until recreated. The applied Security Proxy whitelist stays: add `.githubcopilot.com`, `.kilo.ai`, `.cline.bot` if those tools are used |
+| Login / group users | Group users with their own login, limited to the projects of their groups (Users tab, `/api/users`, see [API.md](API.md#group-user-permissions)); the session cookie now names the account | Everybody logs in once more after the update (older sessions are no longer valid). `{"password": …}` logins of scripts keep working |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
 Forgejo admin password) until they are recreated; `setup_local_remote` works in them
 again only after recreation.
 
-**Remaining limits** (details in [SECURITY.md](SECURITY.md)): no roles — every admin
-manages every workspace; workspaces can reach each other's ports; Security/Logging Proxy
+**Remaining limits** (details in [SECURITY.md](SECURITY.md)): one admin account (group
+users only see their groups); workspaces can reach each other's ports; Security/Logging Proxy
 workspaces cannot reach Forgejo; on Docker Desktop workspaces reach published host ports
 via `host.docker.internal` (the login still applies).
 

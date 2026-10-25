@@ -22,7 +22,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 | 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
-| 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | 🚧 in Arbeit (Branch `feat/group-users`) |
+| 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | ✅ umgesetzt auf Branch `feat/group-users` (5.1–5.3), Smoke-Test grün |
 
 ---
 
@@ -1784,3 +1784,28 @@ Passwort (400) im Dialog, Gruppen entfernen, löschen; Gruppe umbenennen → Zuo
 Nutzers wandert mit, zurück; Gruppe löschen → Projekt in „Uncategorized“, Nutzer ohne Gruppe
 (danach wiederhergestellt); abgelaufene Sitzung + Login als `zzuser` → Seite lädt neu in
 dessen Ansicht.
+
+### 5.3 Doku, Smoke-Test
+
+**Änderung**
+- `docs/API.md`: Abschnitt „Login and Roles“ (Login mit `username`, Status mit Rolle),
+  Tabelle „Group User Permissions“ (Allowlist, 404/403), neuer Abschnitt „Group Users“
+  (`/api/users`, Regeln), „Rename or Delete a Group“, Fehlercodes `LOGIN_REQUIRED` und
+  `FORBIDDEN_FOR_ROLE`; das Antwortbeispiel von `GET /api/projects/groups` stimmte nicht
+  (Objekte mit `name`/`count`/`projects` statt Strings) – korrigiert.
+- `docs/SECURITY.md`: Rollenmodell, Durchsetzung (Sitzung mit Konto und Version,
+  Middleware, 404 statt 403 für fremde Projekte), Grenzen (Gruppen-Nutzer sehen die
+  Workspace-URLs ihrer Gruppen; Verschieben eines Projekts ändert, wer es sieht).
+- `docs/user-guide.md`: Abschnitt „Group Users“ für Admin und Gruppen-Nutzer;
+  `docs/DEPLOYMENT.md`: Upgrade-Zeile (einmal neu anmelden), Grenzen-Absatz;
+  `README.md`: „Recent Updates“; lokale `CLAUDE.md`.
+- `tests/smoke-test.sh`: Abschnitt „Group users“ mit dem Workspace ohne Proxy (kein
+  zusätzlicher Container): in Gruppe `zz-smoke-group` verschieben, Nutzer anlegen, Login
+  mit eigener Cookie-Datei (`as_group`), Liste nur dieser Workspace, Anlegen und
+  Nutzerverwaltung 403, Umbenennen/Notizen/Stop/Start 200, nach dem Verschieben aus der
+  Gruppe 404, neues Passwort beendet die Sitzung (401), Nutzer löschen; Aufräumen löscht
+  übrig gebliebene Nutzer.
+
+**Tests (live)**: `tests/smoke-test.sh` lokal – alle 44 Prüfungen grün, davon 13 im neuen
+Abschnitt „Group users“; danach keine `zz-smoke-*`-Workspaces, Nutzer oder Forgejo-Nutzer
+übrig.

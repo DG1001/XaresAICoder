@@ -6,6 +6,7 @@ Complete API documentation for XaresAICoder platform.
 
 - [Base URL](#base-url)
 - [Authentication](#authentication)
+- [Group Users](#group-users)
 - [Project Management](#project-management)
 - [Container Control](#container-control)
 - [System Endpoints](#system-endpoints)
@@ -35,23 +36,33 @@ All API endpoints are prefixed with `/api`.
 
 ## Authentication
 
-### Admin Login
+### Login and Roles
 
-The API requires an admin session: one shared password, `ADMIN_PASSWORD` in
-`.env` (`./deploy.sh` generates one if it is missing). Without a session every
-endpoint answers `401 {"error": "Login required", "code": "LOGIN_REQUIRED"}`;
-while `ADMIN_PASSWORD` is not set at all, `503 {"code": "LOGIN_NOT_CONFIGURED"}`.
+The API requires a session. There are two kinds of accounts:
+
+- **Admin**: one shared password, `ADMIN_PASSWORD` in `.env` (`./deploy.sh`
+  generates one if it is missing). Full access.
+- **Group users**: created by the admin (see [Group Users](#group-users)), each
+  with a user name, a password and one or more project groups. They only see
+  the projects of their groups (see [Group User Permissions](#group-user-permissions)).
+
+Without a session every endpoint answers
+`401 {"error": "Login required", "code": "LOGIN_REQUIRED"}`; while
+`ADMIN_PASSWORD` is not set at all, `503 {"code": "LOGIN_NOT_CONFIGURED"}`
+(group users cannot log in either then).
 
 Public without a session: `GET /api/health`, `/api/auth/*`, and the workshop
 participant endpoints (`/api/workshop/status`, `/claim`, `/my-claim`).
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /api/auth/login` | Body `{ "password": "..." }`. Sets the session cookie `xares_admin` (HttpOnly, SameSite=Strict, `Secure` with `PROTOCOL=https`, lifetime `ADMIN_SESSION_HOURS`, default 12). `401` wrong password, `429` after 10 failed attempts per client within 15 minutes |
+| `POST /api/auth/login` | Admin: body `{ "password": "..." }` (or `{ "username": "admin", "password": "..." }`). Group user: `{ "username": "...", "password": "..." }` (user name case-insensitive). Response `{ "authenticated": true, "role": "admin" \| "group" }`. Sets the session cookie `xares_admin` (HttpOnly, SameSite=Strict, `Secure` with `PROTOCOL=https`, lifetime `ADMIN_SESSION_HOURS`, default 12). `401` wrong user name or password, `429` after 10 failed attempts per client within 15 minutes |
 | `POST /api/auth/logout` | Ends the session and clears the cookie |
-| `GET /api/auth/status` | `{ "configured": bool, "authenticated": bool }` |
+| `GET /api/auth/status` | `{ "configured": bool, "authenticated": bool, "role": "admin" \| "group" }`; for group users also `"username"` and `"groups"` |
 
-Changing `ADMIN_PASSWORD` ends all sessions.
+Changing `ADMIN_PASSWORD` ends all sessions, including those of group users.
+A group user's sessions end as soon as the admin sets a new password for them
+or deletes them; changes to their groups apply to the next request.
 
 Requests that change state (`POST`/`PUT`/`DELETE`) from a browser must come
 from the dashboard's own origin: a different `Origin` hostname or
@@ -64,7 +75,33 @@ without these headers (curl, scripts) are not affected.
 curl -c cookies.txt -H 'Content-Type: application/json' \
   -d '{"password":"<ADMIN_PASSWORD>"}' http://localhost/api/auth/login
 curl -b cookies.txt http://localhost/api/projects/
+
+# as a group user
+curl -c teacher.txt -H 'Content-Type: application/json' \
+  -d '{"username":"teacher-7a","password":"<password>"}' http://localhost/api/auth/login
 ```
+
+### Group User Permissions
+
+A group user may call only these endpoints; everything else answers
+`403 {"error": "Not allowed for this account", "code": "FORBIDDEN_FOR_ROLE"}`:
+
+| Endpoint | Note |
+|----------|------|
+| `GET /api/config` | |
+| `GET /api/projects/` | Only projects of the user's groups |
+| `GET /api/projects/groups` | Only the user's groups that contain projects |
+| `GET /api/projects/:projectId` | |
+| `PUT /api/projects/:projectId/name` | |
+| `POST /api/projects/:projectId/start`, `/stop` | A protected workspace still needs its password |
+| `GET` / `PUT /api/projects/:projectId/notes` | |
+| `GET /api/projects/:projectId/disk-usage` | |
+| `PUT /api/projects/:projectId/password` | Set, change or remove; `currentPassword` as for the admin |
+
+The project endpoints answer `404` for projects outside the user's groups, so
+their existence does not leak. Creating, deleting, cloning, moving projects to
+another group, aliases, proxy logs, LLM conversations, whitelist, workspace
+statistics, user management and the workshop admin endpoints stay admin-only.
 
 ### Workspace Passwords
 
@@ -100,6 +137,30 @@ Start, stop and delete also still accept the password in the JSON body:
 
 A missing or wrong password returns `401`. Organizational metadata (name, group,
 notes) can be changed without the workspace password.
+
+## Group Users
+
+Admin only. Users are stored in `group-users.json` on the `workspace_data`
+volume (included in `backup.sh`); passwords as bcrypt hashes, never returned.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/users` | `{ "success": true, "users": [{ "id", "username", "groups", "createdAt" }] }` |
+| `POST /api/users` | Body `{ "username", "password", "groups": [...] }` → `201` with the user. `400` invalid input, `409` user name exists |
+| `PUT /api/users/:id` | Body `{ "groups"?: [...], "password"?: "..." }`. A new password ends the user's sessions. `404` unknown user |
+| `DELETE /api/users/:id` | Deletes the user and ends their sessions |
+
+Rules: user name 2–40 characters `a-z 0-9 . _ -` (stored in lower case,
+unique, `admin` is reserved); password 8–50 characters without control
+characters (same rule as workspace passwords); group names like project
+groups (1–50 characters: letters, digits, spaces, `-`, `_`). A group does not
+need projects yet.
+
+```bash
+curl -b cookies.txt -H 'Content-Type: application/json' \
+  -d '{"username":"teacher-7a","password":"<password>","groups":["Class 7a"]}' \
+  http://localhost/api/users
+```
 
 ## Project Management
 
@@ -318,7 +379,8 @@ Stops a running workspace container gracefully.
 
 ### List Groups
 
-Returns all distinct group names used across projects.
+Returns all groups used across projects, with their projects
+(`Uncategorized` last). For group users only their own groups.
 
 **Endpoint**: `GET /api/projects/groups`
 
@@ -326,7 +388,10 @@ Returns all distinct group names used across projects.
 ```json
 {
   "success": true,
-  "groups": ["workshop-2026", "team-alpha"]
+  "groups": [
+    { "name": "workshop-2026", "count": 2, "projects": ["abc123", "def456"] },
+    { "name": "Uncategorized", "count": 1, "projects": ["ghi789"] }
+  ]
 }
 ```
 
@@ -433,6 +498,20 @@ Assigns or changes the group of a project.
   "message": "Project group updated successfully"
 }
 ```
+
+### Rename or Delete a Group
+
+Admin only. Changes all projects of the group **and** the group users assigned
+to it in one step.
+
+**Endpoints**:
+- `PUT /api/projects/groups/:name` with body `{ "newName": "workshop-2027" }` →
+  `{ "success": true, "group": "workshop-2027" }`. Renaming onto an existing
+  group merges both.
+- `DELETE /api/projects/groups/:name` → `{ "success": true }`. The projects move
+  to `Uncategorized`, users lose the group.
+
+`400` for an invalid new name. URL-encode the group name (`Class%207a`).
 
 ### Get Squid Proxy Logs
 
@@ -1195,6 +1274,8 @@ All error responses follow this format:
 | 400 | `PROJECT_EXISTS` | Project name already in use |
 | 400 | `INVALID_PASSWORD` | Password too short or weak |
 | 401 | `INVALID_WORKSPACE_PASSWORD` | Incorrect workspace password |
+| 401 | `LOGIN_REQUIRED` | No valid session (log in again) |
+| 403 | `FORBIDDEN_FOR_ROLE` | Endpoint not allowed for a group user |
 | 404 | `PROJECT_NOT_FOUND` | Project ID does not exist |
 | 409 | `WORKSPACE_LIMIT_EXCEEDED` | Maximum workspaces per user reached |
 | 409 | `CONCURRENT_LIMIT_REACHED` | Maximum concurrent workspaces reached |

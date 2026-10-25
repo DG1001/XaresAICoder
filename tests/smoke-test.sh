@@ -2,10 +2,11 @@
 
 # XaresAICoder Smoke Test
 # Exercises a running installation end to end through nginx: login, workspace
-# lifecycle, network isolation, both proxies, Forgejo and, with --backup,
-# backup.sh with a restore. Run by CI after ./deploy.sh
+# lifecycle, group users, network isolation, both proxies, Forgejo and, with
+# --backup, backup.sh with a restore. Run by CI after ./deploy.sh
 # (.github/workflows/smoke-test.yml); also works against a local installation
-# and removes what it created (workspaces zz-smoke-*, their Forgejo users).
+# and removes what it created (workspaces zz-smoke-*, their Forgejo users,
+# group user zz-smoke-user).
 #
 # Usage: tests/smoke-test.sh [--backup]
 #   --backup   also back up and restore the platform (stops it for a moment)
@@ -44,7 +45,9 @@ PASSED=0
 FAILED=0
 CREATED=()         # workspaces to delete on exit
 FORGEJO_USERS=()   # their Forgejo users, purged on exit
+GROUP_USERS=()     # group user ids, deleted on exit
 COOKIES=$(mktemp)
+GROUP_COOKIES=$(mktemp)
 BACKUP_DIR=""
 
 ok() { echo -e "  ${GREEN}✔${NC} $1"; PASSED=$((PASSED + 1)); }
@@ -107,6 +110,11 @@ forgejo_user_exists() {
 login() {
     api POST /auth/login "$(python3 -c 'import json, sys; print(json.dumps({"password": sys.argv[1]}))' "$(env_value ADMIN_PASSWORD)")"
     [ "$STATUS" = 200 ]
+}
+# as_group COMMAND...: run with the group user's session instead of the admin's
+as_group() {
+    local COOKIES=$GROUP_COOKIES
+    "$@"
 }
 
 wait_health() {
@@ -193,7 +201,10 @@ cleanup() {
     for user in "${FORGEJO_USERS[@]+"${FORGEJO_USERS[@]}"}"; do
         forgejo_api DELETE "/admin/users/$user?purge=true" >/dev/null
     done
-    rm -f "$COOKIES"
+    for user in "${GROUP_USERS[@]+"${GROUP_USERS[@]}"}"; do
+        api DELETE "/users/$user"
+    done
+    rm -f "$COOKIES" "$GROUP_COOKIES"
     [ -z "$BACKUP_DIR" ] || rm -rf "$BACKUP_DIR"
 }
 trap cleanup EXIT
@@ -252,6 +263,41 @@ if create_workspace zz-smoke-direct none; then
     api POST "/projects/$id/start"
     check "Start (HTTP $STATUS)" [ "$STATUS" = 200 ]
     check "Running again" wait_running "$id"
+
+    section "Group users"
+    api PUT "/projects/$id/group" '{"group":"zz-smoke-group"}'
+    check "Workspace moved to group zz-smoke-group (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
+    api POST /users "{\"username\":\"zz-smoke-user\",\"password\":\"$password\",\"groups\":[\"zz-smoke-group\"]}"
+    user_id=$(json 'd["user"]["id"]')
+    [ -z "$user_id" ] || GROUP_USERS+=("$user_id")
+    check "User created (HTTP $STATUS)" [ "$STATUS" = 201 ]
+    as_group api POST /auth/login "{\"username\":\"zz-smoke-user\",\"password\":\"$password\"}"
+    check "Login as group user (HTTP $STATUS, role $(json 'd.get("role")'))" [ "$(json 'd.get("role")')" = group ]
+    as_group api GET /projects/
+    check "List shows only the group's workspace" [ "$(json "[p['projectId'] for p in d['projects']] == ['$id']")" = True ]
+    as_group api POST /projects/create '{}'
+    check "Creating workspaces forbidden (HTTP $STATUS)" [ "$STATUS" = 403 ]
+    as_group api GET /users
+    check "User management forbidden (HTTP $STATUS)" [ "$STATUS" = 403 ]
+    as_group api PUT "/projects/$id/name" '{"name":"zz-smoke-renamed"}'
+    check "Rename (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    as_group api PUT "/projects/$id/notes" '{"notes":"smoke test"}'
+    check "Edit notes (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    as_group api POST "/projects/$id/stop"
+    check "Stop as group user (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    as_group api POST "/projects/$id/start"
+    check "Start as group user (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    api PUT "/projects/$id/group" '{"group":"Uncategorized"}'
+    as_group api GET "/projects/$id"
+    check "Workspace outside the user's groups hidden (HTTP $STATUS)" [ "$STATUS" = 404 ]
+    api PUT "/users/$user_id" "{\"password\":\"$password-new\"}"
+    as_group api GET /projects/
+    check "New password ends the user's session (HTTP $STATUS)" [ "$STATUS" = 401 ]
+    api DELETE "/users/$user_id"
+    check "User deleted (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    [ "$STATUS" = 200 ] && GROUP_USERS=()
+
     check "Delete" delete_workspace "$id"
     check "Container removed" container_gone "workspace-$id"
 fi
