@@ -314,8 +314,10 @@ Service images and Dockerfile bases are pinned so a rebuild produces the same st
 (in `docker-compose.yml`), `andyshinn/dnsmasq` and `ubuntu/squid` by digest (no version
 tag matches the builds in use), `codercom/code-server:4.141.0`, and `node:22-alpine`
 for the API server (major pinned, patch updates come with rebuilds). To update, change
-the version, redeploy and test. The AI tools inside the code-server image deliberately
-stay on their latest releases (`update_ai_agents` inside a workspace).
+the version, redeploy and test. The AI tools are not pinned: each image build installs
+their latest releases. Inside a workspace nothing updates automatically, so all workspaces
+created from one image share the same versions; `update_ai_agents` updates them on demand
+(no sudo).
 
 ## Logs
 
@@ -428,6 +430,7 @@ What changes:
 | Logs | Docker logs limited to `LOG_MAX_SIZE` × `LOG_MAX_FILE` (default 10 MB × 3); squid logs rotated daily, 14 days kept (see "Logs") | Existing workspaces keep unlimited Docker logs until recreated |
 | Backups | New `./backup.sh` with restore (see "Backup and Restore") | Set up a nightly cron job |
 | `.env` | `deploy.sh` makes it readable by its owner only (`chmod 600`); without a terminal (CI, cron, `</dev/null`) every prompt takes its default instead of ending the script silently | Tools reading `.env` must run as its owner |
+| AI tools | Removed Continue, Aider and Qwen Code; added GitHub Copilot CLI and the VS Code extensions Cline, Kilo Code and Claude Code; OpenCode 2. CLI tools in `/opt/ai-tools` (owned by `coder`), one `update_ai_agents` without sudo, no automatic updates (see [AI_TOOLS.md](AI_TOOLS.md)) | Rebuild the code-server image (`./deploy.sh` without `--skip-build`); existing workspaces keep their old tools until recreated. The applied Security Proxy whitelist stays: add `.githubcopilot.com`, `.kilo.ai`, `.cline.bot` if those tools are used |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
 Forgejo admin password) until they are recreated; `setup_local_remote` works in them

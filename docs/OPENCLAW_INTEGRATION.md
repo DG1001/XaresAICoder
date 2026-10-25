@@ -101,7 +101,7 @@ OpenClaw (proactive, 10:30am): "3 students haven't made any AI queries in
 Teacher: "Show me a summary of AI usage for the class"
 OpenClaw: "Workshop 'flask-intro' (25 students):
   - Avg AI queries: 47/student
-  - Most used tool: Claude Code (62%), Aider (28%), Cline (10%)
+  - Most used tool: Claude Code (62%), Codex (28%), Cline (10%)
   - Top topics: Flask routing, Jinja templates, SQLAlchemy
   - 3 students appear stuck on database migration
   Here's the full report: [link to generated doc]"

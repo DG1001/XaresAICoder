@@ -21,7 +21,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
-| 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | 🚧 in Arbeit (Branch `feat/ai-agents`) |
+| 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
 
 ---
 
@@ -1624,3 +1624,30 @@ npm, PyPI, Open VSX, GitHub; Stichproben selbst nachgeprüft).
   Copilot und Kilo als Gespräch erfasst (GETs ohne `model` verwirft der Logger wie
   vorgesehen). Mitschnitte, Domain-Datei, Workspace und Forgejo-Nutzer entfernt.
 - Smoke-Test 31/31.
+
+### 4.3 Doku
+
+**Änderung**
+- `docs/AI_TOOLS.md` überarbeitet: drei vorinstallierte Erweiterungen und sechs
+  CLI-Tools, Abschnitte für Continue, Aider und Qwen entfernt, neue Abschnitte für Copilot
+  CLI, Kilo Code und die Claude-Code-Erweiterung, OpenCode 2 statt „OpenCode SST“ mit
+  Installer-Skript, Codex-Anmeldung per `--device-auth` / `--with-api-key` statt kopierter
+  `auth.json`. Neu: „Updating the Tools“ (keine automatischen Updates, `update_ai_agents`,
+  Paketnamen, eigene Update-Befehle der Tools), Netzwerk in beiden Proxy-Modi, Logins in
+  Klonen. Vergleichstabellen ohne die entfernten Tools; Kilo Code und Copilot CLI ohne
+  Sterne-Bewertung (keine belastbare Grundlage).
+- `docs/user-guide.md`, `docs/CREDENTIAL_MANAGEMENT.md` (Entwurf, nur die Tool-Nennungen)
+  entsprechend; README (Tool-Liste, `update_ai_agents` statt des nicht mehr vorhandenen
+  `setup_ai_tools`), `ARCHITECTURE.md`, `TROUBLESHOOTING.md`, `API.md` (Klon-Bereinigung),
+  `OPENCLAW_INTEGRATION.md` (Beispieldaten), `DEPLOYMENT.md` (KI-Tools nicht fixiert,
+  Upgrade-Tabelle mit Rebuild-Hinweis und den neuen Whitelist-Hosts). Lokale `CLAUDE.md`.
+- Die drei großen Dokumente hat ein Agent nach einem festen Faktenblatt überarbeitet;
+  danach von mir geprüft: keine Reste der alten Tools, OpenCode-2-Befehle (`auth login`,
+  `/init`, `/share`, `/model`) gegen die installierte Version und die OpenCode-Doku
+  belegt.
+
+**Tests**
+- `codex update` und `opencode upgrade` als `coder` ohne sudo: beide erfolgreich
+  (Codex aktualisiert, OpenCode bereits aktuell). `opencode upgrade` installiert bei einer
+  neuen Version wieder alle vier Linux-Builds → Hinweis in `AI_TOOLS.md`, für OpenCode
+  `update_ai_agents opencode` zu nehmen.

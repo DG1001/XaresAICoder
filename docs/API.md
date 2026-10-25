@@ -679,7 +679,8 @@ throwaway container without network. Always removed: code-server password files,
 credentials (`~/.git-credentials`, `~/.netrc`, tokens embedded in git remote URLs), GitHub
 CLI tokens, npm auth tokens, SSH private keys (`known_hosts` is kept) and shell histories.
 Unless `keepAiLogins` is set, also removed: logins and transcripts of Claude Code, Codex,
-OpenCode, Qwen Code, Crush, Pi, Continue (API keys in `config.yaml`) and Aider (`~/.env`,
+GitHub Copilot CLI (`~/.copilot`), OpenCode, Crush, Pi, Cline and Kilo Code; for snapshots of
+older workspaces also Qwen Code, Continue (API keys in `config.yaml`) and Aider (`~/.env`,
 `~/.aider.conf.yml`, chat histories). Platform environment variables of the source (e.g.
 `GIT_ACCESS_TOKEN`) are blanked in the clones. Project files and secrets the user put into
 other files (e.g. a `.env` in the project) are not touched.

@@ -910,31 +910,28 @@ grep ENABLE_GIT_SERVER .env
 
 **Solutions**:
 
-1. **Reinstall Tools** (sudo required):
+1. **Reinstall Tools** (no sudo needed):
    ```bash
-   sudo update_aider
-   update_opencode
-   # See `info` for the full list of update commands
+   update_ai_agents            # all CLI tools: claude codex copilot crush opencode pi
+   update_ai_agents opencode   # only one
    ```
+   The tools live in `/opt/ai-tools` (owned by the workspace user). `update_ai_agents`
+   lists the tools it could not update and exits with 1. Behind the Security Proxy,
+   `registry.npmjs.org` and `github.com` must be whitelisted.
 
 2. **Check PATH**:
    ```bash
-   # Verify tools are in PATH
-   which aider
-   which opencode
-   
+   # The tools are linked in /opt/ai-tools/bin (appended to PATH)
+   which claude opencode
+   echo "$PATH"
+
    # Add to PATH if needed
-   export PATH="$HOME/.local/bin:$PATH"
+   export PATH="$PATH:/opt/ai-tools/bin"
    ```
 
-3. **Manual Installation**:
-   ```bash
-   # Install aider manually
-   pip install aider-chat
-   
-   # Install OpenCode SST manually
-   curl -sSL https://install.opencodesst.com | bash
-   ```
+3. **Workspaces created before the tool update** (October 2026) still have the old set
+   (Continue, Aider, Qwen Code) and the old `update_<tool>` scripts, which need sudo.
+   Create a new workspace (or clone one) to get the current tools.
 
 ## System Recovery
 

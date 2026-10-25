@@ -366,7 +366,7 @@ This eliminates manual token entry while maintaining the HTTP authentication app
         <div class="token-info">
           <label>OpenAI API Key</label>
           <input type="password" placeholder="sk-xxxxxxxxxxxx" id="openai-key">
-          <small>Used by: Aider, Continue, Custom tools</small>
+          <small>Used by: Codex CLI, Cline, OpenCode, Crush, Pi, Custom tools</small>
         </div>
         <div class="token-actions">
           <button class="btn-success" onclick="testAIToken('openai')">Test</button>
@@ -392,7 +392,7 @@ This eliminates manual token entry while maintaining the HTTP authentication app
         <div class="token-info">
           <label>Google AI API Key</label>
           <input type="password" placeholder="AIxxxxxxxxxxxxxxxx" id="google-key">
-          <small>Used by: Aider, OpenCode, Crush, Pi</small>
+          <small>Used by: OpenCode, Crush, Pi</small>
         </div>
         <div class="token-actions">
           <button class="btn-success" onclick="testAIToken('google')">Test</button>
@@ -600,10 +600,6 @@ ${gitTokens.forgejo ? `[credential "${gitTokens.forgejo.url}"]
     if (aiTokens.google) {
       envContent += `export GOOGLE_API_KEY="${aiTokens.google.token}"\n`;
     }
-    
-    // Aider configuration
-    envContent += `export AIDER_AUTO_COMMITS=false\n`;
-    envContent += `export AIDER_DARK_MODE=true\n`;
     
     return envContent;
   }
@@ -897,59 +893,15 @@ if [ -f "/workspace/.env" ]; then
     source /workspace/.env
 fi
 
-# Configure Aider
-if [ -n "$OPENAI_API_KEY" ]; then
-    echo "Configuring Aider with OpenAI..."
-    mkdir -p /home/coder/.config/aider
-    cat > /home/coder/.config/aider/config.yml << EOF
-# Aider Configuration for XaresAICoder
-model: gpt-4
-auto-commits: false
-dark-mode: true
-stream: true
-EOF
-fi
-
-# Configure OpenCode SST
+# Configure OpenCode
 if [ -n "$ANTHROPIC_API_KEY" ]; then
-    echo "Configuring OpenCode SST with Anthropic..."
+    echo "Configuring OpenCode with Anthropic..."
     mkdir -p /home/coder/.config/opencode
     cat > /home/coder/.config/opencode/config.json << EOF
 {
   "api_key": "$ANTHROPIC_API_KEY",
   "model": "claude-3-sonnet-20240229",
   "max_tokens": 4096
-}
-EOF
-fi
-
-# Configure Continue extension
-if [ -n "$OPENAI_API_KEY" ] || [ -n "$ANTHROPIC_API_KEY" ]; then
-    echo "Configuring Continue extension..."
-    mkdir -p /home/coder/.continue
-    cat > /home/coder/.continue/config.json << EOF
-{
-  "models": [
-$([ -n "$OPENAI_API_KEY" ] && echo '    {
-      "title": "GPT-4",
-      "provider": "openai",
-      "model": "gpt-4",
-      "apiKey": "'$OPENAI_API_KEY'"
-    },' || echo '')
-$([ -n "$ANTHROPIC_API_KEY" ] && echo '    {
-      "title": "Claude 3 Sonnet",
-      "provider": "anthropic",
-      "model": "claude-3-sonnet-20240229",
-      "apiKey": "'$ANTHROPIC_API_KEY'"
-    }' || echo '')
-  ],
-  "customCommands": [
-    {
-      "name": "commit",
-      "prompt": "Write a conventional commit message for these changes",
-      "description": "Generate commit message"
-    }
-  ]
 }
 EOF
 fi
@@ -966,11 +918,10 @@ echo "📁 Available Git Helpers:"
 [ -f "/home/coder/bin/create-forgejo-repo.sh" ] && echo "  • create-forgejo-repo <name> [description] [private]"
 echo "  • git-helper (show all commands)"
 echo ""
-echo "🤖 AI Tools:"
-[ -n "$OPENAI_API_KEY" ] && echo "  • Aider: aider --help"
-[ -n "$OPENAI_API_KEY" ] && echo "  • Continue: Available in VS Code"
-[ -n "$ANTHROPIC_API_KEY" ] && echo "  • Cline: Available in VS Code"
-[ -n "$ANTHROPIC_API_KEY" ] && echo "  • OpenCode SST: opencode [prompt]"
+echo "🤖 AI Tools (run 'info' for login hints):"
+echo "  • VS Code: Cline, Kilo Code, Claude Code for VS Code"
+echo "  • Terminal: claude, codex, copilot, opencode, crush, pi"
+echo "  • Update: update_ai_agents [claude codex copilot crush opencode pi]"
 echo ""
 
 # Check and install missing extensions
