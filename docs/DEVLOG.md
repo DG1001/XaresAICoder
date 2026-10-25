@@ -594,18 +594,21 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
 
 ### Beobachtete, vorbestehende Probleme (Backlog)
 
-- **„Error loading disk usage“ bei Seiten-Reloads**: Lädt das Dashboard neu, während
-  die Disk-Usage-Abfragen laufen, bricht der Browser sie ab und die App meldet jeden
-  Abbruch als Fehler in der Konsole (harmlos, vorbestehend; beim E2E-Test 2.6/2.8 sichtbar).
+- ~~**„Error loading disk usage“ bei Seiten-Reloads**~~ – behoben 2026-10-25 (siehe
+  „Backlog-Aufräumen“ am Ende).
 - ~~**Clone-Branch auf leerem Repo**: `setupCloneBranch` meldet „Branch created“, obwohl
   `git push` scheitert~~ – entfallen in 2.7 (eigenes Repo pro Klon, Exit-Code geprüft).
 - ~~**`DNS … not ready after 10000ms, proceeding anyway`** beim Erstellen~~ – behoben in
   2.4: Der Server konnte die Namen von Proxy-Workspaces nie auflösen (anderes Netz);
   die Prüfung läuft jetzt in nginx.
-- **Alias direkt nach dem Anlegen** liefert kurz 404 (nginx-Reload ist asynchron); das
-  API meldet bereits Erfolg.
-- Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env
-  (bekannt, Paket 2).
+- ~~**Alias direkt nach dem Anlegen** liefert kurz 404~~ – behoben 2026-10-25 (siehe
+  „Backlog-Aufräumen“ am Ende).
+- ~~Klone erben weiterhin `GIT_ADMIN_PASSWORD` und `PASSWORD` aus dem Snapshot-Env~~ –
+  erledigt seit 2.2/2.7: `PLATFORM_ENV_KEYS` überschreibt alle Plattform-Variablen im Klon
+  leer, sofern der Klon sie nicht selbst setzt; `PASSWORD` ist das Klon-Passwort,
+  `GIT_ADMIN_PASSWORD` das Forgejo-Token des Klons.
+- **API direkt nach einem Server-Neustart**: etwa 6 s lang „Project not found“ für
+  bestehende Projekte, bis `projects.json` geladen ist (beobachtet 2026-10-25, vorbestehend).
 
 ### Vorgemerkte Aufgaben und Feature-Ideen
 
@@ -1663,3 +1666,42 @@ dem Test gelöscht) in einem Workspace mit Standardeinstellungen (kein sudo,
   einschalten. Keine Codeänderung; der Modus ist standardmäßig aus.
 - Nebenbefund: Kilo sendet Telemetrie (PostHog), im Log sichtbar.
 - Workspace, Kilo-Daten, Key-Dateien (Host und Workspace) und Forgejo-Nutzer entfernt.
+
+---
+
+## Backlog-Aufräumen (2026-10-25)
+
+**Alias sofort erreichbar**
+- Problem nachgestellt: Alias auf einen Port mit laufendem Webserver angelegt → API 201,
+  Anfrage sofort danach 404, nach 0,3 s 200 (6 von 6 Versuchen). `nginx -s reload` kehrt
+  zurück, sobald das Signal gesendet ist; bis neue Worker laufen, antworten die alten.
+- `aliasesService.reloadNginx`: merkt sich die PIDs der nginx-Worker (aus `/proc`, das
+  Image hat kein procps; nur Befehlszeilen, die mit „nginx: worker process“ beginnen –
+  die eigene Prüf-Shell enthielt den Text auch) und wartet nach dem Reload bis zu 3 s,
+  bis ein neuer Worker läuft. Danach nehmen die alten keine neuen Verbindungen mehr an.
+- Test: 6 neue Aliase, jeweils sofort 200; die API antwortet nach etwa 0,5 s statt sofort.
+  Test-Workspace samt Aliasen und Forgejo-Nutzer entfernt.
+
+**„Error loading disk usage“**
+- `app.js`: `pagehide` setzt `leavingPage`; Fehler der Disk-Usage-Abfragen werden beim
+  Verlassen der Seite und bei `AbortError` nicht mehr gemeldet. Nicht im Browser getestet
+  (die Reihenfolge `pagehide` → Abbruch beim Entladen ist durch den Browser vorgegeben).
+
+**Klone erben Plattform-Variablen**: veralteter Eintrag, seit 2.2/2.7 erledigt (siehe oben).
+
+**Kilo Code: Telemetrie und Session-Upload** (2026-10-25)
+- Recherche (statische Analyse der Erweiterung 7.8.17 und des gebündelten `kilo`, Repo
+  `Kilo-Org/kilocode`, kilo.ai/privacy): Telemetrie an PostHog US (`us.i.posthog.com`) –
+  Nutzungsereignisse mit Modell, Provider, Tokens, Kosten, Sprache, Fehlermeldungen
+  (können Pfade enthalten), Geräte-ID; mit Kilo-Konto an dessen E-Mail gebunden. Keine
+  Prompts oder Code gefunden. Standard an; die Erweiterung richtet sich nach VS Codes
+  Telemetrie-Schalter und gibt ihn als `KILO_TELEMETRY_LEVEL` an ihr Backend weiter. Bei
+  uns aus: code-server läuft mit `disable-telemetry: true` (Image und vom Server
+  geschriebene `config.yaml`; zur Laufzeit mit geöffneter Kilo-Oberfläche nicht geprüft).
+- Getrennt davon lädt Kilo mit Kilo-Konto **komplette Sitzungen** (Prompts, Antworten,
+  Tool-Ausgaben, Code, Diffs) nach `ingest.kilosessions.ai` – unabhängig vom
+  Telemetrie-Schalter. Mit dir abgestimmt: im Image abgeschaltet
+  (`KILO_DISABLE_SESSION_INGEST=1`, die Erweiterung reicht die Umgebung an ihr Backend
+  durch). Mit eigenem API-Key gibt es keinen Upload.
+- Hinweise in `AI_TOOLS.md` (Abschnitt Kilo Code) und auf der Kilo-Karte im Dashboard.
+- Image neu gebaut, Variable gesetzt, Tools laufen; Smoke-Test grün.

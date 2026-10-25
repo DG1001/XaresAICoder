@@ -85,6 +85,8 @@ Pre-installed (extension ID `kilocode.kilo-code`).
 
 Kilo Code stores its data in `~/.local/share/kilo`.
 
+**Privacy.** Kilo sends usage telemetry to PostHog (US): events such as model, provider, token counts, cost, programming language and error messages, with a machine ID, or tied to the e-mail address when signed in with a Kilo account; no prompts or code were found in it. It follows VS Code's telemetry setting, which is off in XaresAICoder workspaces (`disable-telemetry` in code-server). Separately, Kilo uploads complete sessions (prompts, answers, tool output, code, diffs) to its cloud when you sign in with a Kilo account; the image switches this off with `KILO_DISABLE_SESSION_INGEST=1`. With your own API key, prompts go directly to the chosen provider.
+
 Kilo runs shell commands normally in the workspaces. Do not switch on its optional sandbox for new sessions: it uses `bwrap`, which needs unprivileged user namespaces, and Docker's default seccomp profile of the workspaces blocks them (same as Codex's own sandbox).
 
 #### Usage Examples

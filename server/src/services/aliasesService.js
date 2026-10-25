@@ -437,7 +437,10 @@ ${authBasic}
       throw e;
     }
 
-    // 2) Reload.
+    // 2) Reload. `nginx -s reload` returns once the signal is sent; until the
+    // master has started workers with the new config, the old ones answer (a
+    // new alias then hits the catch-all 404). Wait for the new generation.
+    const workersBefore = await this.nginxWorkerPids(container);
     const reloadOutput = await this.execInContainer(container, ['nginx', '-s', 'reload']);
     if (reloadOutput.exitCode !== 0) {
       console.error('nginx -s reload failed:', reloadOutput.stderr || reloadOutput.stdout);
@@ -445,6 +448,20 @@ ${authBasic}
       e.code = 'NGINX_RELOAD';
       throw e;
     }
+    for (let waited = 0; waited < 3000; waited += 50) {
+      const workers = await this.nginxWorkerPids(container);
+      if (workers.some(pid => !workersBefore.includes(pid))) return;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    console.warn('reloadNginx: no new worker processes after 3 s');
+  }
+
+  // PIDs of nginx worker processes (from /proc, the image has no procps)
+  async nginxWorkerPids(container) {
+    const out = await this.execInContainer(container, ['sh', '-c',
+      'for p in /proc/[0-9]*; do case "$(tr -d "\\000" < "$p/cmdline" 2>/dev/null)" in ' +
+      '"nginx: worker process"*) echo "${p#/proc/}" ;; esac; done']);
+    return (out.stdout || '').split(/\s+/).filter(Boolean);
   }
 
   execInContainer(container, cmd) {
