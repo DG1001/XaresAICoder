@@ -1266,7 +1266,8 @@ fi`.trim();
       'AI APIs': [
         'openai.com', 'anthropic.com', 'googleapis.com', 'google.dev',
         'opencode.ai', 'huggingface.co', 'ollama.ai', 'ollama.com',
-        'z.ai', 'api.z.ai', 'cohere.ai', 'mistral.ai'
+        'z.ai', 'api.z.ai', 'cohere.ai', 'mistral.ai',
+        'githubcopilot.com', 'kilo.ai', 'cline.bot'
       ],
       'Documentation': [
         'docs.python.org', 'developer.mozilla.org', 'nodejs.org',

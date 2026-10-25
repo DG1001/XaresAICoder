@@ -1586,3 +1586,41 @@ npm, PyPI, Open VSX, GitHub; Stichproben selbst nachgeprüft).
 - **Offen**: Kilo bringt eine `bwrap`-Sandbox mit; die Standard-Seccomp-Regeln der
   Workspaces blockieren User-Namespaces (wie bei Codex). Ob Kilo sie standardmäßig nutzt,
   ließ sich ohne Modellzugang nicht prüfen.
+
+### 4.2 Dashboard, Logging-Proxy und Whitelist für die neue Auswahl
+
+**Problem**
+- Das Dashboard („AI Tools“) zeigte Continue, Aider und Qwen Code und bezeichnete die
+  Erweiterungen als „install from marketplace“; Codex sollte per kopierter `auth.json`
+  angemeldet werden. Der Hinweis zu „Copy AI tool logins“ beim Klonen nannte die alten
+  Tools.
+- Die neuen Tools sprechen mit eigenen Diensten, die weder die Standard-Whitelist noch
+  die Erfassung im Logging-Proxy kannten: Copilot `*.githubcopilot.com`, Kilo
+  `api.kilo.ai` / `ai-gateway.kilo.ai`, Cline `api.cline.bot` (Hosts aus den
+  installierten Erweiterungen gelesen; Copilot aus GitHubs „Copilot allowlist
+  reference“, das Binary enthält sie nicht im Klartext).
+
+**Änderung**
+- `frontend/index.html`: Erweiterungen Cline, Kilo Code, Claude Code als vorinstalliert;
+  CLI-Tools Claude Code, Codex (`codex login --device-auth` / `--with-api-key`), Copilot
+  CLI (`/login` oder `GH_TOKEN`), OpenCode, Crush, Pi; Hinweis auf `update_ai_agents`;
+  Klon-Hinweis mit den aktuellen Tools.
+- `squid/whitelist-default.conf`: `ai_copilot` (`.githubcopilot.com`), `ai_kilo`
+  (`.kilo.ai`), `ai_cline` (`.cline.bot`). Die Anmeldung bei Copilot läuft über die
+  bereits erlaubten `.github.com` / `.githubusercontent.com`.
+- `mitmproxy/llm-logger.py`: dieselben Hosts als LLM-Endpunkte; `docker.js`: Kategorie
+  „AI APIs“ für aufgezeichnete Domains um `githubcopilot.com`, `kilo.ai`, `cline.bot`.
+
+**Entscheidungen**
+- Bestehende Installationen behalten ihre angewandte Whitelist (Volume
+  `squid_whitelist`, 3.1); die neuen Hosts gelten dort erst nach Aufzeichnen und
+  Anwenden oder `PUT /api/whitelist` (Upgrade-Hinweis in 4.3).
+
+**Tests (live)**
+- Neue Standard-Whitelist in einem Wegwerf-Container: `squid -k parse` rc 0, keine
+  Fehler, die drei ACLs verarbeitet.
+- Deploy; Workspace hinter dem Logging-Proxy: Anfragen an Copilot, Kilo und Cline als
+  Domains aufgezeichnet und unter „AI APIs“ einsortiert; Aufrufe im Chat-Format an
+  Copilot und Kilo als Gespräch erfasst (GETs ohne `model` verwirft der Logger wie
+  vorgesehen). Mitschnitte, Domain-Datei, Workspace und Forgejo-Nutzer entfernt.
+- Smoke-Test 31/31.
