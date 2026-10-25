@@ -2,6 +2,10 @@
 class XaresAICoder {
     constructor() {
         this.apiBase = this.detectApiBase();
+        // Requests still running when the page is left are aborted by the browser;
+        // that is not an error worth reporting
+        this.leavingPage = false;
+        window.addEventListener('pagehide', () => { this.leavingPage = true; });
         this.projects = [];
         this.groups = [];
         this.selectedGroup = null;
@@ -956,6 +960,7 @@ class XaresAICoder {
                     this.updateProjectDiskUsage(project.projectId, data.diskUsage);
                 }
             } catch (error) {
+                if (this.leavingPage || error.name === 'AbortError') return;
                 console.error(`Error loading disk usage for ${project.projectId}:`, error);
             }
         });
