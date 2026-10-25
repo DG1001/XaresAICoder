@@ -189,6 +189,20 @@ tmpfs:
 - **Volume Encryption** - Host-level encryption support
 - **Backup Isolation** - Separate backup policies per workspace
 
+### VS Code Workspace Trust
+
+The image switches VS Code's Workspace Trust off (`"security.workspace.trust.enabled": false`
+in the user settings). Otherwise every new workspace opens in Restricted Mode, and Cline,
+Claude Code for VS Code and other extensions only start after a click on "Trust".
+
+What this means: the workspace folder counts as trusted. Settings in a cloned repository's
+`.vscode/settings.json` apply, and extensions such as the Python extension may run tools or
+interpreters that the repository configures. Automatic tasks stay off: `task.allowAutomaticTasks`
+defaults to `off` and cannot be switched on by a repository. Such code runs as `coder` inside
+the workspace container only, but it can read what is stored there (AI tool logins, the
+workspace's Forgejo token). Do not open untrusted repositories in workspaces that hold
+credentials, or switch the setting back on in your VS Code user settings.
+
 ### Network Isolation
 
 Workspaces never share a network with the API server, and each proxy mode has
