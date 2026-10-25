@@ -132,7 +132,7 @@ Workspaces created before the current tool set keep their old tools and old upda
 
 ### VS Code AI Extensions
 
-These extensions are pre-installed. Automatic extension updates are disabled, so update them manually in the Extensions view.
+Cline and Claude Code for VS Code are pre-installed, Kilo Code can be added. Automatic extension updates are disabled, so update them manually in the Extensions view.
 
 #### Cline Extension
 Pre-installed: `saoudrizwan.claude-dev`
@@ -140,8 +140,11 @@ Pre-installed: `saoudrizwan.claude-dev`
 - You approve each step
 - Bring your own API key (Anthropic, OpenAI, OpenRouter, local models, ...) or use a Cline account
 
-#### Kilo Code Extension
-Pre-installed: `kilocode.kilo-code`
+#### Kilo Code Extension (optional)
+Not pre-installed: it takes about 550 MB and about 350 MB RAM per workspace even when
+idle. Install it in the terminal with `code-server --install-extension kilocode.kilo-code`
+(or search "Kilo Code" in the Extensions view), then reload the window. In a workshop,
+install it in the base workspace before cloning; the clones keep it.
 - Open source (MIT) agent with chat and autocomplete
 - Modes for planning, coding and debugging
 - Kilo account (gateway to many models) or your own API keys for 30+ providers
@@ -160,7 +163,7 @@ Pre-installed: `anthropic.claude-code`
    - **OpenCode**: Project analysis, collaboration
    - **Claude Code**: Complex multi-file tasks
    - **GitHub Copilot CLI**: Terminal agent with your GitHub Copilot plan
-   - **Kilo Code**: Inline completions
+   - **Kilo Code** (optional): Inline completions
    - **Cline**: VS Code integrated editing
 4. **Review code**: Always review AI-generated code before using it
 5. **Combine tools**: Use different tools for different tasks
@@ -269,7 +272,7 @@ Your Python Flask workspace includes:
    # Claude Code for interactive development
    claude
    
-   # Kilo Code extension for inline completions (in VS Code)
+   # Cline or Claude Code for VS Code for work inside the editor
    ```
 
 ### Helper Function
@@ -323,8 +326,8 @@ For all CLI tools:
 - Reinstall or update with `update_ai_agents <name>` (no sudo needed)
 - Behind the Security Proxy, Copilot CLI needs `.githubcopilot.com`; on installations upgraded from older versions, ask your admin to add it to the whitelist
 
-For VS Code Extensions (Cline, Kilo Code, Claude Code):
-- Pre-installed; open the extension and sign in or enter an API key
+For VS Code Extensions (Cline, Claude Code, optionally Kilo Code):
+- Cline and Claude Code are pre-installed (Kilo Code: see above); open the extension and sign in or enter an API key
 - Claude Code for VS Code uses the login of the `claude` CLI
 - Behind the Security Proxy, Kilo accounts need `.kilo.ai` and Cline accounts `.cline.bot`; on installations upgraded from older versions, ask your admin to add them to the whitelist
 

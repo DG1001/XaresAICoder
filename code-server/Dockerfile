@@ -72,9 +72,10 @@ RUN echo 'case ":$PATH:" in *:/opt/ai-tools/bin:*) ;; *) PATH="$PATH:/opt/ai-too
 ENV DISABLE_AUTOUPDATER=1 \
     OPENCODE_DISABLE_AUTOUPDATE=1 \
     COPILOT_AUTO_UPDATE=false
-# Kilo Code uploads every session (prompts, answers, tool output, code, diffs)
-# to its cloud when signed in with a Kilo account; independent of telemetry,
-# which code-server's disable-telemetry already switches off for Kilo
+# Kilo Code (not pre-installed, users can add it) uploads every session
+# (prompts, answers, tool output, code, diffs) to its cloud when signed in
+# with a Kilo account; independent of telemetry, which code-server's
+# disable-telemetry already switches off for Kilo
 ENV KILO_DISABLE_SESSION_INGEST=1
 # OpenAI Codex uses the system ripgrep
 ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg

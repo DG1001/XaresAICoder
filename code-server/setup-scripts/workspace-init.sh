@@ -112,8 +112,9 @@ echo "                  | docs: pi.dev/docs/latest"
 echo ""
 echo "📦 VS Code Extensions (pre-installed):"
 echo "  • Cline       - agent for multi-file edits (own API keys)"
-echo "  • Kilo Code   - agent with chat and autocomplete (Kilo account or own API keys)"
 echo "  • Claude Code - VS Code panel for the claude CLI"
+echo "  Optional: Kilo Code (~550 MB, ~350 MB RAM even when idle):"
+echo "    code-server --install-extension kilocode.kilo-code"
 echo ""
 echo "📁 Current Directory: $(pwd)"
 if [ -d ".git" ]; then
@@ -469,8 +470,10 @@ Update them with `update_ai_agents` (all) or `update_ai_agents <tool>`.
 
 ### VS Code Extensions (pre-installed)
 - **Cline** - agent for multi-file edits (`saoudrizwan.claude-dev`)
-- **Kilo Code** - agent with chat and autocomplete (`kilocode.kilo-code`)
 - **Claude Code** - VS Code panel for the `claude` CLI (`anthropic.claude-code`)
+
+Optional, not pre-installed (about 550 MB, uses about 350 MB RAM even when idle):
+**Kilo Code**, agent with chat and autocomplete - `code-server --install-extension kilocode.kilo-code`
 
 ## 🌐 Port Forwarding
 
@@ -637,7 +640,6 @@ SETTINGS_EOF
 {
     "recommendations": [
         "saoudrizwan.claude-dev",
-        "kilocode.kilo-code",
         "ms-vscode.vscode-json",
         "redhat.vscode-yaml",
         "ms-python.python",

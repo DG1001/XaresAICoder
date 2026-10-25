@@ -19,10 +19,10 @@ XaresAICoder provides a curated selection of AI coding assistants that work seam
 
 ### Tool Categories
 
-**🎯 VS Code Extensions** - Integrated directly into the editor (pre-installed)
-- **Cline** - Autonomous agent for multi-file edits and terminal commands
-- **Kilo Code** - Open source agent with chat, autocomplete and modes for planning, coding and debugging
-- **Claude Code for VS Code** - Claude Code panel next to the editor
+**🎯 VS Code Extensions** - Integrated directly into the editor
+- **Cline** - Autonomous agent for multi-file edits and terminal commands (pre-installed)
+- **Claude Code for VS Code** - Claude Code panel next to the editor (pre-installed)
+- **Kilo Code** - Open source agent with chat, autocomplete and modes for planning, coding and debugging (optional, install on demand)
 
 **⌨️ Command Line Tools** - Terminal-based AI assistants (pre-installed)
 - **OpenCode** - Multi-model AI with project analysis
@@ -77,7 +77,17 @@ Cline stores its data in `~/.cline`.
 - ✅ **Many Providers** - Kilo account (gateway to many models) or your own API keys for 30+ providers
 
 #### Installation
-Pre-installed (extension ID `kilocode.kilo-code`).
+Not pre-installed: the extension takes about 550 MB (it ships its own `kilo` backend and
+`ffmpeg`) and starts with every VS Code window, which costs about 350 MB RAM per workspace
+even when nobody uses it. Install it where it is wanted, without sudo:
+
+```bash
+code-server --install-extension kilocode.kilo-code
+```
+
+(or search "Kilo Code" in the Extensions view), then reload the window (`Ctrl+Shift+P` →
+"Developer: Reload Window"). Open VSX is in the default Security Proxy whitelist. For a
+workshop, install it in the base workspace before cloning; the clones keep it.
 
 #### Setup
 1. Open the Kilo Code panel in VS Code
@@ -585,7 +595,7 @@ The tools' own update commands also work without sudo, e.g. `claude update`, `co
 
 ### VS Code Extensions
 
-Update Cline, Kilo Code and Claude Code for VS Code manually in the Extensions view (`Ctrl+Shift+X`).
+Update Cline, Claude Code for VS Code and (if installed) Kilo Code manually in the Extensions view (`Ctrl+Shift+X`).
 
 ### Notes
 
@@ -605,7 +615,7 @@ Update Cline, Kilo Code and Claude Code for VS Code manually in the Extensions v
 | **Multi-File Ops** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
 | **Learning Curve** | ⭐⭐ | ⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ |
 
-Kilo Code and GitHub Copilot CLI are not rated in this matrix. Kilo Code is the pre-installed extension with inline autocomplete; Claude Code for VS Code is a panel for the same Claude Code agent as the `claude` CLI.
+Kilo Code and GitHub Copilot CLI are not rated in this matrix. Kilo Code is the optional extension with inline autocomplete; Claude Code for VS Code is a panel for the same Claude Code agent as the `claude` CLI.
 
 ### Model Support
 
@@ -629,19 +639,19 @@ Kilo Code and GitHub Copilot CLI are not rated in this matrix. Kilo Code is the 
 ```mermaid
 graph TD
     A[Development Phase] --> B{Task Type}
-    B -->|Writing Code| C[Kilo Code + Cline]
+    B -->|Writing Code| C[Cline + Claude Code]
     B -->|Planning| D[OpenCode + Claude Code]
     B -->|Refactoring| E[Cline + Claude Code]
-    B -->|Debugging| F[Claude Code + Kilo Code]
-    B -->|Learning| G[Kilo Code + OpenCode]
+    B -->|Debugging| F[Claude Code + Cline]
+    B -->|Learning| G[OpenCode + Cline]
 ```
 
 **Recommended Combinations**:
-- **Beginner**: Kilo Code + OpenCode + Crush
-- **Intermediate**: Kilo Code + Cline + Crush
+- **Beginner**: Cline + OpenCode + Crush
+- **Intermediate**: Cline + Claude Code + Crush
 - **Advanced**: All tools based on specific needs
 - **Team Lead**: OpenCode + Claude Code + Crush
-- **Multi-Model Focus**: Crush + Kilo Code + OpenCode
+- **Multi-Model Focus**: Crush + OpenCode + Pi
 - **GitHub Copilot Plan** (including Free and Student): GitHub Copilot CLI + OpenCode (signed in with GitHub Copilot)
 
 ### 2. Workflow Integration
@@ -651,8 +661,8 @@ graph TD
 opencode
 /init
 
-# Development phase - use Kilo Code for inline help
-# (VS Code extension, sign in or add an API key once)
+# Development phase - use Cline for help inside the editor
+# (VS Code extension, add an API key or sign in once)
 
 # Feature implementation - use Claude Code for multi-file changes
 claude
@@ -687,7 +697,7 @@ crush
 > "Implement the authentication system we discussed in auth.py, models.py and routes.py"
 
 # 4. Get inline help while refining
-# (Use Kilo Code in VS Code for small adjustments)
+# (Use Cline or Claude Code for VS Code for small adjustments)
 
 # 5. Final review and optimization
 claude
@@ -713,7 +723,7 @@ export PROJECT_B_OPENAI_KEY=key2
 ### 5. Cost Optimization
 
 **Token Usage Tips**:
-- Use autocomplete (Kilo Code) for simple completions instead of a full agent run
+- Use small, focused requests for simple changes instead of a full agent run
 - Use Claude Code for complex multi-file operations (higher value)
 - Limit context size in long conversations
 - Use local models for experimentation
@@ -763,11 +773,11 @@ Workspaces created before the current tool set keep their old tools; recreate th
 # Ctrl+Shift+P -> "Developer: Reload Window"
 
 # Check extensions are installed
-code --list-extensions | grep -E "(claude-dev|kilo-code|claude-code)"
+code-server --list-extensions | grep -E "(claude-dev|claude-code|kilo-code)"
 
 # Reinstall extension
-code --uninstall-extension saoudrizwan.claude-dev
-code --install-extension saoudrizwan.claude-dev
+code-server --uninstall-extension saoudrizwan.claude-dev
+code-server --install-extension saoudrizwan.claude-dev
 ```
 
 #### Model/API Errors

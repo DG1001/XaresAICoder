@@ -36,7 +36,7 @@ Pre-configured workspace with multiple AI coding assistants:
 - **Crush** - Multi-model AI with in-session model switching and LSP integration
 - **Pi** - Minimal multi-provider coding agent
 - **Cline** - VS Code extension: autonomous agent for multi-file edits and terminal commands
-- **Kilo Code** - VS Code extension: open-source agent with chat, autocomplete and modes
+- **Kilo Code** (optional, installable per workspace) - VS Code extension: open-source agent with chat, autocomplete and modes
 
 Users bring their own subscriptions or API keys. `update_ai_agents` updates the CLI tools without sudo; nothing updates automatically, so all participants of a workshop keep the same versions.
 
