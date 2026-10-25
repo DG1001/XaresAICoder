@@ -28,43 +28,39 @@ XaresAICoder provides multiple AI coding assistants. Here's how to get started w
 
 #### Quick Reference
 ```bash
-info  # Lists all pre-installed AI tools with binary, env vars, and docs links
+info              # Lists all pre-installed AI tools with login hints and the update command
+update_ai_agents  # Updates all CLI AI tools (no sudo needed)
 ```
 
-#### OpenCode SST - Multi-model AI Assistant
-Best for project analysis and collaborative development:
+#### OpenCode - Multi-model AI Assistant
+Best for project analysis and collaborative development (75+ providers, or sign in with a GitHub Copilot or ChatGPT account):
 ```bash
 opencode auth login # Authenticate
 opencode            # Start interactive session
 # Then type: /init  # Initialize project analysis
 ```
 
-#### Aider - AI Pair Programming
-Best for interactive coding with direct file editing:
-```bash
-export OPENAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, GEMINI_API_KEY
-aider  # Start pair programming session
-```
-
 #### Claude Code - Anthropic's Agentic Tool
 Best for deep codebase understanding and advanced workflows:
 ```bash
-export ANTHROPIC_API_KEY=your_key_here  # Or sign in to Claude Pro/Max
+export ANTHROPIC_API_KEY=your_key_here  # Or sign in with Claude Pro/Max
 claude  # Start agentic coding session
-```
-
-#### Qwen Code - AI Workflow Automation
-Best for comprehensive code analysis and workflow automation:
-```bash
-export DASHSCOPE_API_KEY=your_key_here  # Free Qwen OAuth tier was discontinued April 2026 — use DashScope, OpenRouter, or a paid Qwen Coding Plan
-qwen  # Start interactive session
+# Pro/Max login in the browser workspace: open the URL shown, then paste the code into the terminal
 ```
 
 #### OpenAI Codex CLI - Terminal-Based Coding Assistant
 Best for terminal-based ChatGPT integration with MCP support:
 ```bash
-# On host: codex login, then copy ~/.codex/auth.json into the workspace container
+codex login --device-auth  # Sign in with your ChatGPT account
+# or with an API key: printenv OPENAI_API_KEY | codex login --with-api-key
 codex  # Start interactive coding session
+```
+
+#### GitHub Copilot CLI - GitHub Copilot in the Terminal
+Included in every GitHub Copilot plan, including Free and Student:
+```bash
+copilot  # Start interactive session, then type /login
+# Headless: export GH_TOKEN=<fine-grained token with the "Copilot Requests" permission>
 ```
 
 #### Crush - Multi-Model AI Coding Agent
@@ -81,23 +77,28 @@ Best for provider-agnostic terminal coding with 15+ providers:
 export ANTHROPIC_API_KEY=your_key_here  # or OPENAI/GEMINI/GROQ/MISTRAL/...
 pi  # Start interactive session
 pi -p "your question"  # One-shot print mode
+# OAuth login instead of an API key: type /login inside pi
 ```
+
+#### Updating the Tools
+Nothing updates automatically, so all participants of a workshop keep the same versions. Update when you want to:
+```bash
+update_ai_agents             # Update all six CLI tools
+update_ai_agents claude pi   # Update only the named tools (claude, codex, copilot, crush, opencode, pi)
+```
+No sudo is needed; if a tool could not be updated, the command prints an error list and exits with status 1. The tools' own update commands work too (`claude update`, `codex update`, `opencode upgrade`). Update the VS Code extensions manually in the Extensions view. Behind the Security Proxy, updates need `registry.npmjs.org` and `github.com` (both in the default whitelist).
+
+Workspaces created before the current tool set keep their old tools and old update scripts; create a new workspace to get the tools described here.
 
 ## AI Coding Tools Usage
 
-### OpenCode SST Commands
+### OpenCode Commands
 
 - **Authentication**: `opencode auth login`
 - **Interactive mode**: `opencode` (then use `/init`, `/share`, `/help`)
 - **Direct requests**: `opencode "your request"`
 - **Project analysis**: Use `/init` command in interactive mode
-
-### Aider Commands
-
-- **Start session**: `aider`
-- **Add files**: `aider file1.py file2.py` (edit specific files)
-- **Git integration**: Aider automatically commits changes
-- **Model selection**: Supports OpenAI, Anthropic, Google, and local models
+- **Documentation**: https://opencode.ai/docs
 
 ### Claude Code Commands
 
@@ -105,13 +106,7 @@ pi -p "your question"  # One-shot print mode
 - **Multi-file editing**: Understands entire codebase context
 - **Git workflows**: Advanced repository operations
 - **Complex reasoning**: Handles multi-step development tasks
-
-### Qwen Code Commands
-
-- **Interactive mode**: `qwen`
-- **Workflow automation**: Automated code analysis and generation
-- **Comprehensive analysis**: Deep understanding of project structure
-- **Multi-language support**: Works with various programming languages
+- **Manual update**: `claude update`
 
 ### OpenAI Codex CLI Commands
 
@@ -119,6 +114,12 @@ pi -p "your question"  # One-shot print mode
 - **Terminal integration**: ChatGPT-like experience in terminal
 - **MCP support**: Model Context Protocol for enhanced capabilities
 - **Direct code assistance**: Quick coding help without leaving terminal
+
+### GitHub Copilot CLI Commands
+
+- **Interactive session**: `copilot`
+- **Login**: `/login` inside the CLI, or headless with `GH_TOKEN` (fine-grained personal access token with the "Copilot Requests" permission)
+- **Documentation**: https://github.com/github/copilot-cli
 
 ### Crush Commands
 
@@ -131,27 +132,35 @@ pi -p "your question"  # One-shot print mode
 
 ### VS Code AI Extensions
 
-#### Continue Extension
-Install from marketplace: `continue.continue`
-- Inline code completion
-- Sidebar chat interface
-- Multiple AI provider support
+These extensions are pre-installed. Automatic extension updates are disabled, so update them manually in the Extensions view.
 
-#### Cline (Claude Dev) Extension
-Install from marketplace: `saoudrizwan.claude-dev`
-- Direct file editing with Claude AI
-- Multi-file operations
-- Terminal integration
+#### Cline Extension
+Pre-installed: `saoudrizwan.claude-dev`
+- Autonomous agent for multi-file edits and terminal commands
+- You approve each step
+- Bring your own API key (Anthropic, OpenAI, OpenRouter, local models, ...) or use a Cline account
+
+#### Kilo Code Extension
+Pre-installed: `kilocode.kilo-code`
+- Open source (MIT) agent with chat and autocomplete
+- Modes for planning, coding and debugging
+- Kilo account (gateway to many models) or your own API keys for 30+ providers
+
+#### Claude Code for VS Code Extension
+Pre-installed: `anthropic.claude-code`
+- Claude Code panel next to the editor
+- Chat, inline diffs and plan review
+- Uses the same login as the `claude` CLI
 
 ### Best Practices for All AI Tools
 
 1. **Be specific**: Provide clear, detailed requests
 2. **Context matters**: Include relevant file names or function names
 3. **Choose the right tool**: 
-   - **OpenCode SST**: Project analysis, collaboration
-   - **Aider**: Interactive pair programming
+   - **OpenCode**: Project analysis, collaboration
    - **Claude Code**: Complex multi-file tasks
-   - **Continue**: Inline completions
+   - **GitHub Copilot CLI**: Terminal agent with your GitHub Copilot plan
+   - **Kilo Code**: Inline completions
    - **Cline**: VS Code integrated editing
 4. **Review code**: Always review AI-generated code before using it
 5. **Combine tools**: Use different tools for different tasks
@@ -221,14 +230,14 @@ Your Python Flask workspace includes:
 
 4. Use AI tools for development:
    ```bash
-   # OpenCode SST for project analysis
+   # OpenCode for project analysis
    opencode
    # Then: /init
    
-   # Aider for interactive development
-   aider app.py
+   # Claude Code for interactive development
+   claude
    
-   # Continue extension for inline completions (in VS Code)
+   # Kilo Code extension for inline completions (in VS Code)
    ```
 
 ### Helper Function
@@ -261,23 +270,31 @@ setup_flask_project
 
 **AI Tools not working**
 
-For OpenCode SST:
+For OpenCode:
 - Ensure you've authenticated: `opencode auth login`
 - Check your API key is valid
-- Verify OpenCode SST is in your PATH: `which opencode`
-
-For Aider:
-- Set your API key: `export OPENAI_API_KEY=your_key` (or ANTHROPIC_API_KEY, GEMINI_API_KEY)
-- Check installation: `which aider`
+- Verify OpenCode is in your PATH: `which opencode`
 
 For Claude Code:
 - Requires Claude Pro/Max subscription or API billing
 - Set `ANTHROPIC_API_KEY` or sign in interactively
-- Follow authentication prompts
+- Follow authentication prompts: open the URL shown and paste the code into the terminal
 
-For VS Code Extensions (Continue, Cline):
-- Install from Extensions marketplace
-- Configure API keys in extension settings
+For Codex CLI:
+- Sign in with `codex login --device-auth` (ChatGPT account) or `printenv OPENAI_API_KEY | codex login --with-api-key`
+
+For GitHub Copilot CLI:
+- Type `/login` in `copilot`, or set `GH_TOKEN` to a fine-grained token with the "Copilot Requests" permission
+
+For all CLI tools:
+- They live in `/opt/ai-tools/bin`, which is on your PATH
+- Reinstall or update with `update_ai_agents <name>` (no sudo needed)
+- Behind the Security Proxy, Copilot CLI needs `.githubcopilot.com`; on installations upgraded from older versions, ask your admin to add it to the whitelist
+
+For VS Code Extensions (Cline, Kilo Code, Claude Code):
+- Pre-installed; open the extension and sign in or enter an API key
+- Claude Code for VS Code uses the login of the `claude` CLI
+- Behind the Security Proxy, Kilo accounts need `.kilo.ai` and Cline accounts `.cline.bot`; on installations upgraded from older versions, ask your admin to add them to the whitelist
 
 **Git issues**
 - Git is pre-configured with default user settings
@@ -295,9 +312,10 @@ For VS Code Extensions (Continue, Cline):
 ### Getting Help
 
 1. **AI Tools**: 
-   - OpenCode SST: `opencode --help` or use `/help` in interactive mode
-   - Aider: Built-in help and documentation
+   - OpenCode: `opencode --help` or use `/help` in interactive mode; docs at https://opencode.ai/docs
    - Claude Code: Comprehensive built-in guidance
+   - GitHub Copilot CLI: https://github.com/github/copilot-cli
+   - Pi: https://pi.dev
 2. **VS Code**: Use the built-in help and documentation
 3. **Flask**: Refer to the official Flask documentation
 4. **Platform issues**: Check the error messages in the browser console
@@ -335,6 +353,7 @@ Teachers can prepare a fully-configured base workspace and then clone it into mu
 
 - Running processes (each clone starts fresh)
 - The source workspace's password (you set a new one or leave clones unprotected)
+- AI tool logins and histories of Claude Code, Codex, Copilot CLI, OpenCode, Crush, Pi, Cline and Kilo Code, unless you tick **Copy AI tool logins** in the clone modal
 
 ### Technical Details
 
@@ -425,10 +444,10 @@ SECRET_KEY=your-secret-key
 
 ### Multi-File Development with AI Tools
 
-**Aider** - Best for multi-file editing:
+**Cline** - Multi-file edits from VS Code:
 ```bash
-aider models.py views.py  # Edit multiple files together
-# Aider understands relationships between files
+# Open Cline in VS Code and describe the change across models.py and views.py
+# Cline asks for your approval before each step
 ```
 
 **Claude Code** - Best for complex multi-file projects:
@@ -437,7 +456,7 @@ claude  # Understands entire codebase context
 # Can handle complex refactoring across multiple files
 ```
 
-**OpenCode SST** - Good for project-wide analysis:
+**OpenCode** - Good for project-wide analysis:
 ```bash
 opencode
 # Use /init to analyze entire project structure
@@ -476,7 +495,7 @@ gh pr create --title "Feature: User authentication"
 
 If you encounter issues or have suggestions:
 1. Check this user guide first
-2. Use OpenCode SST for coding questions
+2. Use OpenCode for coding questions
 3. Report platform issues through the appropriate channels
 
 ---

@@ -29,14 +29,16 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 
 ### 🤖 **AI Development Tools**
 Pre-configured workspace with multiple AI coding assistants:
-- **Continue** - VS Code extension for AI-powered code completion and chat
-- **Cline (Claude Dev)** - AI coding assistant with file editing capabilities
-- **OpenCode SST** - Multi-model AI assistant for project analysis
-- **Aider** - AI pair programming with direct file editing and git integration
-- **Claude Code** - Anthropic's agentic tool for deep codebase understanding
-- **Qwen Code** - AI workflow automation and code exploration
-- **OpenAI Codex CLI** - OpenAI's terminal-based coding assistant
+- **Claude Code** - Anthropic's agentic tool for deep codebase understanding (CLI and VS Code extension)
+- **OpenAI Codex CLI** - OpenAI's terminal-based coding agent
+- **GitHub Copilot CLI** - GitHub's coding agent for the terminal, included in every Copilot plan (also Free and Student)
+- **OpenCode** - Open-source coding agent for 75+ model providers
 - **Crush** - Multi-model AI with in-session model switching and LSP integration
+- **Pi** - Minimal multi-provider coding agent
+- **Cline** - VS Code extension: autonomous agent for multi-file edits and terminal commands
+- **Kilo Code** - VS Code extension: open-source agent with chat, autocomplete and modes
+
+Users bring their own subscriptions or API keys. `update_ai_agents` updates the CLI tools without sudo; nothing updates automatically, so all participants of a workshop keep the same versions.
 
 ### 🔧 **Development Ready**
 - **Empty Project** or **Git Clone** - Start fresh or clone any HTTP/HTTPS Git repository directly into workspaces
@@ -173,9 +175,9 @@ nvidia-smi  # if NVIDIA drivers are installed
 
 Once in your workspace, run these commands to get started:
 ```bash
-info                  # Show workspace info, AI tools, and current Git status
-setup_ai_tools        # Detailed setup instructions for all AI tools
-update_ai_agents      # Update AI tools to latest versions
+info                  # Show workspace info, AI tools with login hints, and current Git status
+update_ai_agents      # Update all AI CLI tools to their latest release (no sudo)
+update_ai_agents pi   # ... or only the named ones
 ```
 
 ## 📚 Documentation

@@ -97,24 +97,23 @@ echo "🚀 XaresAICoder - AI-Powered Development Environment"
 echo "=========================================="
 echo ""
 echo "🤖 AI Coding Tools (CLI, pre-installed):"
-echo "  • OpenCode SST  | opencode    | OPENAI / ANTHROPIC / GEMINI_API_KEY"
-echo "                  | docs: github.com/sst/opencode"
-echo "  • Aider         | aider       | OPENAI / ANTHROPIC / GEMINI_API_KEY"
-echo "                  | docs: aider.chat"
-echo "  • Claude Code   | claude      | ANTHROPIC_API_KEY"
-echo "                  | docs: docs.anthropic.com/claude-code"
-echo "  • Qwen Code     | qwen-code   | DASHSCOPE_API_KEY"
-echo "                  | docs: github.com/QwenLM/qwen-code"
-echo "  • OpenAI Codex  | codex       | host login → copy ~/.codex/auth.json"
+echo "  • Claude Code   | claude      | ANTHROPIC_API_KEY or Claude login"
+echo "                  | docs: code.claude.com/docs"
+echo "  • OpenAI Codex  | codex       | OPENAI_API_KEY or codex login --device-auth"
 echo "                  | docs: github.com/openai/codex"
+echo "  • Copilot CLI   | copilot     | GitHub login, or GH_TOKEN (PAT with Copilot Requests)"
+echo "                  | docs: github.com/github/copilot-cli"
+echo "  • OpenCode      | opencode    | OPENAI / ANTHROPIC / GEMINI_API_KEY, many providers"
+echo "                  | docs: opencode.ai/docs"
 echo "  • Crush         | crush       | ANTHROPIC / OPENAI / GEMINI / GROQ / OPENROUTER_API_KEY"
 echo "                  | docs: github.com/charmbracelet/crush"
 echo "  • Pi            | pi          | ANTHROPIC / OPENAI / GEMINI_API_KEY (15+ providers)"
 echo "                  | docs: pi.dev/docs/latest"
 echo ""
-echo "📦 VS Code Extensions (install from marketplace):"
-echo "  • Continue - AI completion & chat"
-echo "  • Cline (Claude Dev) - AI file editor"
+echo "📦 VS Code Extensions (pre-installed):"
+echo "  • Cline       - agent for multi-file edits (own API keys)"
+echo "  • Kilo Code   - agent with chat and autocomplete (Kilo account or own API keys)"
+echo "  • Claude Code - VS Code panel for the claude CLI"
 echo ""
 echo "📁 Current Directory: $(pwd)"
 if [ -d ".git" ]; then
@@ -138,10 +137,10 @@ if [ -d ".git" ]; then
     fi
 fi
 echo ""
-echo "🔄 Update Commands:"
-echo "  • sudo update_aider (uv)"
-echo "  • sudo update_claude, sudo update_qwen, sudo update_codex, sudo update_pi (npm)"
-echo "  • sudo update_crush, update_opencode (downloads and installs latest version)"
+echo "🔄 Updates (no sudo needed, nothing updates automatically):"
+echo "  • update_ai_agents           - all CLI tools to their latest release"
+echo "  • update_ai_agents claude pi - only the named tools"
+echo "  • VS Code extensions: Extensions view → Update"
 echo ""
 # Show Git commands only if Git server is enabled
 if [ -n "$GIT_SERVER_ENABLED" ] && [ "$GIT_SERVER_ENABLED" = "true" ]; then
@@ -151,7 +150,6 @@ if [ -n "$GIT_SERVER_ENABLED" ] && [ "$GIT_SERVER_ENABLED" = "true" ]; then
 fi
 echo "💡 Pro Tips:"
 echo "  • Type 'info' anytime to see this information"
-echo "  • Update individual AI tools with their specific update commands"
 echo "  • Ask AI assistants about your codebase and request features"
 if [ -n "$GIT_SERVER_ENABLED" ] && [ "$GIT_SERVER_ENABLED" = "true" ]; then
     echo "  • Use 'setup_local_remote' to push Quick Clone repos to local Forgejo"
@@ -160,194 +158,49 @@ echo ""
 INFO_EOF
 chmod +x /usr/local/bin/info
 
-# Create individual update scripts for each AI tool
-
-# Update Aider
-cat > /usr/local/bin/update_aider << 'UPDATE_AIDER_EOF'
+# Update command for the AI CLI tools. They live in /opt/ai-tools (npm prefix,
+# owned by coder), so no sudo is needed.
+cat > /usr/local/bin/update_ai_agents << 'UPDATE_AI_AGENTS_EOF'
 #!/bin/bash
-echo "🔄 Updating Aider AI pair programming tool..."
-echo "💡 Note: Run with sudo if you get permission errors"
-UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool upgrade aider-chat
-echo "✅ Aider updated successfully!"
-UPDATE_AIDER_EOF
-chmod +x /usr/local/bin/update_aider
+# Usage: update_ai_agents [tool ...]   (default: all)
+declare -A PACKAGES=(
+    [claude]=@anthropic-ai/claude-code
+    [codex]=@openai/codex
+    [copilot]=@github/copilot
+    [crush]=@charmland/crush
+    [opencode]=@opencode/cli
+    [pi]=@earendil-works/pi-coding-agent
+)
+TOOLS=("$@")
+[ ${#TOOLS[@]} -gt 0 ] || TOOLS=(claude codex copilot crush opencode pi)
 
-# Update Claude Code (requires sudo)
-cat > /usr/local/bin/update_claude << 'UPDATE_CLAUDE_EOF'
-#!/bin/bash
-echo "🔄 Updating Claude Code..."
-echo "💡 Note: Run with sudo if you get permission errors"
-npm update -g @anthropic-ai/claude-code
-echo "✅ Claude Code updated successfully!"
-UPDATE_CLAUDE_EOF
-chmod +x /usr/local/bin/update_claude
-
-# Update Qwen Code (requires sudo)
-cat > /usr/local/bin/update_qwen << 'UPDATE_QWEN_EOF'
-#!/bin/bash
-echo "🔄 Updating Qwen Code..."
-echo "💡 Note: Run with sudo if you get permission errors"
-npm update -g @qwen-code/qwen-code
-echo "✅ Qwen Code updated successfully!"
-UPDATE_QWEN_EOF
-chmod +x /usr/local/bin/update_qwen
-
-# Update OpenAI Codex (requires sudo)
-cat > /usr/local/bin/update_codex << 'UPDATE_CODEX_EOF'
-#!/bin/bash
-echo "🔄 Updating OpenAI Codex CLI..."
-echo "💡 Note: Run with sudo if you get permission errors"
-npm install -g @openai/codex --force
-echo "✅ OpenAI Codex CLI updated successfully!"
-UPDATE_CODEX_EOF
-chmod +x /usr/local/bin/update_codex
-
-# Update Pi (requires sudo)
-cat > /usr/local/bin/update_pi << 'UPDATE_PI_EOF'
-#!/bin/bash
-echo "🔄 Updating Pi coding agent..."
-echo "💡 Note: Run with sudo if you get permission errors"
-npm update -g @earendil-works/pi-coding-agent
-echo "✅ Pi updated successfully!"
-UPDATE_PI_EOF
-chmod +x /usr/local/bin/update_pi
-
-# Update Crush (requires sudo)
-cat > /usr/local/bin/update_crush << 'UPDATE_CRUSH_EOF'
-#!/bin/bash
-echo "🔄 Updating Crush..."
-echo "💡 Note: Run with sudo if you get permission errors"
-echo ""
-
-# Fetch latest release version from GitHub API
-echo "📡 Fetching latest version from GitHub..."
-LATEST_VERSION=$(curl -s https://api.github.com/repos/charmbracelet/crush/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+' || echo "")
-
-if [ -z "$LATEST_VERSION" ]; then
-    echo "❌ Failed to fetch latest version from GitHub API"
-    exit 1
-fi
-
-echo "📦 Latest version: $LATEST_VERSION"
-
-# Determine architecture
-ARCH=$(uname -m)
-case $ARCH in
-    x86_64) ARCH_NAME="x86_64" ;;
-    aarch64|arm64) ARCH_NAME="arm64" ;;
-    *) echo "❌ Unsupported architecture: $ARCH"; exit 1 ;;
-esac
-
-# Build download URL and directory name
-VERSION_NUM="${LATEST_VERSION#v}"
-DOWNLOAD_URL="https://github.com/charmbracelet/crush/releases/download/${LATEST_VERSION}/crush_${VERSION_NUM}_Linux_${ARCH_NAME}.tar.gz"
-EXTRACTED_DIR="crush_${VERSION_NUM}_Linux_${ARCH_NAME}"
-
-echo "⬇️  Downloading from: $DOWNLOAD_URL"
-
-# Download to temp directory
-TEMP_DIR=$(mktemp -d)
-cd "$TEMP_DIR" || exit 1
-
-if ! curl -L "$DOWNLOAD_URL" -o crush.tar.gz; then
-    echo "❌ Download failed"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-echo "📂 Extracting archive..."
-if ! tar -xzf crush.tar.gz; then
-    echo "❌ Extraction failed"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-# Check if expected directory exists
-if [ ! -d "$EXTRACTED_DIR" ]; then
-    echo "❌ Expected directory $EXTRACTED_DIR not found"
-    echo "Contents of temp directory:"
-    ls -la
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-cd "$EXTRACTED_DIR" || exit 1
-
-if [ ! -f "crush" ]; then
-    echo "❌ Binary not found in archive"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-echo "📦 Installing Crush..."
-mv crush /usr/local/bin/
-chmod +x /usr/local/bin/crush
-
-# Optional: Install completions and man pages
-if [ -d "completions" ]; then
-    mkdir -p /etc/bash_completion.d
-    cp completions/crush.bash /etc/bash_completion.d/ 2>/dev/null || true
-fi
-
-if [ -d "manpages" ]; then
-    mkdir -p /usr/share/man/man1
-    cp manpages/* /usr/share/man/man1/ 2>/dev/null || true
-fi
-
-# Cleanup
-cd /
-rm -rf "$TEMP_DIR"
-
-echo "✅ Crush updated successfully to $LATEST_VERSION!"
-crush --version
-UPDATE_CRUSH_EOF
-chmod +x /usr/local/bin/update_crush
-
-# Update OpenCode SST
-cat > /usr/local/bin/update_opencode << 'UPDATE_OPENCODE_EOF'
-#!/bin/bash
-echo "🔄 Updating OpenCode SST..."
-echo ""
-
-# Check current version
-CURRENT_VERSION=$(opencode --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
-echo "Current version: ${CURRENT_VERSION:-unknown}"
-
-# Download latest version
-echo "Downloading latest version..."
-if curl -fsSL https://opencode.ai/install | bash; then
-    echo "✅ Download completed"
-
-    # Find the new binary
-    NEW_BINARY=""
-    if [ -f "$HOME/.opencode/bin/opencode" ]; then
-        NEW_BINARY="$HOME/.opencode/bin/opencode"
-    elif [ -f "$HOME/bin/opencode" ]; then
-        NEW_BINARY="$HOME/bin/opencode"
-    elif [ -f "$HOME/.local/bin/opencode" ]; then
-        NEW_BINARY="$HOME/.local/bin/opencode"
+FAILED=()
+for tool in "${TOOLS[@]}"; do
+    package=${PACKAGES[$tool]:-}
+    if [ -z "$package" ]; then
+        echo "❌ Unknown tool: $tool (known: ${!PACKAGES[*]})"
+        FAILED+=("$tool")
+        continue
     fi
-
-    if [ -n "$NEW_BINARY" ]; then
-        # Copy to system location
-        echo "Installing to /usr/local/bin/opencode..."
-        if sudo cp "$NEW_BINARY" /usr/local/bin/opencode && sudo chmod +x /usr/local/bin/opencode; then
-            NEW_VERSION=$(opencode --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
-            echo "✅ OpenCode SST updated successfully!"
-            echo "New version: ${NEW_VERSION:-unknown}"
-        else
-            echo "❌ Failed to copy binary to /usr/local/bin (permission denied)"
-            echo "💡 Manual fix: sudo cp $NEW_BINARY /usr/local/bin/opencode"
-        fi
+    echo "🔄 Updating $tool ($package)..."
+    if npm install -g "$package@latest" --no-fund --no-audit --loglevel=error; then
+        # OpenCode installs all four Linux builds; bin/ keeps the one it uses
+        [ "$tool" != opencode ] || rm -rf "$(npm root -g)/@opencode/cli/node_modules/@opencode"
+        echo "✅ $tool: $("$tool" --version 2>/dev/null | head -1)"
     else
-        echo "⚠️  Could not find downloaded binary"
-        echo "💡 Try manual installation: curl -fsSL https://opencode.ai/install | bash"
+        echo "❌ $tool could not be updated"
+        FAILED+=("$tool")
     fi
-else
-    echo "❌ Download failed"
+done
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+    echo ""
+    echo "❌ Not updated: ${FAILED[*]}"
+    echo "   Behind the Security Proxy, registry.npmjs.org and github.com must be whitelisted."
+    exit 1
 fi
-UPDATE_OPENCODE_EOF
-chmod +x /usr/local/bin/update_opencode
+UPDATE_AI_AGENTS_EOF
+chmod +x /usr/local/bin/update_ai_agents
 
 # Create setup_local_remote script to add Forgejo remote to existing workspaces
 cat > /usr/local/bin/setup_local_remote << 'SETUP_LOCAL_REMOTE_EOF'
@@ -605,16 +458,19 @@ This workspace comes with:
 All AI tools are pre-installed and ready to use:
 
 ### Command Line Tools
-- `opencode` - Multi-model AI assistant with project analysis
-- `aider` - AI pair programming with file editing
-- `claude` - Anthropic's agentic coding tool
-- `qwen-code` - AI workflow automation and code exploration
-- `codex` - OpenAI Codex CLI (terminal-based ChatGPT)
+- `claude` - Claude Code, Anthropic's agentic coding tool
+- `codex` - OpenAI Codex CLI
+- `copilot` - GitHub Copilot CLI
+- `opencode` - OpenCode, multi-provider coding agent
 - `crush` - Multi-model AI agent with in-session model switching
+- `pi` - Minimal multi-provider coding agent
 
-### VS Code Extensions (install from marketplace)
-- **Continue** - AI code completion and chat (`continue.continue`)
-- **Cline (Claude Dev)** - AI file editor (`saoudrizwan.claude-dev`)
+Update them with `update_ai_agents` (all) or `update_ai_agents <tool>`.
+
+### VS Code Extensions (pre-installed)
+- **Cline** - agent for multi-file edits (`saoudrizwan.claude-dev`)
+- **Kilo Code** - agent with chat and autocomplete (`kilocode.kilo-code`)
+- **Claude Code** - VS Code panel for the `claude` CLI (`anthropic.claude-code`)
 
 ## 🌐 Port Forwarding
 
@@ -780,8 +636,8 @@ SETTINGS_EOF
     cat > .vscode/extensions.json << 'EXTENSIONS_EOF'
 {
     "recommendations": [
-        "continue.continue",
         "saoudrizwan.claude-dev",
+        "kilocode.kilo-code",
         "ms-vscode.vscode-json",
         "redhat.vscode-yaml",
         "ms-python.python",

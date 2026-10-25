@@ -110,11 +110,17 @@ if [ "\${KEEP_AI_LOGINS:-0}" != 1 ]; then
   # OpenCode
   rm -rf "$H/.local/share/opencode/auth.json" "$H/.local/share/opencode/storage" "$H/.local/share/opencode/log" \\
     "$H/.local/share/opencode/snapshot" "$H/.local/share/opencode"/opencode.db*
-  # Qwen Code, Crush, Pi, Cline
+  # Kilo Code (OpenCode-based backend of the extension)
+  rm -rf "$H/.local/share/kilo/auth.json" "$H/.local/share/kilo/storage" "$H/.local/share/kilo/log" \\
+    "$H/.local/share/kilo"/*.db*
+  # GitHub Copilot CLI (config with login, sessions, history)
+  rm -rf "$H/.copilot"
+  # Crush, Pi, Cline; Qwen Code (no longer installed, older snapshots)
   rm -rf "$H/.qwen/oauth_creds.json" "$H/.qwen/projects" "$H/.qwen/tmp" \\
     "$H/.local/share/crush/crush.json" "$H/.local/share/crush/hyper.json" "$H/.config/crush/crush.json" \\
     "$H/.pi/agent/auth.json" "$H/.pi/agent/sessions" \\
     "$H/.cline/data/secrets.json" "$H/.cline/data/tasks"
+  # Continue and Aider (no longer installed, older snapshots).
   # Continue: legacy JSON config and .env; strip API keys from config.yaml
   rm -rf "$H/.continue/config.json" "$H/.continue/.env" "$H/.continue/dev_data"
   if [ -f "$H/.continue/config.yaml" ]; then sed -i -E '/^[[:space:]]*-?[[:space:]]*apiKey:/d' "$H/.continue/config.yaml"; fi
@@ -534,9 +540,9 @@ class DockerService {
       ];
 
       // Configure sudo to preserve proxy environment variables when THIS workspace uses proxy.
-      // NODE_EXTRA_CA_CERTS must be kept too: `sudo npm install -g` (update_claude,
-      // update_qwen, update_codex, update_pi) otherwise loses the proxy CA trust and fails TLS
-      // verification against the MITM proxy, silently falling back to stale cached packages.
+      // NODE_EXTRA_CA_CERTS must be kept too: `sudo npm install -g` otherwise loses the
+      // proxy CA trust and fails TLS verification against the MITM proxy, silently
+      // falling back to stale cached packages. (update_ai_agents needs no sudo.)
       if (useProxy) {
         commands.push('echo "Defaults env_keep += \\"HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy NODE_EXTRA_CA_CERTS\\"" | sudo tee /etc/sudoers.d/proxy > /dev/null');
         commands.push('sudo chmod 440 /etc/sudoers.d/proxy');
@@ -1260,7 +1266,8 @@ fi`.trim();
       'AI APIs': [
         'openai.com', 'anthropic.com', 'googleapis.com', 'google.dev',
         'opencode.ai', 'huggingface.co', 'ollama.ai', 'ollama.com',
-        'z.ai', 'api.z.ai', 'cohere.ai', 'mistral.ai'
+        'z.ai', 'api.z.ai', 'cohere.ai', 'mistral.ai',
+        'githubcopilot.com', 'kilo.ai', 'cline.bot'
       ],
       'Documentation': [
         'docs.python.org', 'developer.mozilla.org', 'nodejs.org',

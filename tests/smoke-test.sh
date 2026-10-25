@@ -228,9 +228,16 @@ if create_workspace zz-smoke-direct none; then
     check "VS Code reachable through nginx (HTTP $code)" one_of "$code" 200 302
     # Login shell for the PATH; it also prints a welcome, hence the marker
     missing=$(docker exec -u coder "workspace-$id" bash -lc \
-        'for t in code-server claude codex aider opencode crush qwen pi info; do command -v $t >/dev/null || echo "missing:$t"; done' 2>/dev/null |
+        'for t in code-server claude codex copilot opencode crush pi info update_ai_agents; do command -v $t >/dev/null || echo "missing:$t"; done' 2>/dev/null |
         sed -n 's/^missing://p')
     check "AI tools installed${missing:+ (missing: $(echo $missing))}" [ -z "$missing" ]
+    missing=$(docker exec -u coder "workspace-$id" code-server --list-extensions 2>/dev/null |
+        awk 'BEGIN { split("saoudrizwan.claude-dev kilocode.kilo-code anthropic.claude-code", want) }
+             { have[tolower($0)] = 1 }
+             END { for (i in want) if (!have[want[i]]) print want[i] }')
+    check "AI extensions installed${missing:+ (missing: $(echo $missing))}" [ -z "$missing" ]
+    owner=$(docker exec "workspace-$id" stat -c %U /opt/ai-tools/lib/node_modules 2>/dev/null)
+    check "AI tools updatable without sudo (/opt/ai-tools owned by ${owner:-?})" [ "$owner" = coder ]
     max_size=$(docker inspect -f '{{index .HostConfig.LogConfig.Config "max-size"}}' "workspace-$id")
     check "Docker log limit set (max-size ${max_size:-none})" [ -n "$max_size" ]
     code=$(ws_http_code "$id" -H "Host: $BASE_DOMAIN" http://xaresaicoder-nginx/api/health)

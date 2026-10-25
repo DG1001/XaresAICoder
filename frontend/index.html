@@ -6,7 +6,7 @@
     <title>XaresAICoder - AI-Powered Development Environment</title>
     
     <!-- PWA Meta Tags -->
-    <meta name="description" content="Create and manage your coding projects with integrated AI assistance using code-server and Cline">
+    <meta name="description" content="Create and manage your coding projects with integrated AI assistance in browser-based VS Code">
     <meta name="theme-color" content="#1e1e1e">
     <meta name="background-color" content="#1e1e1e">
     <meta name="mobile-web-app-capable" content="yes">
@@ -499,9 +499,9 @@
                 <div class="content-section">
                     <div class="ai-tools-intro">
                         <h3>🎯 VS Code Extensions</h3>
-                        <p>Install these extensions directly in VS Code for integrated AI assistance:</p>
+                        <p>Pre-installed in every workspace:</p>
                     </div>
-                    
+
                     <div class="tools-grid extensions-grid">
                         <div class="tool-card extension-card">
                             <div class="tool-icon">
@@ -509,26 +509,40 @@
                                     <path d="M8 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/>
                                 </svg>
                             </div>
-                            <h3>Continue</h3>
-                            <p>AI code completion and chat interface</p>
+                            <h3>Cline</h3>
+                            <p>Autonomous agent for multi-file edits and terminal commands, with approval for each step. Bring your own key (Anthropic, OpenAI, OpenRouter, local models, …).</p>
                             <div class="tool-commands">
-                                <code>Install from VS Code marketplace</code>
-                                <code>Extension ID: continue.continue</code>
+                                <code>Extension ID: saoudrizwan.claude-dev</code>
                             </div>
+                            <a class="tool-link" href="https://cline.bot/" target="_blank" rel="noopener">cline.bot →</a>
                         </div>
 
                         <div class="tool-card extension-card">
                             <div class="tool-icon">
                                 <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                                    <path d="M8 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/>
                                 </svg>
                             </div>
-                            <h3>Cline (Claude Dev)</h3>
-                            <p>AI file editing and automation assistant</p>
+                            <h3>Kilo Code</h3>
+                            <p>Open-source agent (MIT) with chat, autocomplete and modes for planning, coding and debugging. Kilo account (gateway to many models) or your own keys for 30+ providers.</p>
                             <div class="tool-commands">
-                                <code>Install from VS Code marketplace</code>
-                                <code>Extension ID: saoudrizwan.claude-dev</code>
+                                <code>Extension ID: kilocode.kilo-code</code>
                             </div>
+                            <a class="tool-link" href="https://kilo.ai/" target="_blank" rel="noopener">kilo.ai →</a>
+                        </div>
+
+                        <div class="tool-card extension-card">
+                            <div class="tool-icon">
+                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.777.416L8 13.101l-5.223 2.815A.5.5 0 0 1 2 15.5V2zm2-1a1 1 0 0 0-1 1v12.566l4.723-2.482a.5.5 0 0 1 .554 0L13 14.566V2a1 1 0 0 0-1-1H4z"/>
+                                </svg>
+                            </div>
+                            <h3>Claude Code for VS Code</h3>
+                            <p>Panel for Claude Code next to the editor: chat, inline diffs and plan review. Uses the same login as the <code>claude</code> CLI.</p>
+                            <div class="tool-commands">
+                                <code>Extension ID: anthropic.claude-code</code>
+                            </div>
+                            <a class="tool-link" href="https://code.claude.com/docs" target="_blank" rel="noopener">code.claude.com/docs →</a>
                         </div>
                     </div>
 
@@ -541,34 +555,6 @@
                         <div class="tool-card">
                             <div class="tool-icon">
                                 <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M6 2a.75.75 0 0 1 .696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5H12.596l-1.846 4.615a.75.75 0 0 1-1.393 0L6 4.869 4.357 8.115a.75.75 0 0 1-1.393 0L1.118 4.615A.75.75 0 0 1 1.75 4H5.25a.75.75 0 0 1 0 1.5H2.404l1.339 3.346L5.304 2.47A.75.75 0 0 1 6 2z"/>
-                                </svg>
-                            </div>
-                            <h3>OpenCode SST</h3>
-                            <p>Open-source AI coding agent with 75+ LLM providers via Models.dev. Sign in with a GitHub Copilot or ChatGPT Plus account, or bring your own provider key. Strong project analysis via <code>/init</code> and shareable collaborative sessions.</p>
-                            <div class="tool-commands">
-                                <code>opencode</code>
-                            </div>
-                            <a class="tool-link" href="https://opencode.ai/" target="_blank" rel="noopener">opencode.ai →</a>
-                        </div>
-
-                        <div class="tool-card">
-                            <div class="tool-icon">
-                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
-                                </svg>
-                            </div>
-                            <h3>Aider</h3>
-                            <p>Terminal pair programmer. Works with OpenAI, Anthropic, Google, DeepSeek, Ollama, and most other LLM providers — pick your model, it edits files directly and auto-commits each change to git.</p>
-                            <div class="tool-commands">
-                                <code>aider</code>
-                            </div>
-                            <a class="tool-link" href="https://aider.chat/" target="_blank" rel="noopener">aider.chat →</a>
-                        </div>
-
-                        <div class="tool-card">
-                            <div class="tool-icon">
-                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
                                     <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.777.416L8 13.101l-5.223 2.815A.5.5 0 0 1 2 15.5V2zm2-1a1 1 0 0 0-1 1v12.566l4.723-2.482a.5.5 0 0 1 .554 0L13 14.566V2a1 1 0 0 0-1-1H4z"/>
                                 </svg>
                             </div>
@@ -577,21 +563,7 @@
                             <div class="tool-commands">
                                 <code>claude</code>
                             </div>
-                            <a class="tool-link" href="https://docs.claude.com/en/docs/claude-code" target="_blank" rel="noopener">docs.claude.com/claude-code →</a>
-                        </div>
-
-                        <div class="tool-card">
-                            <div class="tool-icon">
-                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-                                </svg>
-                            </div>
-                            <h3>Qwen Code</h3>
-                            <p>Alibaba's Qwen-tuned coding CLI. The free Qwen OAuth tier was discontinued in April 2026 — now requires an Alibaba Cloud DashScope key, an OpenRouter/Fireworks API key, or a paid Qwen Coding Plan subscription.</p>
-                            <div class="tool-commands">
-                                <code>qwen-code</code>
-                            </div>
-                            <a class="tool-link" href="https://github.com/QwenLM/qwen-code" target="_blank" rel="noopener">github.com/QwenLM/qwen-code →</a>
+                            <a class="tool-link" href="https://code.claude.com/docs" target="_blank" rel="noopener">code.claude.com/docs →</a>
                         </div>
 
                         <div class="tool-card">
@@ -602,11 +574,39 @@
                                 </svg>
                             </div>
                             <h3>OpenAI Codex CLI</h3>
-                            <p>OpenAI's terminal coding CLI with Model Context Protocol (MCP) support. Authenticate by running <code>codex login</code> on your local machine, then copying <code>~/.codex/auth.json</code> into the workspace.</p>
+                            <p>OpenAI's terminal coding agent with Model Context Protocol (MCP) support. Sign in with your ChatGPT account via <code>codex login --device-auth</code>, or use an API key (<code>codex login --with-api-key</code>).</p>
                             <div class="tool-commands">
                                 <code>codex</code>
                             </div>
                             <a class="tool-link" href="https://github.com/openai/codex" target="_blank" rel="noopener">github.com/openai/codex →</a>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">
+                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
+                                </svg>
+                            </div>
+                            <h3>GitHub Copilot CLI</h3>
+                            <p>GitHub's coding agent for the terminal, included in every Copilot plan (also Free and Student). Sign in with <code>/login</code>, or set <code>GH_TOKEN</code> to a fine-grained token with the “Copilot Requests” permission.</p>
+                            <div class="tool-commands">
+                                <code>copilot</code>
+                            </div>
+                            <a class="tool-link" href="https://github.com/github/copilot-cli" target="_blank" rel="noopener">github.com/github/copilot-cli →</a>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">
+                                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M6 2a.75.75 0 0 1 .696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5H12.596l-1.846 4.615a.75.75 0 0 1-1.393 0L6 4.869 4.357 8.115a.75.75 0 0 1-1.393 0L1.118 4.615A.75.75 0 0 1 1.75 4H5.25a.75.75 0 0 1 0 1.5H2.404l1.339 3.346L5.304 2.47A.75.75 0 0 1 6 2z"/>
+                                </svg>
+                            </div>
+                            <h3>OpenCode</h3>
+                            <p>Open-source coding agent with 75+ LLM providers. Sign in with a GitHub Copilot or ChatGPT account, or bring your own provider key. Project analysis via <code>/init</code>.</p>
+                            <div class="tool-commands">
+                                <code>opencode</code>
+                            </div>
+                            <a class="tool-link" href="https://opencode.ai/" target="_blank" rel="noopener">opencode.ai →</a>
                         </div>
 
                         <div class="tool-card">
@@ -643,6 +643,10 @@
                         <p>Run this command in your workspace terminal to see all pre-installed AI tools with binary names, auth hints, and docs links:</p>
                         <div class="command-block">
                             <code>info</code>
+                        </div>
+                        <p>The tools do not update themselves, so everybody in a workshop keeps the same versions. Update them without sudo when you want to:</p>
+                        <div class="command-block">
+                            <code>update_ai_agents</code>
                         </div>
                     </div>
                 </div>
@@ -977,7 +981,7 @@
                         <input type="checkbox" id="cloneKeepAiLogins" style="margin-top: 2px;">
                         <span>Copy AI tool logins of the source (e.g. a shared workshop API key)
                             <span style="display: block; font-size: 12px; color: var(--vscode-text-muted); margin-top: 2px;">
-                                Off by default: logins and conversation histories of Claude Code, Codex, OpenCode, Qwen, Crush, Pi, Continue and Aider are removed from the clones. Git tokens, passwords and shell history are always removed.
+                                Off by default: logins and conversation histories of Claude Code, Codex, Copilot CLI, OpenCode, Crush, Pi, Cline and Kilo Code are removed from the clones. Git tokens, passwords and shell history are always removed.
                             </span>
                         </span>
                     </label>

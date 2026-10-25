@@ -21,6 +21,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | **1 – Security-Quick-Wins & Bugfixes** | Secrets aus API-Antworten, Passwortprüfung auf allen sensiblen Routen, Whitelist-Validierung, Header-Redaction, XSS, Service Worker, Workshop-Härtung, atomare Persistenz, CA-Key-Rechte | ✅ umgesetzt auf Branch `security/paket-1`, Review-Runde eingearbeitet, Deploy-Test bestanden (1.11) |
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
+| 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
 
 ---
 
@@ -615,7 +616,7 @@ PWA-Update von einer alten auf eine neue SW-Version, Neubau des Code-Server-Imag
   Optional später: Workspace anlegen. Zu klären: Transport (Streamable HTTP über nginx),
   Authentifizierung (eigener Token pro Agent/Workspace statt Admin-Session, vgl. 2.6),
   Begrenzung auf freigegebene Workspaces, Zeit-/Ausgabelimits, Protokollierung.
-- **KI-Agenten überprüfen** (vorgemerkt 2026-10-19): Die neun vorinstallierten Tools
+- **KI-Agenten überprüfen** (vorgemerkt 2026-10-19, umgesetzt in Paket 4): Die neun vorinstallierten Tools
   (Continue, Cline, Aider, OpenCode, Claude Code, Qwen Code, Codex CLI, Crush, Pi)
   durchgehen: Sind alle noch relevant und gepflegt? Gibt es inzwischen weitere
   Kandidaten? Funktioniert das Aktualisieren aus der CLI noch? Erste Befunde:
@@ -1502,3 +1503,151 @@ Secrets + persistente Whitelist, 2) Sticky Flags, Node 22/`npm ci`, Image-Pinnin
 - `--skip-env` in einem leeren Verzeichnis: Abbruch mit Meldung, keine Datei angelegt.
 - Live: `./deploy.sh --skip-build --skip-env --skip-network` → „Keeping …“,
   Subnetzprüfung, Deploy erfolgreich, `.env` unverändert; Smoke-Test 29/29.
+
+---
+
+## Paket 4 – KI-Agenten
+
+Branch `feat/ai-agents`. Auslöser: der Punkt „KI-Agenten überprüfen“ (siehe
+„Vorgemerkte Aufgaben“). Recherche zum Stand der Tools am 2026-10-25 (Registry-APIs von
+npm, PyPI, Open VSX, GitHub; Stichproben selbst nachgeprüft).
+
+### 4.1 Tool-Auswahl, Updates ohne sudo
+
+**Problem**
+- `update_ai_agents` (in README, `DEPLOYMENT.md`, `CLAUDE.md` genannt) gibt es seit
+  2025-09-29 nicht mehr; ersetzt durch `update_<tool>`. Live in einem Workspace ohne
+  `sudo` (Standard seit 2.3) getestet: **6 von 7 scheitern** – npm-Tools mit `EACCES`
+  auf `/usr/lib/node_modules`, Crush mit `mv … Permission denied`, Aider in
+  `/opt/uv-tools` – und **alle melden trotzdem „✅ updated successfully“**. Nur OpenCode
+  ging (installierte ins Home). Auf der Live-Umgebung fiel es nicht auf, weil deren
+  `.env` `WORKSPACE_SUDO_ENABLED=true` setzt.
+- Crush wurde per npm installiert, aber per GitHub-Binary nach `/usr/local/bin`
+  aktualisiert; `info` nannte den Befehl `qwen-code` (heißt `qwen`); OpenCode lag doppelt
+  im Image (`/usr/local/bin` und `~/.opencode/bin`, je 186 MB).
+- Recherche: **Continue eingestellt** (README: „no longer actively maintained and is
+  read-only“, letzter Commit Juli 2026; neueste Version auf Open VSX eine Vorabversion);
+  **Aider stagniert** (letztes Release 2026-02-12); **Qwen Code** ohne Gratis-Zugang seit
+  2026-04-15; **OpenCode 2** erschienen (`@opencode/cli`), `opencode.ai/install`
+  installiert nur noch v1; **Cline** ist auf Open VSX, war aber entgegen der Doku nie
+  vorinstalliert. Neu relevant: GitHub Copilot CLI (auch im Free-/Student-Plan, Login
+  per Token ohne Browser), Kilo Code (MIT, VS-Code-Erweiterung), Claude-Code-Erweiterung.
+
+**Änderung**
+- `code-server/Dockerfile`: CLI-Tools per npm nach `/opt/ai-tools` (`NPM_CONFIG_PREFIX`,
+  gehört `coder`): Claude Code, Codex, **Copilot CLI**, Crush, **OpenCode 2**
+  (`@opencode/cli`), Pi. `/opt/ai-tools/bin` steht **am Ende** von `PATH` (auch für
+  Login-Shells über `/etc/profile.d/ai-tools.sh`). Aider (samt `UV_TOOL_*`-Variablen),
+  Qwen Code und `setup-opencode.sh` entfernt; `uv` selbst bleibt. Keine automatischen
+  Updates: `DISABLE_AUTOUPDATER=1` (Claude; `claude update` geht weiter),
+  `OPENCODE_DISABLE_AUTOUPDATE=1`, `COPILOT_AUTO_UPDATE=false`; VS Code
+  `extensions.autoUpdate: false`.
+- OpenCode zieht per npm alle vier Linux-Builds (glibc/musl, baseline, je 230 MB); der
+  Postinstall verlinkt den passenden nach `bin/`. Die übrigen werden nach der
+  Installation gelöscht (Image 916 → 230 MB für OpenCode), ebenso nach einem Update.
+- `workspace-init.sh`: ein Befehl `update_ai_agents [tool …]` (`npm install -g
+  <paket>@latest`), Exit-Code 1 und Liste bei Fehlern, Hinweis auf die Whitelist; die
+  sieben `update_<tool>`-Skripte entfallen. `info`, Projekt-README und
+  Erweiterungsempfehlungen mit der neuen Auswahl.
+- `extensions.txt`: Continue raus; **Cline** (`saoudrizwan.claude-dev`), **Kilo Code**
+  (`kilocode.kilo-code`), **Claude Code** (`anthropic.claude-code`) rein.
+- Klone (`CLONE_CLEANUP_SCRIPT`): zusätzlich `~/.copilot` und Kilos `auth.json`,
+  `storage`, `log`, `*.db` unter `~/.local/share/kilo`; Einträge für Qwen, Continue und
+  Aider bleiben für Snapshots älterer Workspaces.
+- Smoke-Test: neue Tool-Liste inkl. `update_ai_agents`, die drei Erweiterungen,
+  `/opt/ai-tools` gehört `coder`.
+
+**Entscheidungen** (mit dir abgestimmt, 2026-10-25)
+- **Nutzer darf aktualisieren, nichts automatisch**: Im Workshop haben alle dieselben
+  Versionen, bis jemand selbst `update_ai_agents` oder den Update-Befehl eines Tools
+  aufruft.
+- **Raus**: Continue, Aider, Qwen Code. **Neu**: Cline, Copilot CLI, Kilo Code,
+  Claude-Code-Erweiterung. **OpenCode auf v2.**
+- **npm für alle CLI-Tools** (auch OpenCode, Copilot) statt verschiedener Installer:
+  ein Update-Weg, eine Whitelist-Anforderung (npm-Registry, GitHub).
+- **`/opt/ai-tools` statt `/usr/local/bin` beschreibbar**: Das Aufräumskript beim Klonen
+  läuft als root und ruft Systembefehle über `PATH`; ans Ende angehängt kann eine Datei
+  dort keinen Systembefehl überdecken.
+- Bestehende Workspaces behalten ihre Tools und Skripte (eigene Container-Schicht);
+  neue Workspaces bekommen den neuen Stand.
+
+**Tests (live)**
+- Test-Image unter eigenem Tag: Build 3–4 min, alle Erweiterungen installiert; Image
+  5,44 GB (vorher 5,32 GB; Kilo-Erweiterung 557 MB, Claude-Erweiterung 291 MB bringen
+  eigene Binaries mit). Versionen: Claude 2.1.310, Codex 0.164.0, Copilot 1.0.103,
+  Crush 0.98.2, OpenCode 2.1.4, Pi 1.4.0.
+- Als `coder` ohne sudo: `update_ai_agents pi opencode crush` ✔ (OpenCode danach wieder
+  230 MB), unbekanntes Tool → Exit 1, ohne Netz → „❌ Not updated: pi“, Exit 1;
+  `claude update` → „up to date“. Dabei gefunden und behoben: Login-Shells verloren
+  `/opt/ai-tools/bin` (`/etc/profile` setzt `PATH` neu).
+- Live-Deploy (Backup vorher mit `backup.sh`), Smoke-Test 31/31 inkl. der neuen Prüfungen.
+- Klon eines Workspaces mit Schein-Logins (Copilot, Kilo, Claude): im Klon entfernt,
+  Projektdateien erhalten. Test-Workspaces und Forgejo-Nutzer entfernt.
+- **Offen**: Kilo bringt eine `bwrap`-Sandbox mit; die Standard-Seccomp-Regeln der
+  Workspaces blockieren User-Namespaces (wie bei Codex). Ob Kilo sie standardmäßig nutzt,
+  ließ sich ohne Modellzugang nicht prüfen.
+
+### 4.2 Dashboard, Logging-Proxy und Whitelist für die neue Auswahl
+
+**Problem**
+- Das Dashboard („AI Tools“) zeigte Continue, Aider und Qwen Code und bezeichnete die
+  Erweiterungen als „install from marketplace“; Codex sollte per kopierter `auth.json`
+  angemeldet werden. Der Hinweis zu „Copy AI tool logins“ beim Klonen nannte die alten
+  Tools.
+- Die neuen Tools sprechen mit eigenen Diensten, die weder die Standard-Whitelist noch
+  die Erfassung im Logging-Proxy kannten: Copilot `*.githubcopilot.com`, Kilo
+  `api.kilo.ai` / `ai-gateway.kilo.ai`, Cline `api.cline.bot` (Hosts aus den
+  installierten Erweiterungen gelesen; Copilot aus GitHubs „Copilot allowlist
+  reference“, das Binary enthält sie nicht im Klartext).
+
+**Änderung**
+- `frontend/index.html`: Erweiterungen Cline, Kilo Code, Claude Code als vorinstalliert;
+  CLI-Tools Claude Code, Codex (`codex login --device-auth` / `--with-api-key`), Copilot
+  CLI (`/login` oder `GH_TOKEN`), OpenCode, Crush, Pi; Hinweis auf `update_ai_agents`;
+  Klon-Hinweis mit den aktuellen Tools.
+- `squid/whitelist-default.conf`: `ai_copilot` (`.githubcopilot.com`), `ai_kilo`
+  (`.kilo.ai`), `ai_cline` (`.cline.bot`). Die Anmeldung bei Copilot läuft über die
+  bereits erlaubten `.github.com` / `.githubusercontent.com`.
+- `mitmproxy/llm-logger.py`: dieselben Hosts als LLM-Endpunkte; `docker.js`: Kategorie
+  „AI APIs“ für aufgezeichnete Domains um `githubcopilot.com`, `kilo.ai`, `cline.bot`.
+
+**Entscheidungen**
+- Bestehende Installationen behalten ihre angewandte Whitelist (Volume
+  `squid_whitelist`, 3.1); die neuen Hosts gelten dort erst nach Aufzeichnen und
+  Anwenden oder `PUT /api/whitelist` (Upgrade-Hinweis in 4.3).
+
+**Tests (live)**
+- Neue Standard-Whitelist in einem Wegwerf-Container: `squid -k parse` rc 0, keine
+  Fehler, die drei ACLs verarbeitet.
+- Deploy; Workspace hinter dem Logging-Proxy: Anfragen an Copilot, Kilo und Cline als
+  Domains aufgezeichnet und unter „AI APIs“ einsortiert; Aufrufe im Chat-Format an
+  Copilot und Kilo als Gespräch erfasst (GETs ohne `model` verwirft der Logger wie
+  vorgesehen). Mitschnitte, Domain-Datei, Workspace und Forgejo-Nutzer entfernt.
+- Smoke-Test 31/31.
+
+### 4.3 Doku
+
+**Änderung**
+- `docs/AI_TOOLS.md` überarbeitet: drei vorinstallierte Erweiterungen und sechs
+  CLI-Tools, Abschnitte für Continue, Aider und Qwen entfernt, neue Abschnitte für Copilot
+  CLI, Kilo Code und die Claude-Code-Erweiterung, OpenCode 2 statt „OpenCode SST“ mit
+  Installer-Skript, Codex-Anmeldung per `--device-auth` / `--with-api-key` statt kopierter
+  `auth.json`. Neu: „Updating the Tools“ (keine automatischen Updates, `update_ai_agents`,
+  Paketnamen, eigene Update-Befehle der Tools), Netzwerk in beiden Proxy-Modi, Logins in
+  Klonen. Vergleichstabellen ohne die entfernten Tools; Kilo Code und Copilot CLI ohne
+  Sterne-Bewertung (keine belastbare Grundlage).
+- `docs/user-guide.md`, `docs/CREDENTIAL_MANAGEMENT.md` (Entwurf, nur die Tool-Nennungen)
+  entsprechend; README (Tool-Liste, `update_ai_agents` statt des nicht mehr vorhandenen
+  `setup_ai_tools`), `ARCHITECTURE.md`, `TROUBLESHOOTING.md`, `API.md` (Klon-Bereinigung),
+  `OPENCLAW_INTEGRATION.md` (Beispieldaten), `DEPLOYMENT.md` (KI-Tools nicht fixiert,
+  Upgrade-Tabelle mit Rebuild-Hinweis und den neuen Whitelist-Hosts). Lokale `CLAUDE.md`.
+- Die drei großen Dokumente hat ein Agent nach einem festen Faktenblatt überarbeitet;
+  danach von mir geprüft: keine Reste der alten Tools, OpenCode-2-Befehle (`auth login`,
+  `/init`, `/share`, `/model`) gegen die installierte Version und die OpenCode-Doku
+  belegt.
+
+**Tests**
+- `codex update` und `opencode upgrade` als `coder` ohne sudo: beide erfolgreich
+  (Codex aktualisiert, OpenCode bereits aktuell). `opencode upgrade` installiert bei einer
+  neuen Version wieder alle vier Linux-Builds → Hinweis in `AI_TOOLS.md`, für OpenCode
+  `update_ai_agents opencode` zu nehmen.

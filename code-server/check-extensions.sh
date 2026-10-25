@@ -10,8 +10,8 @@ MISSING_EXTENSIONS=()
 CRITICAL_EXTENSIONS=("ms-python.python")
 
 # Function to check if extension is installed by listing extensions
-# Strips any "@<version>" pin so 'continue.continue@1.2.22' matches the
-# 'continue.continue' that --list-extensions reports without the version.
+# Strips any "@<version>" pin so 'publisher.name@1.2.3' matches the
+# 'publisher.name' that --list-extensions reports without the version.
 is_extension_installed() {
     local extension="${1%%@*}"
     if [ "$(whoami)" = "coder" ]; then

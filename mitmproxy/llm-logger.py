@@ -19,7 +19,7 @@ DOMAINS_DIR = "/var/log/mitmproxy/domains"
 LLM_DOMAINS = [
     'api.openai.com',
     'api.anthropic.com',
-    'generativelanguage.googleapis.com',  # Google Gemini API (used by Aider/OpenCode/Crush/Pi via GEMINI_API_KEY)
+    'generativelanguage.googleapis.com',  # Google Gemini API (used by OpenCode/Crush/Pi via GEMINI_API_KEY)
     'api.google.dev',
     'api.opencode.ai',
     'opencode.ai',  # OpenCode free tier uses opencode.ai/zen/v1/
@@ -29,6 +29,10 @@ LLM_DOMAINS = [
     'api.deepseek.com',
     'openrouter.ai',
     'chatgpt.com',  # Codex CLI with ChatGPT login (streams via WebSocket)
+    'githubcopilot.com',  # GitHub Copilot CLI (api.*.githubcopilot.com)
+    'api.kilo.ai',  # Kilo Code gateway
+    'ai-gateway.kilo.ai',
+    'api.cline.bot',  # Cline account provider
 ]
 
 # Credentials must never be written to disk: captures are readable through the
