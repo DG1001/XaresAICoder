@@ -15,7 +15,10 @@ class XaresAICoder {
         this.deferredPrompt = null; // PWA install prompt
         this.workspacePasswords = new Map(); // projectId -> password (memory only)
         this.passwordPrompts = new Map(); // projectId -> pending prompt promise
-        this.loginPrompt = null; // pending admin login (shared by all requests)
+        this.loginPrompt = null; // pending login (shared by all requests)
+        this.user = null; // { role: 'admin' | 'group', username, groups } once logged in
+        this.users = []; // group users (admin, Users tab)
+        this.editingUserId = null; // user open in the user modal, null = new user
         this.installLoginInterceptor();
         this.init();
     }
@@ -26,7 +29,7 @@ class XaresAICoder {
         return '/api';
     }
 
-    // The platform API needs an admin session. Any /api/ request answered
+    // The platform API needs a session. Any /api/ request answered
     // with 401 LOGIN_REQUIRED opens the login dialog and is sent again once
     // the user is logged in, so individual calls need no login handling.
     installLoginInterceptor() {
@@ -52,31 +55,39 @@ class XaresAICoder {
             this.loginPrompt = new Promise(resolve => {
                 const modal = document.getElementById('loginModal');
                 const form = document.getElementById('loginForm');
+                const usernameInput = document.getElementById('loginUsernameInput');
                 const input = document.getElementById('loginPasswordInput');
                 const error = document.getElementById('loginError');
                 const notConfigured = code === 'LOGIN_NOT_CONFIGURED';
 
                 document.getElementById('loginMessage').textContent = notConfigured
                     ? 'The admin login is not set up. Set ADMIN_PASSWORD in .env and redeploy (./deploy.sh generates one).'
-                    : 'Enter the admin password to use the dashboard.';
+                    : 'Sign in to use the dashboard.';
                 document.getElementById('loginInputGroup').style.display = notConfigured ? 'none' : '';
                 document.getElementById('loginBtn').style.display = notConfigured ? 'none' : '';
                 error.style.display = 'none';
                 modal.style.display = 'flex';
                 if (notConfigured) return;
                 input.value = '';
-                input.focus();
+                (usernameInput.value ? input : usernameInput).focus();
 
                 form.onsubmit = async (event) => {
                     event.preventDefault();
                     error.style.display = 'none';
+                    // Empty user name: admin (the server treats "admin" the same)
+                    const username = usernameInput.value.trim().toLowerCase();
                     try {
                         const res = await this.nativeFetch(`${this.apiBase}/auth/login`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ password: input.value })
+                            body: JSON.stringify(username ? { username, password: input.value } : { password: input.value })
                         });
                         if (res.ok) {
+                            // Session expired and someone else logged in: their own view
+                            if (this.user && this.user.username !== (username || 'admin')) {
+                                window.location.reload();
+                                return;
+                            }
                             form.onsubmit = null;
                             modal.style.display = 'none';
                             document.getElementById('logoutBtn').style.display = '';
@@ -85,7 +96,7 @@ class XaresAICoder {
                             return;
                         }
                         const data = await res.json().catch(() => ({}));
-                        error.textContent = res.status === 401 ? 'Wrong password.' : (data.error || 'Login failed.');
+                        error.textContent = res.status === 401 ? 'Wrong user name or password.' : (data.error || 'Login failed.');
                     } catch {
                         error.textContent = 'Server not reachable.';
                     }
@@ -99,7 +110,35 @@ class XaresAICoder {
 
     async logout() {
         await this.nativeFetch(`${this.apiBase}/auth/logout`, { method: 'POST' }).catch(() => {});
+        // The offline copy of the project list belongs to this account
+        localStorage.removeItem('xares_projects');
         window.location.reload();
+    }
+
+    // Who is logged in: the admin, or a group user who only sees the projects
+    // of their groups. body[data-role] shows the matching parts of the page
+    // (.admin-only / .group-only); without a known role both stay hidden.
+    async loadSession() {
+        try {
+            const response = await fetch(`${this.apiBase}/auth/status`);
+            const data = await response.json();
+            if (data.authenticated) {
+                this.user = data.role === 'group'
+                    ? { role: 'group', username: data.username, groups: data.groups || [] }
+                    : { role: 'admin', username: 'admin', groups: [] };
+            }
+        } catch (error) {
+            console.error('Error loading session:', error);
+        }
+        if (!this.user) return;
+        document.body.dataset.role = this.user.role;
+        const label = document.getElementById('currentUser');
+        label.textContent = `Signed in as ${this.user.username}`;
+        label.style.display = '';
+    }
+
+    isAdmin() {
+        return !!this.user && this.user.role === 'admin';
     }
 
     async init() {
@@ -111,7 +150,10 @@ class XaresAICoder {
 
         // Load configuration first (opens the login dialog without a session)
         await this.loadConfiguration();
+        await this.loadSession();
         document.getElementById('logoutBtn').style.display = '';
+        // Limits only matter for creating workspaces (admin)
+        if (this.isAdmin()) await this.loadResourceLimits();
 
         // Setup UI based on configuration
         this.setupUI();
@@ -119,6 +161,7 @@ class XaresAICoder {
         this.bindEvents();
         this.loadGroups();
         this.loadProjects();
+        if (this.isAdmin()) this.loadUsers();
 
         // Load projects from localStorage for offline display
         this.loadProjectsFromStorage();
@@ -188,9 +231,6 @@ class XaresAICoder {
                 protocol: 'http'
             };
         }
-
-        // Load resource limits
-        await this.loadResourceLimits();
     }
 
     async loadResourceLimits() {
@@ -354,6 +394,18 @@ class XaresAICoder {
         // Refresh button
         const refreshBtn = document.getElementById('refreshBtn');
         refreshBtn.addEventListener('click', () => this.loadProjects());
+
+        // Group users (admin)
+        document.getElementById('addUserBtn').addEventListener('click', () => this.openUserModal(null));
+        document.getElementById('closeUserModal').addEventListener('click', () => this.hideUserModal());
+        document.getElementById('cancelUserBtn').addEventListener('click', () => this.hideUserModal());
+        document.getElementById('userForm').addEventListener('submit', (e) => this.saveUser(e));
+        document.getElementById('generateUserPasswordBtn').addEventListener('click', () => {
+            document.getElementById('userPasswordInput').value = this.generateSecurePasswordValue();
+        });
+        document.getElementById('userModal').addEventListener('click', (e) => {
+            if (e.target.id === 'userModal') this.hideUserModal();
+        });
 
         // Modal close handlers
         const closeErrorModal = document.getElementById('closeErrorModal');
@@ -533,6 +585,8 @@ class XaresAICoder {
         if (targetTabElement) {
             targetTabElement.classList.add('active');
         }
+
+        if (targetTab === 'users') this.loadUsers();
     }
 
     handlePasswordProtectionToggle(e) {
@@ -1077,12 +1131,12 @@ class XaresAICoder {
 
         noProjects.style.display = 'none';
 
-        // Render flat project list
+        // Render flat project list (only the admin moves projects between groups)
+        const isAdmin = this.isAdmin();
         projectsList.innerHTML = filteredProjects.map(project => `
             <div class="project-item"
                  data-project-id="${project.projectId}"
-                 draggable="true"
-                 ondragstart="app.handleProjectDragStart(event, '${project.projectId}')"
+                 ${isAdmin ? `draggable="true" ondragstart="app.handleProjectDragStart(event, '${project.projectId}')"` : ''}
                  title="Created ${this.formatDate(project.createdAt)}">
                 <div class="project-info">
                     <h4>
@@ -1109,23 +1163,23 @@ class XaresAICoder {
                             </svg>
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
-                        ${project.status !== 'creating' ? `<button class="notes-btn" onclick="app.openAliasesModal('${project.projectId}')" title="Manage Subdomain Aliases" aria-label="Subdomain Aliases">
+                        ${project.status !== 'creating' ? `<button class="notes-btn admin-only" onclick="app.openAliasesModal('${project.projectId}')" title="Manage Subdomain Aliases" aria-label="Subdomain Aliases">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9c-.086 0-.17.01-.25.031A2 2 0 0 1 7 10.5H4a2 2 0 1 1 0-4h1.535c.218-.376.495-.714.82-1z"/>
                                 <path d="M9 5.5a3 3 0 0 0-2.83 4h1.098A2 2 0 0 1 9 6.5h3a2 2 0 1 1 0 4h-1.535a4.02 4.02 0 0 1-.82 1H12a3 3 0 1 0 0-6H9z"/>
                             </svg>${project.aliases && project.aliases.length ? `<span class="alias-count">${project.aliases.length}</span>` : ''}
                         </button>` : ''}
-                        ${project.proxyMode === 'logging' ? `<button class="ai-conv-btn" onclick="app.openAIConversationsModal('${project.projectId}')" title="View AI Conversations" aria-label="AI Conversations">
+                        ${project.proxyMode === 'logging' ? `<button class="ai-conv-btn admin-only" onclick="app.openAIConversationsModal('${project.projectId}')" title="View AI Conversations" aria-label="AI Conversations">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path fill-rule="evenodd" d="M2.678 11.894a1 1 0 0 1 .287.801 10.97 10.97 0 0 1-.398 2c1.395-.323 2.247-.697 2.634-.893a1 1 0 0 1 .71-.074A8.06 8.06 0 0 0 8 14c3.996 0 7-2.807 7-6 0-3.192-3.004-6-7-6S1 4.808 1 8c0 1.468.617 2.83 1.678 3.894zm-.493 3.905a21.682 21.682 0 0 1-.713.129c-.2.032-.352-.176-.273-.362.354-.836.674-1.95.77-2.966C.744 11.37 0 9.76 0 8c0-3.866 3.582-7 8-7s8 3.134 8 7-3.582 7-8 7a9.06 9.06 0 0 1-2.347-.306c-.52.263-1.639.742-3.468 1.105zM4 5.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zM4.5 7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/>
                             </svg>
                         </button>` : ''}
-                        ${project.proxyMode === 'logging' ? `<button class="notes-btn" onclick="app.openRecordedDomainsModal('${project.projectId}')" title="View Recorded Domains" aria-label="Recorded Domains">
+                        ${project.proxyMode === 'logging' ? `<button class="notes-btn admin-only" onclick="app.openRecordedDomainsModal('${project.projectId}')" title="View Recorded Domains" aria-label="Recorded Domains">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/>
                             </svg>
                         </button>` : ''}
-                        ${project.proxyMode === 'security' ? `<button class="notes-btn" onclick="app.openLogsModal('${project.projectId}')" title="View Proxy Logs" aria-label="Proxy Logs">
+                        ${project.proxyMode === 'security' ? `<button class="notes-btn admin-only" onclick="app.openLogsModal('${project.projectId}')" title="View Proxy Logs" aria-label="Proxy Logs">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2z"/>
                                 <path d="M3 3h7v1H3V3zm0 2h7v1H3V5zm0 2h5v1H3V7z"/>
@@ -1379,14 +1433,14 @@ class XaresAICoder {
         // Only show clone and delete buttons if not creating
         if (!isCreating) {
             buttons += `
-                <button class="btn-secondary" onclick="app.openCloneModal('${project.projectId}')" title="Clone this workspace">
+                <button class="btn-secondary admin-only" onclick="app.openCloneModal('${project.projectId}')" title="Clone this workspace">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25v-7.5z"/>
                         <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"/>
                     </svg>
                     Clone
                 </button>
-                <button class="btn-danger" onclick="app.deleteProject('${project.projectId}', ${this.jsArg(project.projectName)})">
+                <button class="btn-danger admin-only" onclick="app.deleteProject('${project.projectId}', ${this.jsArg(project.projectName)})">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
                         <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
@@ -3222,6 +3276,12 @@ class XaresAICoder {
 
     // Group Management Methods
     async loadGroups() {
+        // Group users see exactly the groups assigned to them
+        if (this.user && this.user.role === 'group') {
+            this.groups = [...this.user.groups].sort((a, b) => a.localeCompare(b));
+            this.renderGroups();
+            return;
+        }
         try {
             const response = await fetch(`${this.apiBase}/projects/groups`);
             const data = await response.json();
@@ -3245,7 +3305,7 @@ class XaresAICoder {
         const groupsList = document.getElementById('groupsList');
         if (!groupsList) return;
 
-        if (!this.groups || this.groups.length === 0) {
+        if ((!this.groups || this.groups.length === 0) && this.isAdmin()) {
             this.groups = ['Uncategorized'];
         }
 
@@ -3257,7 +3317,7 @@ class XaresAICoder {
                  ondragenter="app.handleGroupDragEnter(event)"
                  ondragleave="app.handleGroupDragLeave(event)">
                 <span class="group-name" onclick="app.selectGroup(${this.jsArg(group)})">${this.escapeHtml(group)}</span>
-                <div class="group-actions">
+                <div class="group-actions admin-only">
                     ${group !== 'Uncategorized' ? `
                         <button class="group-action-btn" onclick="app.handleRenameGroup(${this.jsArg(group)})" title="Rename Group">
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
@@ -3321,7 +3381,9 @@ class XaresAICoder {
         }, 100);
     }
 
-    handleRenameGroup(oldName) {
+    // Renaming and deleting go through the server in one step: all projects
+    // of the group and the group users assigned to it.
+    async handleRenameGroup(oldName) {
         const newName = prompt(`Rename group "${oldName}" to:`, oldName);
         if (!newName || !newName.trim() || newName.trim() === oldName) {
             return;
@@ -3344,6 +3406,22 @@ class XaresAICoder {
             return;
         }
 
+        try {
+            const response = await fetch(`${this.apiBase}/projects/groups/${encodeURIComponent(oldName)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newName: trimmedName })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                this.showError(data.message || data.error || 'Failed to rename group');
+                return;
+            }
+        } catch (error) {
+            this.showError('Failed to rename group: ' + error.message);
+            return;
+        }
+
         // Update local groups array
         const index = this.groups.indexOf(oldName);
         if (index !== -1) {
@@ -3355,38 +3433,50 @@ class XaresAICoder {
             this.selectedGroup = trimmedName;
         }
 
-        // Update any projects in this group
         this.projects.forEach(project => {
             if (project.group === oldName) {
                 project.group = trimmedName;
-                // Update via API
-                this.updateProjectGroup(project.projectId, trimmedName);
             }
         });
 
         this.renderGroups();
         this.renderProjects();
+        this.loadUsers();
     }
 
     async handleDeleteGroup(groupName) {
         const projectsInGroup = this.projects.filter(p => p.group === groupName);
+        const usersInGroup = this.users.filter(u => u.groups.includes(groupName));
 
         let confirmMessage = `Are you sure you want to delete the group "${groupName}"?`;
         if (projectsInGroup.length > 0) {
             confirmMessage += `\n\nThis group contains ${projectsInGroup.length} project(s). They will be moved to "Uncategorized".`;
+        }
+        if (usersInGroup.length > 0) {
+            confirmMessage += `\n\n${usersInGroup.length} user(s) lose access to this group.`;
         }
 
         if (!confirm(confirmMessage)) {
             return;
         }
 
-        // Move projects to Uncategorized group
-        if (projectsInGroup.length > 0) {
-            for (const project of projectsInGroup) {
-                project.group = 'Uncategorized';
-                await this.updateProjectGroup(project.projectId, 'Uncategorized');
+        try {
+            const response = await fetch(`${this.apiBase}/projects/groups/${encodeURIComponent(groupName)}`, {
+                method: 'DELETE'
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                this.showError(data.message || data.error || 'Failed to delete group');
+                return;
             }
+        } catch (error) {
+            this.showError('Failed to delete group: ' + error.message);
+            return;
         }
+
+        projectsInGroup.forEach(project => {
+            project.group = 'Uncategorized';
+        });
 
         // Remove from local groups array
         this.groups = this.groups.filter(g => g !== groupName);
@@ -3398,6 +3488,7 @@ class XaresAICoder {
 
         this.renderGroups();
         this.renderProjects();
+        this.loadUsers();
     }
 
     async updateProjectGroup(projectId, groupName) {
@@ -3636,6 +3727,136 @@ class XaresAICoder {
         } catch (error) {
             console.error('Error applying whitelist:', error);
             this.showError('Failed to apply whitelist: ' + error.message);
+        }
+    }
+
+    // Group Users (admin): dashboard logins limited to the projects of their groups
+    async loadUsers() {
+        const container = document.getElementById('usersList');
+        try {
+            const response = await fetch(`${this.apiBase}/users`);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to load users');
+            this.users = data.users || [];
+            this.renderUsers();
+        } catch (error) {
+            container.innerHTML = `<div style="color: var(--vscode-error); font-size: 13px;">${this.escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    renderUsers() {
+        const container = document.getElementById('usersList');
+        if (this.users.length === 0) {
+            container.innerHTML = '<div style="color: var(--vscode-text-muted); font-size: 13px;">No users yet.</div>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="users-table">
+                <thead><tr><th>User name</th><th>Groups</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                    ${this.users.map(user => `
+                        <tr>
+                            <td style="font-family: monospace;">${this.escapeHtml(user.username)}</td>
+                            <td>${user.groups.length
+                                ? user.groups.map(g => `<span class="user-group-tag">${this.escapeHtml(g)}</span>`).join('')
+                                : '<span style="color: var(--vscode-text-muted);">none</span>'}</td>
+                            <td style="color: var(--vscode-text-muted);">${this.formatDate(user.createdAt)}</td>
+                            <td>
+                                <div class="user-actions">
+                                    <button class="btn-secondary" onclick="app.openUserModal(${this.jsArg(user.id)})" title="Change groups or password">Edit</button>
+                                    <button class="btn-danger" onclick="app.deleteUser(${this.jsArg(user.id)})" title="Delete user">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    // userId null: new user; otherwise change groups and optionally the password
+    openUserModal(userId) {
+        const user = userId ? this.users.find(u => u.id === userId) : null;
+        if (userId && !user) return;
+        this.editingUserId = userId;
+
+        document.getElementById('userModalTitle').textContent = user ? `Edit User ${user.username}` : 'Add User';
+        const nameInput = document.getElementById('userNameInput');
+        nameInput.value = user ? user.username : '';
+        nameInput.disabled = !!user;
+        document.getElementById('userPasswordLabel').textContent = user ? 'New password' : 'Password';
+        document.getElementById('userPasswordInput').value = user ? '' : this.generateSecurePasswordValue();
+        document.getElementById('userPasswordHint').textContent = user
+            ? 'Leave empty to keep the password. A new password signs the user out.'
+            : 'At least 8 characters. Pass it on to the user.';
+
+        // Choices: all known groups, plus groups only this or other users still have
+        const assigned = user ? user.groups : [];
+        const names = [...new Set([...this.groups, ...this.users.flatMap(u => u.groups)])]
+            .sort((a, b) => a.localeCompare(b));
+        document.getElementById('userGroupsList').innerHTML = names.length
+            ? names.map(name => `
+                <label>
+                    <input type="checkbox" value="${this.escapeHtml(name)}" ${assigned.includes(name) ? 'checked' : ''}>
+                    <span>${this.escapeHtml(name)}</span>
+                </label>`).join('')
+            : '<span style="color: var(--vscode-text-muted); font-size: 12px;">No groups yet.</span>';
+
+        document.getElementById('userError').style.display = 'none';
+        document.getElementById('userModal').style.display = 'flex';
+        (user ? document.getElementById('userPasswordInput') : nameInput).focus();
+    }
+
+    hideUserModal() {
+        document.getElementById('userModal').style.display = 'none';
+        this.editingUserId = null;
+    }
+
+    async saveUser(event) {
+        event.preventDefault();
+        const errorEl = document.getElementById('userError');
+        errorEl.style.display = 'none';
+
+        const password = document.getElementById('userPasswordInput').value;
+        const groups = [...document.querySelectorAll('#userGroupsList input:checked')].map(input => input.value);
+        const body = { groups };
+        if (!this.editingUserId) body.username = document.getElementById('userNameInput').value.trim().toLowerCase();
+        if (!this.editingUserId || password) body.password = password;
+
+        const saveBtn = document.getElementById('saveUserBtn');
+        saveBtn.disabled = true;
+        try {
+            const response = await fetch(
+                this.editingUserId ? `${this.apiBase}/users/${encodeURIComponent(this.editingUserId)}` : `${this.apiBase}/users`,
+                {
+                    method: this.editingUserId ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Failed to save user');
+            this.hideUserModal();
+            this.loadUsers();
+        } catch (error) {
+            errorEl.textContent = error.message;
+            errorEl.style.display = 'block';
+        } finally {
+            saveBtn.disabled = false;
+        }
+    }
+
+    async deleteUser(userId) {
+        const user = this.users.find(u => u.id === userId);
+        if (!user || !confirm(`Delete user "${user.username}"? They are signed out right away.`)) return;
+        try {
+            const response = await fetch(`${this.apiBase}/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.error || 'Failed to delete user');
+            }
+            this.loadUsers();
+        } catch (error) {
+            this.showError(error.message);
         }
     }
 

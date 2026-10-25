@@ -1019,7 +1019,6 @@ class WorkspaceService {
     return { success: true, projectName: name };
   }
 
-  // Update project group
   // Moves every project of a group to another (validated) group name
   async renameGroup(oldName, newName) {
     const groupName = String(newName || '').trim();
@@ -1041,6 +1040,7 @@ class WorkspaceService {
     return groupName;
   }
 
+  // Update project group
   async updateProjectGroup(projectId, newGroup) {
     const project = this.projects.get(projectId);
     if (!project) {

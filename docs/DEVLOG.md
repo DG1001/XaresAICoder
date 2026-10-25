@@ -1744,3 +1744,43 @@ Nutzerliste, Gruppe ändern, Whitelist, Löschen → 403/404/403/403/403/403; Um
 Notizen, Stop, Start → 200; Workspace-Passwort setzen → Stop ohne 401, mit 200 → entfernen;
 Gruppe umbenennen → Zuordnung wandert mit, Nutzer sieht sein Projekt weiter; Passwort-Reset
 → alte Sitzung 401; Workshop-Admin als Nutzer 401.
+
+### 5.2 Dashboard
+
+**Änderung** (`frontend/index.html`, `app.js`, `style.css`)
+- Login-Dialog mit Feld „User name“ (leer oder `admin` = Admin), Fehlermeldung „Wrong user
+  name or password“. Nach dem Login holt `loadSession()` `GET /api/auth/status` und setzt
+  `body[data-role]`; neben dem Logout steht „Signed in as …“.
+- Ausblenden per CSS: `.admin-only` ist nur bei `data-role="admin"` sichtbar, `.group-only`
+  nur bei `group`; ohne bekannte Rolle (vor dem Login) bleibt beides verborgen. Gruppen-Nutzer
+  sehen kein Erstellen-Formular, keinen Quick Clone, keinen Git-Server-Tab, kein „Add Group“,
+  keine Umbenennen/Löschen-Knöpfe an Gruppen, keine Icons für Aliase, KI-Gespräche,
+  aufgezeichnete Domains und Proxy-Logs, kein Klonen/Löschen und kein Drag & Drop. Sichtbar
+  bleiben Öffnen/Start/Stop, Umbenennen, Notizen und Workspace-Passwort; die Gruppenleiste
+  zeigt genau ihre zugewiesenen Gruppen. Die eigentliche Sicherung bleibt die Server-Prüfung.
+- `/api/limits` lädt nur noch der Admin (für Gruppen-Nutzer 403, wird nicht gebraucht).
+- Neuer Tab „Users“ (Admin): Liste mit Gruppen und Anlagedatum; Dialog zum Anlegen
+  (Benutzername, generiertes Passwort, Gruppen als Checkboxen) und Bearbeiten (Gruppen,
+  optional neues Passwort – meldet den Nutzer ab); Löschen mit Rückfrage. Fehler des Servers
+  (Name vergeben, Passwort zu kurz) erscheinen im Dialog.
+- Gruppe umbenennen/löschen in der Seitenleiste nutzt `PUT|DELETE /api/projects/groups/:name`
+  statt einer Schleife über `PUT /:id/group`; die Rückfrage beim Löschen nennt auch die
+  betroffenen Nutzer.
+
+**Entscheidungen**
+- Nutzerverwaltung als eigener Tab statt Dialog: passt zur Aktivitätsleiste und bietet Platz
+  für die Tabelle.
+- Läuft die Sitzung ab und meldet sich im Dialog ein anderes Konto an, lädt die Seite neu –
+  sonst bliebe die Ansicht des vorigen Kontos stehen.
+- Logout löscht die Offline-Kopie der Projektliste (`localStorage`), damit ein Gruppen-Nutzer
+  am selben Rechner nie die Liste des Admins zu sehen bekommt.
+
+**Tests (live, Puppeteer)**: vor dem Login keine Admin-Elemente; falsches Passwort zeigt die
+Meldung; Login als `ZZUser` (Groß-/Kleinschreibung egal) → nur Tabs Projects/AI Tools, Gruppe
+`zz-grp2`, ein Projekt mit Umbenennen/Passwort/Notizen und „Start“, nicht ziehbar; Umbenennen
+über den Dialog hin und zurück, Notizen öffnen; Logout leert die Offline-Liste. Admin: alle
+Tabs, Formular, Klonen/Löschen; Users-Tab: anlegen, doppelter Name (409) und zu kurzes
+Passwort (400) im Dialog, Gruppen entfernen, löschen; Gruppe umbenennen → Zuordnung des
+Nutzers wandert mit, zurück; Gruppe löschen → Projekt in „Uncategorized“, Nutzer ohne Gruppe
+(danach wiederhergestellt); abgelaufene Sitzung + Login als `zzuser` → Seite lädt neu in
+dessen Ansicht.
