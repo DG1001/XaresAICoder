@@ -457,7 +457,7 @@ tmpfs:
 | **Crush** | CLI Tool | npm (`/opt/ai-tools`) | Multi-model agent |
 | **Pi** | CLI Tool | npm (`/opt/ai-tools`) | Minimal multi-provider agent |
 | **Cline** | VS Code Extension | Open VSX (pre-installed) | Agent for multi-file edits |
-| **Kilo Code** | VS Code Extension | Open VSX (pre-installed) | Agent with chat and autocomplete |
+| **Kilo Code** | VS Code Extension | Open VSX (optional, installed by the user) | Agent with chat and autocomplete |
 | **Claude Code for VS Code** | VS Code Extension | Open VSX (pre-installed) | Panel for the `claude` CLI |
 
 The CLI tools are updated with `update_ai_agents` (no sudo); automatic updates are switched off so that all workspaces keep the image's versions.

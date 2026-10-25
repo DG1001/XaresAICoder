@@ -1670,6 +1670,34 @@ dem Test gelöscht) in einem Workspace mit Standardeinstellungen (kein sudo,
 
 ---
 
+### 4.5 Nachtrag: Kilo Code nicht mehr vorinstalliert (2026-10-25)
+
+**Problem**: Kilo Code belegt im Image 556 MB (eigenes `kilo`-Backend 258 MB, `ffmpeg` 68 MB,
+JavaScript 190 MB) und startet mit `onStartupFinished` bei jedem VS-Code-Fenster – auch
+ungenutzt rund 350 MB RAM pro Workspace (von dir gemessen). Bei 2 GB pro Workspace und
+Workshops mit 20–30 Klonen ist das zu viel für eine Erweiterung, deren Aufgabe Cline schon
+abdeckt.
+
+**Änderung**: `kilocode.kilo-code` aus `code-server/extensions.txt` und aus den
+Erweiterungsempfehlungen (`.vscode/extensions.json` in `workspace-init.sh`) entfernt. `info`,
+AI-Tools-Tab, `AI_TOOLS.md`, User Guide, README, ARCHITECTURE nennen Kilo als optional mit
+`code-server --install-extension kilocode.kilo-code` (ohne sudo; Open VSX steht in der
+Standard-Whitelist). Upgrade-Zeile in `DEPLOYMENT.md`. Der Smoke-Test erwartet nur noch Cline
+und Claude Code.
+
+**Entscheidungen** (mit dir abgestimmt): nachinstallierbar statt ganz entfernt. Deshalb
+bleiben `KILO_DISABLE_SESSION_INGEST=1`, das Entfernen der Kilo-Logins beim Klonen, der
+mitmproxy-Mitschnitt von `api.kilo.ai`/`ai-gateway.kilo.ai` und `.kilo.ai` in der Whitelist.
+Für Workshops: Kilo im Basis-Workspace installieren, die Klone übernehmen es per Snapshot.
+
+**Tests (live)**: neues Image 4,87 GB, Kilo nicht mehr unter den Erweiterungen.
+Test-Workspace im Browser (Puppeteer) jeweils nach Neustart: Nachinstallation per
+`code-server --install-extension` als `coder` in 43 s; mit Kilo startet ungenutzt
+`kilo serve` (433 MB RSS), Container 1,27 GiB gegenüber 914 MiB ohne Kilo (≈ 370 MB).
+Beobachtung: neue Workspaces öffnen im Restricted Mode (Ordner nicht vertraut); erst nach
+„Trust“ starten Kilo, Cline usw. – für die Messung war die Trust-Abfrage nur in diesem
+Test-Container abgeschaltet. `tests/smoke-test.sh` lokal: 44/44 grün.
+
 ## Backlog-Aufräumen (2026-10-25)
 
 **Alias sofort erreichbar**

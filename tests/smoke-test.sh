@@ -243,7 +243,7 @@ if create_workspace zz-smoke-direct none; then
         sed -n 's/^missing://p')
     check "AI tools installed${missing:+ (missing: $(echo $missing))}" [ -z "$missing" ]
     missing=$(docker exec -u coder "workspace-$id" code-server --list-extensions 2>/dev/null |
-        awk 'BEGIN { split("saoudrizwan.claude-dev kilocode.kilo-code anthropic.claude-code", want) }
+        awk 'BEGIN { split("saoudrizwan.claude-dev anthropic.claude-code", want) }
              { have[tolower($0)] = 1 }
              END { for (i in want) if (!have[want[i]]) print want[i] }')
     check "AI extensions installed${missing:+ (missing: $(echo $missing))}" [ -z "$missing" ]
