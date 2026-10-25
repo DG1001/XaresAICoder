@@ -10,5 +10,6 @@
       "icon": "terminal-tmux"
     }
   },
-  "terminal.integrated.defaultProfile.linux": "bash"
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "extensions.autoUpdate": false
 }

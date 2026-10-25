@@ -56,26 +56,34 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.local/bin/uv /usr/local/bin/uv && \
     chmod +x /usr/local/bin/uv
 
-# Install AI coding tools
-# Install Aider AI pair programming tool (isolated via uv to avoid dependency conflicts)
-# Use system-wide tool dir so the non-root `coder` user can execute the wrapper
-ENV UV_TOOL_DIR=/opt/uv-tools
-ENV UV_TOOL_BIN_DIR=/usr/local/bin
-ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
-RUN mkdir -p "$UV_TOOL_DIR" "$UV_PYTHON_INSTALL_DIR" && \
-    uv tool install --python 3.12 aider-chat && \
-    chmod -R a+rX "$UV_TOOL_DIR" "$UV_PYTHON_INSTALL_DIR"
-
-# Install Node.js AI tools (first install most tools, then OpenAI Codex separately)
-RUN npm install -g @anthropic-ai/claude-code @qwen-code/qwen-code@latest @charmland/crush @earendil-works/pi-coding-agent
-
-# Install OpenAI Codex with environment variables to use system ripgrep
+# AI coding tools (CLI). They live in /opt/ai-tools, owned by coder, so
+# update_ai_agents and the tools' own update commands (claude update, codex
+# update, opencode upgrade, ...) work without sudo; `npm install -g` in a
+# workspace goes there too. The directory is appended to PATH: a file placed
+# there cannot shadow a system command (root uses the same PATH, e.g. when a
+# clone snapshot is cleaned).
+ENV NPM_CONFIG_PREFIX=/opt/ai-tools
+ENV PATH=$PATH:/opt/ai-tools/bin
+# Login shells get PATH from /etc/profile, which drops the one above
+RUN echo 'case ":$PATH:" in *:/opt/ai-tools/bin:*) ;; *) PATH="$PATH:/opt/ai-tools/bin" ;; esac' \
+    > /etc/profile.d/ai-tools.sh
+# No automatic updates: workshop participants keep the versions of the image
+# until somebody runs update_ai_agents (or a tool's own update command)
+ENV DISABLE_AUTOUPDATER=1 \
+    OPENCODE_DISABLE_AUTOUPDATE=1 \
+    COPILOT_AUTO_UPDATE=false
+# OpenAI Codex uses the system ripgrep
 ENV VSCODE_RIPGREP_BINARY_PATH=/usr/bin/rg
 ENV VSCODE_RIPGREP_FORCE_PATH=/usr/bin/rg
-RUN npm config set registry https://registry.npmjs.org/ && \
-    npm install -g @openai/codex || \
-    (sleep 10 && npm install -g @openai/codex) || \
-    (sleep 20 && npm install -g @openai/codex --ignore-scripts)
+RUN mkdir -p /opt/ai-tools && \
+    npm config set registry https://registry.npmjs.org/ && \
+    npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot \
+        @charmland/crush @opencode/cli @earendil-works/pi-coding-agent && \
+    # OpenCode pulls in all four Linux builds (glibc/musl, baseline); its
+    # postinstall hard-links the matching one to bin/, the rest is ~700 MB
+    rm -rf /opt/ai-tools/lib/node_modules/@opencode/cli/node_modules/@opencode && \
+    opencode --version && \
+    chown -R coder:coder /opt/ai-tools
 
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -96,9 +104,6 @@ WORKDIR /workspace
 # Copy setup scripts
 COPY setup-scripts/ /tmp/setup-scripts/
 RUN chmod +x /tmp/setup-scripts/*.sh
-
-# Install OpenCode SST
-RUN /tmp/setup-scripts/setup-opencode.sh
 
 # Setup workspace initialization first
 RUN /tmp/setup-scripts/workspace-init.sh
