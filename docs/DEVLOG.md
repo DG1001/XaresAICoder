@@ -1583,13 +1583,9 @@ npm, PyPI, Open VSX, GitHub; Stichproben selbst nachgeprüft).
 - Live-Deploy (Backup vorher mit `backup.sh`), Smoke-Test 31/31 inkl. der neuen Prüfungen.
 - Klon eines Workspaces mit Schein-Logins (Copilot, Kilo, Claude): im Klon entfernt,
   Projektdateien erhalten. Test-Workspaces und Forgejo-Nutzer entfernt.
-- **Offen**: Kilo bringt eine `bwrap`-Sandbox mit; die Standard-Seccomp-Regeln der
-  Workspaces blockieren User-Namespaces (wie bei Codex). Ob Kilo sie standardmäßig nutzt,
-  ließ sich ohne Modellzugang nicht prüfen.
-
-### 4.2 Dashboard, Logging-Proxy und Whitelist für die neue Auswahl
-
-**Problem**
+- ~~**Offen**: Kilos `bwrap`-Sandbox~~ – geprüft 2026-10-25 (siehe unten): Kilo führt
+  Shell-Befehle im Standard-Workspace normal aus; nur der optionale Sandbox-Modus
+  scheitert.
 - Das Dashboard („AI Tools“) zeigte Continue, Aider und Qwen Code und bezeichnete die
   Erweiterungen als „install from marketplace“; Codex sollte per kopierter `auth.json`
   angemeldet werden. Der Hinweis zu „Copy AI tool logins“ beim Klonen nannte die alten
@@ -1651,3 +1647,19 @@ npm, PyPI, Open VSX, GitHub; Stichproben selbst nachgeprüft).
   (Codex aktualisiert, OpenCode bereits aktuell). `opencode upgrade` installiert bei einer
   neuen Version wieder alle vier Linux-Builds → Hinweis in `AI_TOOLS.md`, für OpenCode
   `update_ai_agents opencode` zu nehmen.
+
+### 4.4 Nachtrag: Kilo-Sandbox geprüft (2026-10-25)
+
+Mit einem temporären OpenRouter-Key (von dir bereitgestellt, per Datei übergeben, nach
+dem Test gelöscht) in einem Workspace mit Standardeinstellungen (kein sudo,
+`no-new-privileges`, Standard-Seccomp):
+- Das Kilo-Backend der Erweiterung (`bin/kilo` 7.8.17, `kilo run --auto`, Modell
+  `openai/gpt-4.1-mini`) führt einen Shell-Befehl aus: Datei geschrieben, Nutzer `coder`,
+  keine `bwrap`- oder Namespace-Meldung. Ohne `--auto` lehnt Kilo nicht freigegebene
+  Befehle im nicht interaktiven Modus ab (Freigaberegeln, keine Sandbox).
+- Kilo hat einen **optionalen** Sandbox-Modus (Erweiterung: `kilo.sandbox.newSessionDefault`,
+  pro neuer Sitzung). Das mitgelieferte `bwrap` startet im Workspace nicht („No permissions
+  to create a new namespace“), wie bei Codex. Hinweis in `AI_TOOLS.md`: den Modus nicht
+  einschalten. Keine Codeänderung; der Modus ist standardmäßig aus.
+- Nebenbefund: Kilo sendet Telemetrie (PostHog), im Log sichtbar.
+- Workspace, Kilo-Daten, Key-Dateien (Host und Workspace) und Forgejo-Nutzer entfernt.

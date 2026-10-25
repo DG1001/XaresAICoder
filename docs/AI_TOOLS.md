@@ -85,6 +85,8 @@ Pre-installed (extension ID `kilocode.kilo-code`).
 
 Kilo Code stores its data in `~/.local/share/kilo`.
 
+Kilo runs shell commands normally in the workspaces. Do not switch on its optional sandbox for new sessions: it uses `bwrap`, which needs unprivileged user namespaces, and Docker's default seccomp profile of the workspaces blocks them (same as Codex's own sandbox).
+
 #### Usage Examples
 - **Planning**: "Plan how to add user authentication to this app"
 - **Coding**: "Implement the plan in the auth module"
