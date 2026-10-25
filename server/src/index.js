@@ -6,7 +6,9 @@ const projectsRouter = require('./routes/projects');
 const workspaceRouter = require('./routes/workspace');
 const workshopRouter = require('./routes/workshop');
 const authRouter = require('./routes/auth');
+const usersRouter = require('./routes/users');
 const auth = require('./services/auth');
+const access = require('./services/access');
 
 const app = express();
 const PORT = 3000;
@@ -18,7 +20,10 @@ app.use(express.json());
 // Admin login for everything under /api except health, login itself and the
 // workshop endpoints (see services/auth.js)
 app.use('/api', auth.requireLogin);
+// Group users: only their projects and a few actions (services/access.js)
+app.use('/api', access.restrictGroupUsers);
 app.use('/api/auth', authRouter);
+app.use('/api/users', usersRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

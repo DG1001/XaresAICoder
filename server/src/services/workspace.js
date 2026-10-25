@@ -1020,6 +1020,27 @@ class WorkspaceService {
   }
 
   // Update project group
+  // Moves every project of a group to another (validated) group name
+  async renameGroup(oldName, newName) {
+    const groupName = String(newName || '').trim();
+    if (!groupName) {
+      throw new Error('New group name is required');
+    } else if (groupName.length > 50) {
+      throw new Error('Group name must be 50 characters or less');
+    } else if (!/^[a-zA-Z0-9\s\-_]+$/.test(groupName)) {
+      throw new Error('Group name can only contain letters, numbers, spaces, hyphens, and underscores');
+    }
+    let moved = 0;
+    for (const project of this.projects.values()) {
+      if ((project.group || 'Uncategorized') === oldName) {
+        project.group = groupName;
+        moved++;
+      }
+    }
+    if (moved > 0) await this.saveProjectsToDisk();
+    return groupName;
+  }
+
   async updateProjectGroup(projectId, newGroup) {
     const project = this.projects.get(projectId);
     if (!project) {

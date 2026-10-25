@@ -2,9 +2,12 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-// Admin login for the platform API: one shared password (ADMIN_PASSWORD),
-// sessions as signed, HttpOnly cookies. Without a password the API stays
-// locked (deploy.sh generates one).
+// Login for the platform API: the admin (one shared password, ADMIN_PASSWORD)
+// or a group user (users.js; limited to the projects of their groups, see
+// access.js). Sessions are signed, HttpOnly cookies. Without ADMIN_PASSWORD
+// the API stays locked (deploy.sh generates one).
+
+const users = require('./users');
 
 const COOKIE_NAME = 'xares_admin';
 const SECRET_FILE = path.join('/app', 'workspaces', '.session-secret');
@@ -56,19 +59,33 @@ function safeEqual(a, b) {
 // restart forgets them, the cookie is cleared in the browser regardless)
 const revoked = new Map();
 
-function createSession() {
+// Token: expires.nonce.uid.version.signature - uid is "admin" or a group
+// user's id, version that user's sessionVersion (a new password ends sessions)
+function createSession(uid = 'admin', version = 0) {
   const expires = Math.floor(Date.now() / 1000) + Math.round(SESSION_HOURS * 3600);
-  const payload = `${expires}.${crypto.randomBytes(12).toString('base64url')}`;
+  const payload = `${expires}.${crypto.randomBytes(12).toString('base64url')}.${uid}.${version}`;
   return { token: `${payload}.${sign(payload)}`, maxAge: expires * 1000 - Date.now() };
 }
 
 function verifySession(token) {
   const parts = String(token || '').split('.');
-  if (parts.length !== 3 || !adminPassword()) return false;
-  const [expires, nonce, signature] = parts;
-  if (!safeEqual(signature, sign(`${expires}.${nonce}`))) return false;
-  if (!(Number(expires) * 1000 > Date.now())) return false;
-  return !revoked.has(nonce);
+  if (parts.length !== 5 || !adminPassword()) return null;
+  const [expires, nonce, uid, version, signature] = parts;
+  if (!safeEqual(signature, sign(`${expires}.${nonce}.${uid}.${version}`))) return null;
+  if (!(Number(expires) * 1000 > Date.now())) return null;
+  if (revoked.has(nonce)) return null;
+  return { uid, version: Number(version) };
+}
+
+// Who the session belongs to: { role: 'admin' } or { role: 'group', ... };
+// null if there is none or the user was deleted or got a new password
+function sessionUser(req) {
+  const session = verifySession(readCookie(req, COOKIE_NAME));
+  if (!session) return null;
+  if (session.uid === 'admin') return { role: 'admin' };
+  const user = users.get(session.uid);
+  if (!user || user.sessionVersion !== session.version) return null;
+  return { role: 'group', id: user.id, username: user.username, groups: [...user.groups] };
 }
 
 function revokeSession(token) {
@@ -92,7 +109,7 @@ function cookieAttributes(maxAgeMs) {
 }
 
 function hasValidSession(req) {
-  return verifySession(readCookie(req, COOKIE_NAME));
+  return !!sessionUser(req);
 }
 
 // Workspace apps run on subdomains of the platform domain: same-site, so the
@@ -112,9 +129,10 @@ function isCrossSiteWrite(req) {
   }
 }
 
-// Session or nothing, for code that has its own fallback (workshop admin)
+// Admin session or nothing, for code that has its own fallback (workshop admin)
 function isAdminRequest(req) {
-  return !!adminPassword() && hasValidSession(req) && !isCrossSiteWrite(req);
+  const user = adminPassword() ? sessionUser(req) : null;
+  return !!user && user.role === 'admin' && !isCrossSiteWrite(req);
 }
 
 function requireLogin(req, res, next) {
@@ -126,7 +144,8 @@ function requireLogin(req, res, next) {
       message: 'Set ADMIN_PASSWORD in .env and redeploy (./deploy.sh generates one).'
     });
   }
-  if (!hasValidSession(req)) {
+  req.user = sessionUser(req);
+  if (!req.user) {
     return res.status(401).json({ error: 'Login required', code: 'LOGIN_REQUIRED' });
   }
   if (isCrossSiteWrite(req)) {
@@ -175,6 +194,7 @@ module.exports = {
   requireLogin,
   isAdminRequest,
   hasValidSession,
+  sessionUser,
   isCrossSiteWrite,
   createSession,
   revokeSession,

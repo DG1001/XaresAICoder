@@ -22,6 +22,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 | 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
+| 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | 🚧 in Arbeit (Branch `feat/group-users`) |
 
 ---
 
@@ -1705,3 +1706,41 @@ dem Test gelöscht) in einem Workspace mit Standardeinstellungen (kein sudo,
   durch). Mit eigenem API-Key gibt es keinen Upload.
 - Hinweise in `AI_TOOLS.md` (Abschnitt Kilo Code) und auf der Kilo-Karte im Dashboard.
 - Image neu gebaut, Variable gesetzt, Tools laufen; Smoke-Test grün.
+
+---
+
+## Paket 5 – Gruppen-Nutzer
+
+Branch `feat/group-users`. Wunsch: bestimmte Personen sehen im Dashboard nur die Projekte
+ihrer Gruppe(n) und dürfen dort öffnen, umbenennen, starten, stoppen, Notizen und das
+Workspace-Passwort bearbeiten. Mit dir abgestimmt (2026-10-25): Nutzer legt der Admin im
+Dashboard an (Benutzername, Passwort, eine oder mehrere Gruppen); geschützte Workspaces
+verlangen beim Start/Stop weiter ihr Passwort; MCP-Server zurückgestellt.
+
+### 5.1 Server: Nutzer, Sitzungen mit Rolle, Rechteprüfung
+
+**Änderung**
+- `services/users.js`: Nutzer in `/app/workspaces/group-users.json` (atomar, im Backup),
+  bcrypt (Kosten 10), Benutzername `[a-z0-9._-]{2,40}`, `admin` reserviert, Passwortregel
+  gemeinsam mit den Workspace-Passwörtern; `sessionVersion` steigt bei neuem Passwort.
+  Login gegen einen Dummy-Hash bei unbekanntem Namen (gleiche Laufzeit).
+- `services/auth.js`: Token `expires.nonce.uid.version.signatur`; `requireLogin` setzt
+  `req.user` (`admin` oder `group` mit Gruppen) bei jedem Request aus dem aktuellen Stand –
+  gelöschte Nutzer und alte Passwörter sind sofort draußen. Alte Tokens ungültig (einmal
+  neu anmelden). `isAdminRequest` (Workshop) nur noch für die Admin-Rolle.
+- `routes/auth.js`: Login mit `{password}` (Admin, wie bisher) oder `{username, password}`;
+  `/status` liefert Rolle, Benutzername, Gruppen.
+- `services/access.js` (Middleware nach `requireLogin`): Gruppen-Nutzer dürfen
+  `GET /config`, die Listen (gefiltert) sowie für Projekte ihrer Gruppen `GET /:id`,
+  `PUT /:id/name`, Start/Stop, Notizen, Disk-Usage und `PUT /:id/password`; fremde
+  Projekte 404, alles andere 403 `FORBIDDEN_FOR_ROLE`.
+- `routes/users.js` (`/api/users`, Admin): auflisten, anlegen, Gruppen/Passwort ändern,
+  löschen. `PUT|DELETE /api/projects/groups/:name` (Admin): Gruppe umbenennen bzw.
+  auflösen – Projekte **und** Nutzerzuordnungen in einem Schritt.
+
+**Tests (live, per curl)**: Admin-Login mit `{password}` unverändert; Nutzer anlegen,
+Login (falsches Passwort 401); Liste und Gruppen nur `zz-grp`; Anlegen, fremdes Projekt,
+Nutzerliste, Gruppe ändern, Whitelist, Löschen → 403/404/403/403/403/403; Umbenennen,
+Notizen, Stop, Start → 200; Workspace-Passwort setzen → Stop ohne 401, mit 200 → entfernen;
+Gruppe umbenennen → Zuordnung wandert mit, Nutzer sieht sein Projekt weiter; Passwort-Reset
+→ alte Sitzung 401; Workshop-Admin als Nutzer 401.
