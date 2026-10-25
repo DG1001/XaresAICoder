@@ -1688,3 +1688,20 @@ dem Test gelöscht) in einem Workspace mit Standardeinstellungen (kein sudo,
   (die Reihenfolge `pagehide` → Abbruch beim Entladen ist durch den Browser vorgegeben).
 
 **Klone erben Plattform-Variablen**: veralteter Eintrag, seit 2.2/2.7 erledigt (siehe oben).
+
+**Kilo Code: Telemetrie und Session-Upload** (2026-10-25)
+- Recherche (statische Analyse der Erweiterung 7.8.17 und des gebündelten `kilo`, Repo
+  `Kilo-Org/kilocode`, kilo.ai/privacy): Telemetrie an PostHog US (`us.i.posthog.com`) –
+  Nutzungsereignisse mit Modell, Provider, Tokens, Kosten, Sprache, Fehlermeldungen
+  (können Pfade enthalten), Geräte-ID; mit Kilo-Konto an dessen E-Mail gebunden. Keine
+  Prompts oder Code gefunden. Standard an; die Erweiterung richtet sich nach VS Codes
+  Telemetrie-Schalter und gibt ihn als `KILO_TELEMETRY_LEVEL` an ihr Backend weiter. Bei
+  uns aus: code-server läuft mit `disable-telemetry: true` (Image und vom Server
+  geschriebene `config.yaml`; zur Laufzeit mit geöffneter Kilo-Oberfläche nicht geprüft).
+- Getrennt davon lädt Kilo mit Kilo-Konto **komplette Sitzungen** (Prompts, Antworten,
+  Tool-Ausgaben, Code, Diffs) nach `ingest.kilosessions.ai` – unabhängig vom
+  Telemetrie-Schalter. Mit dir abgestimmt: im Image abgeschaltet
+  (`KILO_DISABLE_SESSION_INGEST=1`, die Erweiterung reicht die Umgebung an ihr Backend
+  durch). Mit eigenem API-Key gibt es keinen Upload.
+- Hinweise in `AI_TOOLS.md` (Abschnitt Kilo Code) und auf der Kilo-Karte im Dashboard.
+- Image neu gebaut, Variable gesetzt, Tools laufen; Smoke-Test grün.
