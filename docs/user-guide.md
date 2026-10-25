@@ -201,6 +201,38 @@ Notes:
 - Aliases are **per-workspace** but **globally unique** — `myapp.<domain>` can only point at one workspace at a time.
 - The Aliases icon shows a small counter badge with the number of active aliases on each card.
 
+## Group Users (Restricted Dashboard Access)
+
+The admin can give people their own dashboard login that only shows the projects
+of certain groups — for example a teacher who looks after the workspaces of one
+class.
+
+### For the Admin
+
+1. Put the projects into a group (drag the cards onto a group in the sidebar;
+   **Add Group** creates a new one).
+2. Open the **Users** tab and click **Add User**: enter a user name, keep or
+   replace the generated password, tick one or more groups, **Save**.
+3. Pass the user name and password on.
+
+**Edit** changes the groups or sets a new password (this signs the user out);
+**Delete** removes the user and signs them out right away. Renaming or deleting
+a group in the sidebar carries the users along.
+
+### For Group Users
+
+Sign in with your user name and password (leave the user name empty only for
+the admin login). You see the projects of your groups and can:
+
+- open, start, stop and restart workspaces (password-protected workspaces still
+  ask for their password),
+- rename projects and edit their notes,
+- set, change or remove a workspace password.
+
+Creating, deleting and cloning workspaces, moving them to other groups, aliases,
+proxy logs and AI conversation logs stay with the admin. "Signed in as …" at
+the top shows which account is active; the button next to it logs you out.
+
 ## Python Flask Development
 
 ### Pre-installed Tools

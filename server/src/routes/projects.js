@@ -2,6 +2,8 @@ const express = require('express');
 const workspaceService = require('../services/workspace');
 const dockerService = require('../services/docker');
 const aliasesService = require('../services/aliasesService');
+const usersService = require('../services/users');
+const access = require('../services/access');
 
 const router = express.Router();
 
@@ -51,18 +53,8 @@ async function requireWorkspacePassword(req, res, next) {
 }
 
 // Returns an error message for an invalid new password, or null if valid.
-function validateNewPassword(password) {
-  if (typeof password !== 'string' || password.length < 8) {
-    return 'Password must be at least 8 characters long';
-  }
-  if (password.length > 50) {
-    return 'Password must be less than 50 characters';
-  }
-  if (/[\x00-\x1f\x7f]/.test(password)) {
-    return 'Password must not contain control characters';
-  }
-  return null;
-}
+// Same rule as for group user passwords
+const validateNewPassword = usersService.validatePassword;
 
 function clampInt(value, fallback, min, max) {
   const n = parseInt(value, 10);
@@ -173,7 +165,10 @@ router.post('/create', async (req, res) => {
 // Get all groups (must be before /:projectId route)
 router.get('/groups', async (req, res) => {
   try {
-    const groups = await workspaceService.getGroups();
+    let groups = await workspaceService.getGroups();
+    if (req.user && req.user.role === 'group') {
+      groups = groups.filter(g => req.user.groups.includes(g.name));
+    }
 
     res.json({
       success: true,
@@ -186,6 +181,29 @@ router.get('/groups', async (req, res) => {
       error: 'Failed to get groups',
       message: error.message
     });
+  }
+});
+
+// Rename a group: all its projects and the group users assigned to it.
+// Before the /:projectId routes, so "/groups/name" is not a project.
+router.put('/groups/:name', async (req, res) => {
+  try {
+    const newName = await workspaceService.renameGroup(req.params.name, (req.body || {}).newName);
+    await usersService.renameGroup(req.params.name, newName);
+    res.json({ success: true, group: newName });
+  } catch (error) {
+    res.status(400).json({ error: 'Failed to rename group', message: error.message });
+  }
+});
+
+// Delete a group: its projects move to "Uncategorized", users lose it
+router.delete('/groups/:name', async (req, res) => {
+  try {
+    await workspaceService.renameGroup(req.params.name, 'Uncategorized');
+    await usersService.removeGroup(req.params.name);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: 'Failed to delete group', message: error.message });
   }
 });
 
@@ -238,8 +256,8 @@ router.delete('/:projectId', async (req, res) => {
 // List all projects
 router.get('/', async (req, res) => {
   try {
-    const projects = await workspaceService.listProjects();
-    
+    const projects = access.visibleProjects(req.user, await workspaceService.listProjects());
+
     res.json({
       success: true,
       projects,

@@ -388,8 +388,41 @@ or `WORKSHOP_ADMIN_PASSWORD`.
 
 This closes the remaining path from section "Network Isolation": a request a
 workspace relays through the host now reaches nginx, but the API answers
-`401` without a session. There are no roles yet — every admin can manage every
-workspace.
+`401` without a session.
+
+### Group Users (Roles)
+
+Besides the admin, the admin can create group users (Users tab, `/api/users`),
+e.g. for teachers who look after one class. A group user has a user name, a
+password (bcrypt) and one or more project groups, and only sees the projects of
+these groups. There they can open, rename, start and stop workspaces, edit
+notes and set, change or remove the workspace password (`currentPassword` is
+checked as for the admin; protected workspaces still need their password for
+start/stop). Everything else is admin-only: creating, deleting, cloning,
+moving projects between groups, aliases, proxy logs, LLM conversations,
+recorded domains, the whitelist, user management, the workshop admin page.
+
+How it is enforced:
+- The session cookie carries the account (`admin` or the user's id) and, for
+  group users, a version; the server checks both on every request against the
+  current user list. Deleting a user or setting a new password ends their
+  sessions at once; group changes apply to the next request.
+- A middleware after the login check lets group users reach only an allowlist
+  of endpoints (`403 FORBIDDEN_FOR_ROLE` otherwise). Project endpoints answer
+  `404` for projects outside their groups, and the lists are filtered, so other
+  groups' projects stay invisible.
+- The dashboard hides what a group user may not do; that is convenience only,
+  the server check is what counts.
+- Logins share the rate limit (10 failures per client within 15 minutes); an
+  unknown user name takes as long as a wrong password.
+
+Limits:
+- A group user sees the workspace URLs of their groups and can open them.
+  Workspaces without a password are then open to them, like to everybody who
+  knows the URL (see "Workspace Passwords").
+- Renaming a group (sidebar or `PUT /api/projects/groups/:name`) carries the
+  users along; moving a single project to another group changes who sees it.
+- There is one admin account; group users cannot get admin rights.
 
 ### Workspace Passwords
 
@@ -466,7 +499,7 @@ export PASSWORD='secret'    # set when AUTH_FLAG=password
 
 ### Workspace Password Checks in the API
 
-In addition to the admin login, API endpoints respect workspace protection:
+In addition to the login (admin or group user), API endpoints respect workspace protection:
 - **Stop/Delete** operations require the workspace password in the request body
 - **Password management** (`PUT /api/projects/:id/password`) requires current password when changing/removing
 - **Adding** a password to an unprotected workspace does not require authentication

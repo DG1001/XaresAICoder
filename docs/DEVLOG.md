@@ -22,6 +22,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | 2 – Isolation | Netzsegmentierung (Workspaces ↔ API/mitmproxy), feste Proxy-IPs, API-Login, Forgejo-Token pro Workspace, Snapshot-Sanitizing beim Klonen, `buildContainerSpec()`, echte CPU-/Disk-Limits | ✅ umgesetzt auf Branch `security/paket-2` (2.1–2.8), Abschluss-Live-Test bestanden |
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 | 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
+| 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | ✅ umgesetzt auf Branch `feat/group-users` (5.1–5.3), Smoke-Test grün |
 
 ---
 
@@ -1705,3 +1706,106 @@ dem Test gelöscht) in einem Workspace mit Standardeinstellungen (kein sudo,
   durch). Mit eigenem API-Key gibt es keinen Upload.
 - Hinweise in `AI_TOOLS.md` (Abschnitt Kilo Code) und auf der Kilo-Karte im Dashboard.
 - Image neu gebaut, Variable gesetzt, Tools laufen; Smoke-Test grün.
+
+---
+
+## Paket 5 – Gruppen-Nutzer
+
+Branch `feat/group-users`. Wunsch: bestimmte Personen sehen im Dashboard nur die Projekte
+ihrer Gruppe(n) und dürfen dort öffnen, umbenennen, starten, stoppen, Notizen und das
+Workspace-Passwort bearbeiten. Mit dir abgestimmt (2026-10-25): Nutzer legt der Admin im
+Dashboard an (Benutzername, Passwort, eine oder mehrere Gruppen); geschützte Workspaces
+verlangen beim Start/Stop weiter ihr Passwort; MCP-Server zurückgestellt.
+
+### 5.1 Server: Nutzer, Sitzungen mit Rolle, Rechteprüfung
+
+**Änderung**
+- `services/users.js`: Nutzer in `/app/workspaces/group-users.json` (atomar, im Backup),
+  bcrypt (Kosten 10), Benutzername `[a-z0-9._-]{2,40}`, `admin` reserviert, Passwortregel
+  gemeinsam mit den Workspace-Passwörtern; `sessionVersion` steigt bei neuem Passwort.
+  Login gegen einen Dummy-Hash bei unbekanntem Namen (gleiche Laufzeit).
+- `services/auth.js`: Token `expires.nonce.uid.version.signatur`; `requireLogin` setzt
+  `req.user` (`admin` oder `group` mit Gruppen) bei jedem Request aus dem aktuellen Stand –
+  gelöschte Nutzer und alte Passwörter sind sofort draußen. Alte Tokens ungültig (einmal
+  neu anmelden). `isAdminRequest` (Workshop) nur noch für die Admin-Rolle.
+- `routes/auth.js`: Login mit `{password}` (Admin, wie bisher) oder `{username, password}`;
+  `/status` liefert Rolle, Benutzername, Gruppen.
+- `services/access.js` (Middleware nach `requireLogin`): Gruppen-Nutzer dürfen
+  `GET /config`, die Listen (gefiltert) sowie für Projekte ihrer Gruppen `GET /:id`,
+  `PUT /:id/name`, Start/Stop, Notizen, Disk-Usage und `PUT /:id/password`; fremde
+  Projekte 404, alles andere 403 `FORBIDDEN_FOR_ROLE`.
+- `routes/users.js` (`/api/users`, Admin): auflisten, anlegen, Gruppen/Passwort ändern,
+  löschen. `PUT|DELETE /api/projects/groups/:name` (Admin): Gruppe umbenennen bzw.
+  auflösen – Projekte **und** Nutzerzuordnungen in einem Schritt.
+
+**Tests (live, per curl)**: Admin-Login mit `{password}` unverändert; Nutzer anlegen,
+Login (falsches Passwort 401); Liste und Gruppen nur `zz-grp`; Anlegen, fremdes Projekt,
+Nutzerliste, Gruppe ändern, Whitelist, Löschen → 403/404/403/403/403/403; Umbenennen,
+Notizen, Stop, Start → 200; Workspace-Passwort setzen → Stop ohne 401, mit 200 → entfernen;
+Gruppe umbenennen → Zuordnung wandert mit, Nutzer sieht sein Projekt weiter; Passwort-Reset
+→ alte Sitzung 401; Workshop-Admin als Nutzer 401.
+
+### 5.2 Dashboard
+
+**Änderung** (`frontend/index.html`, `app.js`, `style.css`)
+- Login-Dialog mit Feld „User name“ (leer oder `admin` = Admin), Fehlermeldung „Wrong user
+  name or password“. Nach dem Login holt `loadSession()` `GET /api/auth/status` und setzt
+  `body[data-role]`; neben dem Logout steht „Signed in as …“.
+- Ausblenden per CSS: `.admin-only` ist nur bei `data-role="admin"` sichtbar, `.group-only`
+  nur bei `group`; ohne bekannte Rolle (vor dem Login) bleibt beides verborgen. Gruppen-Nutzer
+  sehen kein Erstellen-Formular, keinen Quick Clone, keinen Git-Server-Tab, kein „Add Group“,
+  keine Umbenennen/Löschen-Knöpfe an Gruppen, keine Icons für Aliase, KI-Gespräche,
+  aufgezeichnete Domains und Proxy-Logs, kein Klonen/Löschen und kein Drag & Drop. Sichtbar
+  bleiben Öffnen/Start/Stop, Umbenennen, Notizen und Workspace-Passwort; die Gruppenleiste
+  zeigt genau ihre zugewiesenen Gruppen. Die eigentliche Sicherung bleibt die Server-Prüfung.
+- `/api/limits` lädt nur noch der Admin (für Gruppen-Nutzer 403, wird nicht gebraucht).
+- Neuer Tab „Users“ (Admin): Liste mit Gruppen und Anlagedatum; Dialog zum Anlegen
+  (Benutzername, generiertes Passwort, Gruppen als Checkboxen) und Bearbeiten (Gruppen,
+  optional neues Passwort – meldet den Nutzer ab); Löschen mit Rückfrage. Fehler des Servers
+  (Name vergeben, Passwort zu kurz) erscheinen im Dialog.
+- Gruppe umbenennen/löschen in der Seitenleiste nutzt `PUT|DELETE /api/projects/groups/:name`
+  statt einer Schleife über `PUT /:id/group`; die Rückfrage beim Löschen nennt auch die
+  betroffenen Nutzer.
+
+**Entscheidungen**
+- Nutzerverwaltung als eigener Tab statt Dialog: passt zur Aktivitätsleiste und bietet Platz
+  für die Tabelle.
+- Läuft die Sitzung ab und meldet sich im Dialog ein anderes Konto an, lädt die Seite neu –
+  sonst bliebe die Ansicht des vorigen Kontos stehen.
+- Logout löscht die Offline-Kopie der Projektliste (`localStorage`), damit ein Gruppen-Nutzer
+  am selben Rechner nie die Liste des Admins zu sehen bekommt.
+
+**Tests (live, Puppeteer)**: vor dem Login keine Admin-Elemente; falsches Passwort zeigt die
+Meldung; Login als `ZZUser` (Groß-/Kleinschreibung egal) → nur Tabs Projects/AI Tools, Gruppe
+`zz-grp2`, ein Projekt mit Umbenennen/Passwort/Notizen und „Start“, nicht ziehbar; Umbenennen
+über den Dialog hin und zurück, Notizen öffnen; Logout leert die Offline-Liste. Admin: alle
+Tabs, Formular, Klonen/Löschen; Users-Tab: anlegen, doppelter Name (409) und zu kurzes
+Passwort (400) im Dialog, Gruppen entfernen, löschen; Gruppe umbenennen → Zuordnung des
+Nutzers wandert mit, zurück; Gruppe löschen → Projekt in „Uncategorized“, Nutzer ohne Gruppe
+(danach wiederhergestellt); abgelaufene Sitzung + Login als `zzuser` → Seite lädt neu in
+dessen Ansicht.
+
+### 5.3 Doku, Smoke-Test
+
+**Änderung**
+- `docs/API.md`: Abschnitt „Login and Roles“ (Login mit `username`, Status mit Rolle),
+  Tabelle „Group User Permissions“ (Allowlist, 404/403), neuer Abschnitt „Group Users“
+  (`/api/users`, Regeln), „Rename or Delete a Group“, Fehlercodes `LOGIN_REQUIRED` und
+  `FORBIDDEN_FOR_ROLE`; das Antwortbeispiel von `GET /api/projects/groups` stimmte nicht
+  (Objekte mit `name`/`count`/`projects` statt Strings) – korrigiert.
+- `docs/SECURITY.md`: Rollenmodell, Durchsetzung (Sitzung mit Konto und Version,
+  Middleware, 404 statt 403 für fremde Projekte), Grenzen (Gruppen-Nutzer sehen die
+  Workspace-URLs ihrer Gruppen; Verschieben eines Projekts ändert, wer es sieht).
+- `docs/user-guide.md`: Abschnitt „Group Users“ für Admin und Gruppen-Nutzer;
+  `docs/DEPLOYMENT.md`: Upgrade-Zeile (einmal neu anmelden), Grenzen-Absatz;
+  `README.md`: „Recent Updates“; lokale `CLAUDE.md`.
+- `tests/smoke-test.sh`: Abschnitt „Group users“ mit dem Workspace ohne Proxy (kein
+  zusätzlicher Container): in Gruppe `zz-smoke-group` verschieben, Nutzer anlegen, Login
+  mit eigener Cookie-Datei (`as_group`), Liste nur dieser Workspace, Anlegen und
+  Nutzerverwaltung 403, Umbenennen/Notizen/Stop/Start 200, nach dem Verschieben aus der
+  Gruppe 404, neues Passwort beendet die Sitzung (401), Nutzer löschen; Aufräumen löscht
+  übrig gebliebene Nutzer.
+
+**Tests (live)**: `tests/smoke-test.sh` lokal – alle 44 Prüfungen grün, davon 13 im neuen
+Abschnitt „Group users“; danach keine `zz-smoke-*`-Workspaces, Nutzer oder Forgejo-Nutzer
+übrig.

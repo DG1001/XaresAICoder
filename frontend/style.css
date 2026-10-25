@@ -2279,3 +2279,86 @@ code {
         text-align: center;
     }
 }
+/* Roles: body[data-role] is set after login. Hiding is only convenience,
+   the server checks every request. */
+body:not([data-role="admin"]) .admin-only,
+body:not([data-role="group"]) .group-only {
+    display: none !important;
+}
+
+.current-user {
+    align-self: center;
+    font-size: 12px;
+    color: var(--vscode-text-muted);
+    white-space: nowrap;
+}
+
+/* Users Tab (admin) */
+.users-description {
+    font-size: 13px;
+    color: var(--vscode-text-muted);
+    margin-bottom: 16px;
+    max-width: 760px;
+}
+
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.users-table th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--vscode-text-muted);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--vscode-border);
+}
+
+.users-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--vscode-border);
+    vertical-align: middle;
+}
+
+.users-table .user-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.user-group-tag {
+    display: inline-block;
+    margin: 0 4px 2px 0;
+    padding: 2px 6px;
+    border: 1px solid var(--vscode-border);
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--vscode-text-accent);
+}
+
+.user-groups-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+}
+
+.user-groups-list label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+@media (max-width: 768px) {
+    .current-user {
+        display: none;
+    }
+}
