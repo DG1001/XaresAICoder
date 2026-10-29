@@ -1915,3 +1915,33 @@ Zugang; schlimmstenfalls lässt sich die Login-Sperre umgehen.
 mit fremder und mit Gateway-Adresse im Header → jeweils 403, Log zeigt die Container-Adresse.
 Schreiber lokal mit Testeingaben (`/33`, `/129`, Text → verworfen). `tests/smoke-test.sh`
 lokal: 47/47 grün.
+
+### 5.5 Nachtrag: Forgejo zeigt ohne Login nichts (2026-10-29)
+
+**Problem**: Bisher verbarg die Basic Auth vor der Hauptdomain auch `/git/`. Ohne sie sah ein
+anonymer Besucher lokal Explore-Seiten, Profile und 18 öffentliche Repositories des
+Admin-Kontos (angelegt vor den Forgejo-Nutzern pro Workspace, Paket 2) – auch per API
+(`/api/v1/repos/search`). Auf einer öffentlichen Installation wären solche Altbestände im
+Internet lesbar.
+
+**Änderung**: `FORGEJO__service__REQUIRE_SIGNIN_VIEW=${GIT_REQUIRE_SIGNIN_VIEW:-true}` in
+`docker-compose.yml`, Variable in `.env.example`. `SECURITY.md` (Abschnitt Forgejo),
+`DEPLOYMENT.md` (Upgrade-Zeile, Hinweis beim externen SSL-Proxy). `tests/smoke-test.sh`:
+`/git/api/v1/repos/search` ohne Login → 403 (übersprungen bei
+`GIT_REQUIRE_SIGNIN_VIEW=false`).
+
+**Entscheidung**: Standard `true`, per `.env` abschaltbar, falls öffentliche Repositories
+gewollt sind. Anonymes `git clone` öffentlicher Repos geht damit nicht mehr; die Plattform
+selbst nutzt überall Admin-Zugang oder Workspace-Token. Der Forgejo-Healthcheck (`curl -f /`)
+und die Prüfungen in `deploy.sh`/`setup-forgejo.sh` bleiben grün: Die Startseite antwortet
+weiter mit 200, `curl -f` wertet Weiterleitungen nicht als Fehler. `testGitServerConnection`
+(anonym auf `/api/v1/version`, jetzt 403) wird nirgends aufgerufen.
+
+**Tests (live)**: Forgejo mit der neuen Variable neu erstellt. Anonym: `/`, `/user/login`,
+`/api/healthz` → 200; `/explore/repos`, `/explore/users`, Profil `/developer` → 303 auf die
+Login-Seite; `/api/v1/version`, `/users/search`, `/repos/search` → 403. Workspace
+`zz-forgejo-test`: Commit, `setup_local_remote`, `git ls-remote` mit Token → ok; Workspace
+`zz-forgejo-clone` aus `http://localhost/git/<user>/workspace.git` → als Collaborator mit
+Token geklont, Commit vorhanden. Beide gelöscht, Forgejo-Nutzer entfernt.
+`tests/smoke-test.sh` lokal: 49/49 grün, darunter die neue Forgejo-Prüfung und die
+Fälschungsprüfung aus 5.4 (`X-Forwarded-For` aus dem Workspace → 403).

@@ -232,6 +232,11 @@ code=$(http "unknown-smoke.$BASE_DOMAIN" -o /dev/null -w '%{http_code}' "http://
 check "Unknown subdomain answers 404 (HTTP $code)" [ "$code" = 404 ]
 if [ "$ENABLE_GIT_SERVER" = true ]; then
     check "Forgejo reachable under /git/" wait_forgejo
+    if [ "$(env_value GIT_REQUIRE_SIGNIN_VIEW)" != false ]; then
+        code=$(curl -s --max-time 30 --resolve "$BASE_DOMAIN:$HOST_PORT:127.0.0.1" -o /dev/null -w '%{http_code}' \
+            "http://$BASE_DOMAIN:$HOST_PORT/git/api/v1/repos/search")
+        check "Forgejo shows no repositories without a login (HTTP $code)" [ "$code" = 403 ]
+    fi
 fi
 
 section "Workspace without proxy"

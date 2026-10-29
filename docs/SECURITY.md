@@ -486,6 +486,13 @@ it (`write:repository`, `write:user`), passed in as `FORGEJO_USER` /
   tokens and repositories); see `.env.example`.
 - `./deploy.sh` replaces the well-known default password `admin123!` once with
   a random one; `./deploy.sh --rotate-git-password` sets a new one at any time.
+- **Nothing visible without a login** (`GIT_REQUIRE_SIGNIN_VIEW`, default
+  `true`, Forgejo's `REQUIRE_SIGNIN_VIEW`): explore pages, profiles,
+  repositories and the API need a signed-in user or a token; anonymous visitors
+  only get the start page, the login page and `/api/healthz`. Without it,
+  repositories created as public before the per-workspace accounts (owned by
+  the admin account) are readable by anybody who reaches `/git/`, e.g. once
+  no Basic Auth is in front of the platform.
 
 **Upgrade from earlier versions:** workspaces created before carried the admin
 password in their environment and in `.git/config`. On the first start of the
