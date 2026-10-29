@@ -125,7 +125,8 @@ if [ -d ".git" ]; then
     echo "🔗 Git Remotes:"
     REMOTES=$(git remote -v 2>/dev/null | grep fetch)
     if [ -n "$REMOTES" ]; then
-        echo "$REMOTES" | sed 's/^/    /'
+        # Without the credentials (Forgejo token) in the URLs: screens get shared
+        echo "$REMOTES" | sed -E 's#(://)[^/@[:space:]]+@#\1***@#; s/^/    /'
         # Check if only external remote exists (no 'origin' or only 'github'/'upstream')
         HAS_ORIGIN=$(git remote 2>/dev/null | grep -w "origin")
         HAS_GITHUB=$(git remote 2>/dev/null | grep -w "github")
@@ -318,12 +319,17 @@ GIT_INTERNAL_URL=$(echo "$GIT_REMOTE_URL" | sed "s|https\?://[^/]*/git/|http://$
 echo "✅ Repository created successfully!"
 echo ""
 
+# Remote URLs carry the Forgejo token: print them without credentials
+hide_credentials() {
+    sed -E 's#(://)[^/@[:space:]]+@#\1***@#'
+}
+
 # Check if 'origin' remote already exists
 CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null)
 
 if [ -n "$CURRENT_ORIGIN" ]; then
     echo "🔀 Current 'origin' remote points to:"
-    echo "   $CURRENT_ORIGIN"
+    echo "   $CURRENT_ORIGIN" | hide_credentials
     echo ""
     echo "Do you want to:"
     echo "  1) Rename current 'origin' to 'github' and add Forgejo as new 'origin'"
@@ -401,7 +407,7 @@ echo ""
 echo "✅ Setup complete!"
 echo ""
 echo "📋 Current Git remotes:"
-git remote -v
+git remote -v | hide_credentials
 
 SETUP_LOCAL_REMOTE_EOF
 chmod +x /usr/local/bin/setup_local_remote
