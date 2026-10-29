@@ -11,7 +11,7 @@ const users = require('./users');
 
 const COOKIE_NAME = 'xares_admin';
 const SECRET_FILE = path.join('/app', 'workspaces', '.session-secret');
-const SESSION_HOURS = Math.min(Math.max(parseFloat(process.env.ADMIN_SESSION_HOURS) || 12, 0.25), 24 * 30);
+const SESSION_HOURS = Math.min(Math.max(parseFloat(process.env.ADMIN_SESSION_HOURS) || 168, 0.25), 24 * 30);
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGINS = 10;
 

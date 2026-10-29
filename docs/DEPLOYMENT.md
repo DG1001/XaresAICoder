@@ -139,6 +139,19 @@ server {
 }
 ```
 
+**Login and client addresses:**
+- The dashboard has its own login (admin and group users, see [API.md](API.md#login-and-roles)).
+  An extra Basic Auth in front of the main domain is not needed and would make group users
+  log in twice.
+- Ten wrong passwords within 15 minutes block the login per client. Behind the external
+  nginx every request comes from the proxy, so XaresAICoder's nginx takes the client address
+  from `X-Forwarded-For` (the `$proxy_add_x_forwarded_for` line above is required). A proxy on
+  the Docker host itself is trusted automatically (it arrives from a Docker network gateway).
+  For a proxy on another machine, list its address in `TRUSTED_PROXIES` in `.env`
+  (IP addresses or CIDR ranges) and restart the server.
+- Bind `HOST_PORT` to loopback (`HOST_PORT=127.0.0.1:8080`) so that nobody can bypass the
+  external nginx (see [SECURITY.md](SECURITY.md#admin-login-dashboard-and-api)).
+
 **SSL Certificate Requirements:**
 - **Wildcard certificate** for `*.coder.example.com`
 - Must cover main domain and all subdomains:
@@ -434,6 +447,7 @@ What changes:
 | VS Code Workspace Trust | Switched off in the image (new workspaces no longer open in Restricted Mode; see [SECURITY.md](SECURITY.md#vs-code-workspace-trust)) | Rebuild the code-server image. Existing workspaces keep the prompt until recreated; click "Trust" there once |
 | Kilo Code | No longer pre-installed (about 550 MB in the image, about 350 MB RAM per workspace even when idle); users install it with `code-server --install-extension kilocode.kilo-code` where wanted | Rebuild the code-server image. Existing workspaces keep Kilo until recreated; remove it there with `code-server --uninstall-extension kilocode.kilo-code` and reload the window |
 | Login / group users | Group users with their own login, limited to the projects of their groups (Users tab, `/api/users`, see [API.md](API.md#group-user-permissions)); the session cookie now names the account | Everybody logs in once more after the update (older sessions are no longer valid). `{"password": …}` logins of scripts keep working |
+| Login behind a reverse proxy | nginx takes the client address from `X-Forwarded-For` of a proxy on the Docker host or in `TRUSTED_PROXIES`, so the login limit applies per client instead of to everybody at once; sessions last 7 days instead of 12 hours | The external nginx must send `X-Forwarded-For` (see [Production with External SSL Proxy](#3-production-with-external-ssl-proxy)); a Basic Auth in front of the dashboard can go. An `.env` with `ADMIN_SESSION_HOURS=12` keeps 12 hours: change or remove the line |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
 Forgejo admin password) until they are recreated; `setup_local_remote` works in them

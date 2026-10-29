@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # XaresAICoder Smoke Test
-# Exercises a running installation end to end through nginx: login, workspace
-# lifecycle, group users, network isolation, both proxies, Forgejo and, with
-# --backup, backup.sh with a restore. Run by CI after ./deploy.sh
+# Exercises a running installation end to end through nginx: login (incl. the
+# per-client limit behind a reverse proxy), workspace lifecycle, group users,
+# network isolation, both proxies, Forgejo and, with --backup, backup.sh with
+# a restore. Run by CI after ./deploy.sh
 # (.github/workflows/smoke-test.yml); also works against a local installation
 # and removes what it created (workspaces zz-smoke-*, their Forgejo users,
 # group user zz-smoke-user).
@@ -37,6 +38,7 @@ BASE_DOMAIN=$(env_value BASE_DOMAIN)
 BASE_DOMAIN=${BASE_DOMAIN:-localhost}
 HOST_PORT=$(env_value HOST_PORT)
 HOST_PORT=${HOST_PORT:-80}
+HOST_PORT=${HOST_PORT##*:}  # port of a loopback binding like 127.0.0.1:8080
 ENABLE_PROXY=$(env_value ENABLE_PROXY)
 ENABLE_GIT_SERVER=$(env_value ENABLE_GIT_SERVER)
 WAIT=300  # seconds a workspace may take to come up
@@ -253,6 +255,9 @@ if create_workspace zz-smoke-direct none; then
     check "Docker log limit set (max-size ${max_size:-none})" [ -n "$max_size" ]
     code=$(ws_http_code "$id" -H "Host: $BASE_DOMAIN" http://xaresaicoder-nginx/api/health)
     check "Platform API blocked from the workspace (HTTP $code)" [ "$code" = 403 ]
+    # nginx trusts X-Forwarded-For only from the Docker host, not from workspaces
+    code=$(ws_http_code "$id" -H "Host: $BASE_DOMAIN" -H "X-Forwarded-For: 203.0.113.9" http://xaresaicoder-nginx/api/health)
+    check "Forged X-Forwarded-For from the workspace ignored (HTTP $code)" [ "$code" = 403 ]
     if [ "$ENABLE_GIT_SERVER" = true ]; then
         user=$(forgejo_user_of "$id")
         check "Own Forgejo user ${user:-missing}" forgejo_user_exists "$user"
@@ -330,6 +335,26 @@ if [ "$ENABLE_PROXY" = true ]; then
         [ -z "$ip" ] || docker exec xaresaicoder-mitmproxy-logger rm -f "/var/log/mitmproxy/domains/$ip.json"
     fi
 fi
+
+# Requests from this host reach nginx from a Docker gateway, as those of a
+# reverse proxy in front would: nginx takes the client from X-Forwarded-For,
+# so ten wrong passwords block that client only (before the restore, which
+# restarts the server and so forgets the blocked client)
+section "Login limit behind a reverse proxy"
+wrong_login() {
+    http "$BASE_DOMAIN" -o /dev/null -w '%{http_code}' -H "X-Forwarded-For: $1" \
+        -H 'Content-Type: application/json' -d '{"password":"zz-smoke-wrong"}' \
+        "http://$BASE_DOMAIN:$HOST_PORT/api/auth/login"
+}
+client_a="203.0.113.$((RANDOM % 254 + 1))"
+client_b="198.51.100.$((RANDOM % 254 + 1))"
+for _ in $(seq 1 10); do wrong_login "$client_a" >/dev/null; done
+code=$(wrong_login "$client_a")
+check "Client blocked after ten wrong passwords (HTTP $code)" [ "$code" = 429 ]
+code=$(wrong_login "$client_b")
+check "Other client behind the same proxy not blocked (HTTP $code)" [ "$code" = 401 ]
+api GET /projects/
+check "Own session unaffected (HTTP $STATUS)" [ "$STATUS" = 200 ]
 
 if [ "$WITH_BACKUP" = true ]; then
     section "Backup and restore"

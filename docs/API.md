@@ -56,7 +56,7 @@ participant endpoints (`/api/workshop/status`, `/claim`, `/my-claim`).
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /api/auth/login` | Admin: body `{ "password": "..." }` (or `{ "username": "admin", "password": "..." }`). Group user: `{ "username": "...", "password": "..." }` (user name case-insensitive). Response `{ "authenticated": true, "role": "admin" \| "group" }`. Sets the session cookie `xares_admin` (HttpOnly, SameSite=Strict, `Secure` with `PROTOCOL=https`, lifetime `ADMIN_SESSION_HOURS`, default 12). `401` wrong user name or password, `429` after 10 failed attempts per client within 15 minutes |
+| `POST /api/auth/login` | Admin: body `{ "password": "..." }` (or `{ "username": "admin", "password": "..." }`). Group user: `{ "username": "...", "password": "..." }` (user name case-insensitive). Response `{ "authenticated": true, "role": "admin" \| "group" }`. Sets the session cookie `xares_admin` (HttpOnly, SameSite=Strict, `Secure` with `PROTOCOL=https`, lifetime `ADMIN_SESSION_HOURS`, default 168 = 7 days). `401` wrong user name or password, `429` after 10 failed attempts per client within 15 minutes (behind a reverse proxy: per address in `X-Forwarded-For`, see [DEPLOYMENT.md](DEPLOYMENT.md#3-production-with-external-ssl-proxy)) |
 | `POST /api/auth/logout` | Ends the session and clears the cookie |
 | `GET /api/auth/status` | `{ "configured": bool, "authenticated": bool, "role": "admin" \| "group" }`; for group users also `"username"` and `"groups"` |
 
