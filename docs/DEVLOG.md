@@ -1942,6 +1942,7 @@ weiter mit 200, `curl -f` wertet Weiterleitungen nicht als Fehler. `testGitServe
 Login-Seite; `/api/v1/version`, `/users/search`, `/repos/search` → 403. Workspace
 `zz-forgejo-test`: Commit, `setup_local_remote`, `git ls-remote` mit Token → ok; Workspace
 `zz-forgejo-clone` aus `http://localhost/git/<user>/workspace.git` → als Collaborator mit
-Token geklont, Commit vorhanden. Beide gelöscht, Forgejo-Nutzer entfernt.
+Token geklont, Commit vorhanden. Beide gelöscht, Forgejo-Nutzer entfernt. Session-Cookie nach dem
+Deploy: `Max-Age=604799` (7 Tage). README: Zeile „One Login Is Enough“ unter „Recent Updates“.
 `tests/smoke-test.sh` lokal: 49/49 grün, darunter die neue Forgejo-Prüfung und die
 Fälschungsprüfung aus 5.4 (`X-Forwarded-For` aus dem Workspace → 403).
