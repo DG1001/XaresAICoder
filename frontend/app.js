@@ -1073,6 +1073,7 @@ class XaresAICoder {
         // Check if any projects might need status updates (creating, starting, stopping)
         return this.projects.some(p => 
             p.status === 'creating' || 
+            p.status === 'stopping' ||
             this.creatingProjects.has(p.projectId) ||
             (p.status === 'running' && !p.workspaceUrl) // Running but not ready
         );
@@ -1092,6 +1093,12 @@ class XaresAICoder {
                 this.showWorkspaceReady(newProject);
             }
             
+            // A stop the server ran on finished with an error
+            if (oldProject && oldProject.status === 'stopping' && newProject.status !== 'stopping' &&
+                newProject.lastError && newProject.lastError.action === 'stop') {
+                this.showError(`Failed to stop workspace "${newProject.projectName}": ${newProject.lastError.message}`);
+            }
+
             // Project creation failed
             if (oldProject && 
                 (oldProject.status === 'creating' || (oldProject.status === 'running' && !oldProject.workspaceUrl)) &&
@@ -1195,6 +1202,7 @@ class XaresAICoder {
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
                         ${this.getDiskUsageLabel(project.diskUsage) ? `<span class="disk-usage">${this.getDiskUsageLabel(project.diskUsage)}</span>` : ''}
                     </div>
+                    ${this.getLastErrorLine(project)}
                 </div>
                 <div class="project-actions">
                     ${this.getProjectActionButtons(project)}
@@ -1355,6 +1363,8 @@ class XaresAICoder {
             const data = await response.json();
 
             if (response.ok) {
+                // 202: the server stops the workspace in the background; the
+                // list shows "Stopping" and polls until it is done
                 if (password) this.workspacePasswords.set(projectId, password);
                 this.loadProjects(); // Refresh the list to show updated status
                 this.closePasswordModalFor('stop', projectId);
@@ -1381,11 +1391,20 @@ class XaresAICoder {
         const isStopped = project.status === 'stopped';
         const isError = project.status === 'error';
         const isCreating = project.status === 'creating';
+        const isStopping = project.status === 'stopping';
         const isRunningButNotReady = isRunning && !project.workspaceUrl;
 
         let buttons = '';
 
-        if (isCreating || isRunningButNotReady) {
+        if (isStopping) {
+            // The server runs the stop; the list polls until it is done
+            buttons += `
+                <div class="creating-indicator">
+                    <div class="spinner" style="display: inline-block; width: 16px; height: 16px; margin-right: 8px;"></div>
+                    Stopping workspace...
+                </div>
+            `;
+        } else if (isCreating || isRunningButNotReady) {
             // Show loading indicator while creating or if running but not ready
             buttons += `
                 <div class="creating-indicator">
@@ -1430,8 +1449,8 @@ class XaresAICoder {
             `;
         }
 
-        // Only show clone and delete buttons if not creating
-        if (!isCreating) {
+        // Only show clone and delete buttons if not creating or stopping
+        if (!isCreating && !isStopping) {
             buttons += `
                 <button class="btn-secondary admin-only" onclick="app.openCloneModal('${project.projectId}')" title="Clone this workspace">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -1832,6 +1851,16 @@ class XaresAICoder {
         return `Disk: ${diskUsage.readable}`;
     }
 
+    // A failed action the server finished after the request (e.g. a stop
+    // Docker could not complete) stays visible until the next start or stop
+    getLastErrorLine(project) {
+        const err = project.lastError;
+        if (!err || !err.message) return '';
+        const action = { stop: 'Stop' }[err.action] || 'Last action';
+        const when = err.at ? ` (${this.formatDate(err.at)})` : '';
+        return `<div class="project-last-error">${this.escapeHtml(`${action} failed${when}: ${err.message}`)}</div>`;
+    }
+
     getStatusLabel(status, workspaceUrl = null) {
         // If running but no workspaceUrl, show as Creating
         if (status === 'running' && !workspaceUrl) {
@@ -1842,6 +1871,7 @@ class XaresAICoder {
             'running': 'Running',
             'stopped': 'Stopped',
             'creating': 'Creating',
+            'stopping': 'Stopping',
             'error': 'Error',
             'not_found': 'Not Found'
         };
@@ -1858,6 +1888,7 @@ class XaresAICoder {
             'running': 'status-running',
             'stopped': 'status-stopped',
             'creating': 'status-creating',
+            'stopping': 'status-creating',
             'error': 'status-error',
             'not_found': 'status-error'
         };

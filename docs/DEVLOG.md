@@ -2023,3 +2023,40 @@ SSH-Remote, `@` im Pfad. code-server-Image neu gebaut, Server neu deployt. Works
 Remote `forgejo`) maskiert die bisherige `origin`-Zeile und die Abschlussliste; in keiner
 Ausgabe ein Token. `git push origin` funktioniert weiter. Workspace und Forgejo-Nutzer
 gelöscht.
+
+### Nachtrag: Stoppen läuft auf dem Server, Fehler bleiben sichtbar (2026-10-29)
+
+**Problem** (bei einer Installation mit langsamer Platte und viel Schreiblast beobachtet):
+Zwei Workspaces sollten gestoppt werden; Docker brauchte so lange, dass die Verbindung zum
+Browser nach 40 s ohne Antwort endete (nginx: 499). Eine scheiterte danach im Server mit „tried to kill
+container, but did not receive an exit event“, die andere hing weiter. Im Dashboard war
+davon nichts zu sehen: Die Ladeanzeige gab es nur im Browser, nach dem Neuladen stand wieder
+„Stop“ da; der Fehler stand nur im Server-Log.
+
+**Änderung**:
+
+- `POST /api/projects/:id/stop` startet den Stopp und antwortet sofort `202`
+  (`accepted: true`). Der Server merkt sich laufende Stopps (`pendingStops`); solange Docker
+  den Container noch als laufend meldet, liefern Liste und Einzelabfrage `status: "stopping"`
+  – für jeden Client, auch nach dem Neuladen. Ein zweiter Stopp hängt sich an den laufenden;
+  ein Start währenddessen antwortet `409` („Workspace is still stopping“).
+- Scheitert der Stopp, bekommt der Workspace `lastError` (`action`, `message`, `at`) und den
+  Status von Docker. Der nächste Start oder Stopp löscht ihn. Das Dashboard zeigt ihn unter
+  den Angaben zum Workspace und meldet ihn beim Übergang aus „Stopping“ einmal als Fehler.
+- `?wait=true` (oder `"wait": true` im Body) behält das alte Verhalten: Antwort `200` erst
+  nach dem Stopp, `500` bei Fehler – für Skripte.
+- `stopWorkspaceContainer`: Meldet Docker einen Fehler, prüft der Server bis zu 30 s lang
+  alle 2 s, ob der Container nicht doch steht, bevor er den Fehler weitergibt.
+- Dashboard: Status „Stopping“ mit Ladeanzeige statt Knöpfen, Liste fragt währenddessen alle
+  3 s nach (wie beim Anlegen).
+- Doku: `API.md` (Status `stopping`, `lastError`, `202`/`wait`), Upgrade-Zeile in
+  `DEPLOYMENT.md`. Smoke-Test: erster Stopp mit `?wait=true` (200, Container steht), Stopp
+  als Gruppen-Nutzer ohne (202, `stopping`, danach `stopped`).
+
+**Tests**: Logik von `stopProject` mit nachgebautem Docker-Dienst (langsam, Fehler):
+sofortige Antwort mit `stopping`, Liste zeigt `stopping`, zweiter Stopp hängt sich an, Start
+währenddessen abgelehnt, danach `stopped` ohne `lastError`; Fehlschlag: Status von Docker,
+`lastError` gesetzt, Start löscht ihn; `wait` mit Fehler und mit Erfolg.
+`stopWorkspaceContainer` mit nachgebautem dockerode: Fehler „no exit event“, Container steht
+2,5 s später → Erfolg; Container läuft weiter → Fehler nach Ablauf der Wartezeit.
+`node --check` für Server und `app.js`, `bash -n` für den Smoke-Test.

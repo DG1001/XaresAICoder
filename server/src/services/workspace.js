@@ -59,6 +59,9 @@ function serializeProject(p) {
     // null for workspaces created before this setting existed
     sudoEnabled: typeof p.sudoEnabled === 'boolean' ? p.sudoEnabled : null,
     ...(p.clonedFrom && { clonedFrom: p.clonedFrom }),
+    // Last failed action (e.g. a stop Docker could not finish), shown in the
+    // dashboard until the next start or stop
+    ...(p.lastError && { lastError: p.lastError }),
     aliases: (Array.isArray(p.aliases) ? p.aliases : []).map(a => ({
       subdomain: a.subdomain,
       port: a.port,
@@ -70,6 +73,8 @@ function serializeProject(p) {
 class WorkspaceService {
   constructor() {
     this.projects = new Map();
+    // Stops in progress: projectId -> promise (see stopProject)
+    this.pendingStops = new Map();
     this.maxWorkspacesPerUser = parseInt(process.env.MAX_WORKSPACES_PER_USER) || 5;
     this.persistenceFile = path.join('/app', 'workspaces', 'projects.json');
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
@@ -655,7 +660,7 @@ class WorkspaceService {
       // Docker might show "running" but workspace isn't ready yet
     } else {
       // For non-creating projects, update status from Docker
-      project.status = dockerStatus.status;
+      project.status = this.statusWithPendingStop(projectId, dockerStatus.status);
     }
 
     return {
@@ -691,6 +696,11 @@ class WorkspaceService {
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
 
+    if (this.pendingStops.has(projectId)) {
+      throw new Error('Workspace is still stopping');
+    }
+    delete project.lastError;
+
     // Check concurrent workspace limit before starting
     if (this.limits.enableResourceLimits) {
       const runningCount = await this.getRunningWorkspaceCount();
@@ -722,7 +732,18 @@ class WorkspaceService {
     }
   }
 
-  async stopProject(projectId, providedPassword = null) {
+  // While a stop runs, Docker still reports the container as running; the
+  // dashboard shows 'stopping' instead (for every client, also after a reload).
+  statusWithPendingStop(projectId, dockerStatus) {
+    return this.pendingStops.has(projectId) && dockerStatus === 'running' ? 'stopping' : dockerStatus;
+  }
+
+  // Stopping can take long when Docker is busy (several workspaces at once,
+  // slow disks), longer than a browser or proxy keeps the request open. The
+  // request therefore only starts the stop: the workspace shows 'stopping'
+  // until Docker is done, and a failure stays on the workspace as lastError.
+  // { wait: true } answers only after the container has stopped (scripts).
+  async stopProject(projectId, providedPassword = null, { wait = false } = {}) {
     const project = this.projects.get(projectId);
     if (!project) {
       throw new Error('Project not found');
@@ -730,18 +751,48 @@ class WorkspaceService {
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
 
+    let stop = this.pendingStops.get(projectId);
+    if (!stop) {
+      delete project.lastError;
+      project.status = 'stopping';
+      stop = this.runStop(project).finally(() => this.pendingStops.delete(projectId));
+      this.pendingStops.set(projectId, stop);
+    }
+
+    if (!wait) {
+      return {
+        success: true,
+        accepted: true,
+        message: 'Stopping workspace',
+        project: serializeProject(project)
+      };
+    }
+
+    const result = await stop;
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+    return {
+      success: true,
+      message: result.message,
+      project: serializeProject(project)
+    };
+  }
+
+  // Never rejects: the outcome ends up on the project (status, lastError)
+  async runStop(project) {
+    const { projectId } = project;
     try {
       const result = await dockerService.stopWorkspaceContainer(projectId);
       project.status = result.status || 'stopped';
-
-      return {
-        success: true,
-        message: result.message,
-        project: serializeProject(project)
-      };
+      return { success: true, message: result.message };
     } catch (error) {
-      console.error('Error stopping project:', error);
-      throw error;
+      console.error(`Error stopping project ${projectId}:`, error);
+      project.lastError = { action: 'stop', message: error.message, at: new Date().toISOString() };
+      project.status = await dockerService.getProjectStatus(projectId)
+        .then(s => s.status)
+        .catch(() => 'error');
+      return { success: false, message: error.message };
     }
   }
 
@@ -802,7 +853,7 @@ class WorkspaceService {
         // Docker might show "running" but workspace isn't ready yet
       } else if (dockerStatus) {
         // For non-creating projects, update status from Docker
-        p.status = dockerStatus.status;
+        p.status = this.statusWithPendingStop(p.projectId, dockerStatus.status);
       } else {
         // Container not found in Docker
         p.status = 'not_found';

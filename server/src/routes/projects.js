@@ -287,6 +287,7 @@ router.post('/:projectId/start', async (req, res) => {
     let statusCode = 500;
     if (error.message === 'Project not found') statusCode = 404;
     if (error.message === 'Invalid password for protected workspace') statusCode = 401;
+    if (error.message === 'Workspace is still stopping') statusCode = 409;
     
     res.status(statusCode).json({
       error: 'Failed to start project',
@@ -300,9 +301,12 @@ router.post('/:projectId/stop', async (req, res) => {
   try {
     const { projectId } = req.params;
     const password = (req.body && req.body.password) || readWorkspacePasswordHeader(req);
-    const result = await workspaceService.stopProject(projectId, password);
-    
-    res.json(result);
+    // Default: 202, the stop runs on (status 'stopping'); ?wait=true (or
+    // "wait": true in the body) answers 200 once the container has stopped
+    const wait = req.query.wait === 'true' || req.query.wait === '1' || (req.body && req.body.wait === true);
+    const result = await workspaceService.stopProject(projectId, password, { wait });
+
+    res.status(result.accepted ? 202 : 200).json(result);
 
   } catch (error) {
     console.error('Stop project error:', error);

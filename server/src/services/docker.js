@@ -1955,8 +1955,30 @@ fi`.trim();
       if (error.statusCode === 404) {
         throw new Error('Workspace container not found');
       }
+      // Under heavy load Docker may give up waiting for the exit event
+      // ("tried to kill container, but did not receive an exit event") while
+      // the container stops anyway: look again before reporting a failure.
+      if (await this.waitUntilStopped(containerName)) {
+        console.warn(`Stopping workspace ${projectId} reported "${error.message}", but the container has stopped`);
+        return { success: true, message: 'Workspace stopped successfully', status: 'stopped' };
+      }
       console.error(`Error stopping workspace ${projectId}:`, error);
       throw new Error(`Failed to stop workspace: ${error.message}`);
+    }
+  }
+
+  // True once the container no longer runs (checked every 2 s up to maxWait)
+  async waitUntilStopped(containerName, maxWait = 30000) {
+    const deadline = Date.now() + maxWait;
+    for (;;) {
+      try {
+        const info = await this.docker.getContainer(containerName).inspect();
+        if (!info.State.Running) return true;
+      } catch (error) {
+        if (error.statusCode === 404) return true;
+      }
+      if (Date.now() >= deadline) return false;
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
 
