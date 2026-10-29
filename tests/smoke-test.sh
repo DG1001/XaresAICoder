@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # XaresAICoder Smoke Test
 # Exercises a running installation end to end through nginx: login (incl. the

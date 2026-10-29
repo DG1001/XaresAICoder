@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 echo "Starting XaresAICoder code-server..."
 
 # Update CA certificates if squid proxy cert is present (for HTTPS interception proxy support)

@@ -32,6 +32,11 @@ Complete installation and configuration guide for XaresAICoder.
 - **Docker Compose** (v1.27+ or v2.0+)
 - **Git** (for cloning the repository)
 - **curl** (for health checks)
+- **bash** anywhere in `PATH` (the scripts start with `#!/usr/bin/env bash`, so hosts
+  without `/bin/bash` such as NixOS work)
+- **openssl** when the proxy is enabled (`--enable-proxy` generates its CA certificate)
+- **python3** (optional): exact subnet overlap checks; without it `deploy.sh` and
+  `setup-network.sh` fall back to a plain text comparison
 
 ### Browser Requirements
 

@@ -27,7 +27,7 @@ services:
       xares-control:           # API server and Forgejo (no workspaces)
       xares-aicoder-network:   # Direct workspaces (no proxy)
       xares-internal:          # LLM Logging Proxy workspaces
-        ipv4_address: 172.30.0.4
+        ipv4_address: ${NGINX_INTERNAL_IP:-172.30.0.4}
       xares-security:          # Security Proxy workspaces
     restart: unless-stopped
 
@@ -180,7 +180,7 @@ services:
       -s /scripts/llm-logger.py"
     networks:
       xares-internal:
-        ipv4_address: 172.30.0.5
+        ipv4_address: ${MITMPROXY_IP:-172.30.0.5}
       xares-aicoder-network:
     restart: unless-stopped
     healthcheck:

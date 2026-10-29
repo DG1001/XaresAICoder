@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # XaresAICoder Backup Script
 # Backs up the platform data (.env, proxy CA, volumes) and on request the

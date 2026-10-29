@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # XaresAICoder Forgejo Automated Setup Script
 

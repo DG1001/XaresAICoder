@@ -2023,3 +2023,49 @@ SSH-Remote, `@` im Pfad. code-server-Image neu gebaut, Server neu deployt. Works
 Remote `forgejo`) maskiert die bisherige `origin`-Zeile und die Abschlussliste; in keiner
 Ausgabe ein Token. `git push origin` funktioniert weiter. Workspace und Forgejo-Nutzer
 gelöscht.
+
+### Nachtrag: Deploy ohne Terminal, belegte Subnetze, Hosts ohne `/bin/bash` (2026-10-29)
+
+**Problem** (bei einer Installation auf NixOS, Updates per Skript ohne Terminal):
+
+- Alle Skripte begannen mit `#!/bin/bash`; NixOS hat kein `/bin/bash`, `./deploy.sh` und die
+  Hilfsskripte starteten nicht („required file not found“).
+- Ohne `openssl` im `PATH` brach die CA-Erzeugung für den Proxy mit einer wenig sagenden
+  Meldung ab.
+- `docker-compose.yml` legte nginx und mitmproxy auf `xares-internal` fest auf
+  `172.30.0.4`/`.5`. Wich `deploy.sh` wegen eines belegten Subnetzes aus, schrieb es nur
+  `INTERNAL_NETWORK_SUBNET` und `DNSMASQ_IP` und bat darum, die Compose-Datei von Hand
+  anzupassen – eine lokale Änderung, die jedes Update stört.
+- `setup-network.sh` nimmt beim ersten Mal ein Ausweichnetz, wenn `172.19.0.0/16` belegt ist.
+  Beim nächsten Deploy erwartete es wieder `172.19.0.0/16`, fragte nach dem Neuanlegen, und
+  `read` ohne Terminal beendete das Skript (`set -e`): jedes weitere unbeaufsichtigte Deploy
+  brach mit „Failed to setup Docker network“ ab.
+- Ein vorhandenes code-server-Image wird nur nach Rückfrage neu gebaut; ohne Terminal heißt
+  die Antwort „nein“. Ein Update per Skript lief so mit dem alten Image weiter.
+
+**Änderung**:
+
+- Shebang `#!/usr/bin/env bash` in allen Skripten (Zeile 1; in Heredocs erzeugte Skripte
+  laufen im Container und bleiben).
+- `deploy.sh` prüft vor der CA-Erzeugung, ob `openssl` vorhanden ist.
+- Neue `.env`-Werte `NGINX_INTERNAL_IP`, `MITMPROXY_IP` (Vorgabe wie bisher); Compose liest
+  sie. `configure_proxy_subnet` nimmt eine Liste `KEY:Hostteil` und schreibt alle festen
+  Adressen eines Netzes: neu bei geändertem Subnetz, ergänzt, wenn sie fehlen (bestehende
+  Installationen auf einem anderen Subnetz bekommen sie beim nächsten Deploy). Subnetze, die
+  kein `/16` auf `.0.0` sind, bleiben unangetastet (Warnung).
+- `setup-network.sh` behält ein vorhandenes `xares-aicoder-network` mit anderem Subnetz
+  (kein Neuanlegen mehr; mit angeschlossenen Workspaces ginge das ohnehin nicht); das zweite
+  `read` endet ohne Terminal nicht mehr das Skript.
+- `deploy.sh --rebuild`: baut das code-server-Image ohne Rückfrage neu; der Hinweis beim
+  Überspringen nennt die Option.
+- Doku: Voraussetzungen in `INSTALLATION.md` (bash im `PATH`, `openssl` für den Proxy,
+  `python3` optional), Upgrade-Zeile und Aufruf für unbeaufsichtigte Updates in
+  `DEPLOYMENT.md`, `.env.example`.
+
+**Tests**: `bash -n` aller geänderten Skripte. `configure_proxy_subnet` mit fünf `.env`:
+Standard ohne neue Werte (ergänzt `.4`/`.5`), anderes Subnetz ohne neue Werte (ergänzt im
+eigenen Subnetz, `DNSMASQ_IP` unverändert), belegtes Subnetz (wechselt auf `172.28.0.0/16`,
+alle drei Adressen neu), kein `/16` (nur Warnung), vorhandene eigene Werte bei unverändertem
+Subnetz (bleiben). `docker compose config` mit und ohne die neuen Werte.
+`setup-network.sh` mit abweichendem vorhandenen Netz und `</dev/null`: alte Fassung Exit 1,
+neue Exit 0.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Test script for resource limits feature
 # Run from project root: ./tests/test-resource-limits.sh
 
