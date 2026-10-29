@@ -1946,3 +1946,27 @@ Token geklont, Commit vorhanden. Beide gelöscht, Forgejo-Nutzer entfernt. Sessi
 Deploy: `Max-Age=604799` (7 Tage). README: Zeile „One Login Is Enough“ unter „Recent Updates“.
 `tests/smoke-test.sh` lokal: 49/49 grün, darunter die neue Forgejo-Prüfung und die
 Fälschungsprüfung aus 5.4 (`X-Forwarded-For` aus dem Workspace → 403).
+
+### 5.6 Nachtrag: `TRUSTED_PROXIES=none` für Installationen ohne Proxy davor (2026-10-29)
+
+**Problem**: Ohne Reverse Proxy davor braucht niemand das automatische Vertrauen in den
+Docker-Host aus 5.4. Es schadet aber, wo Clients trotzdem von einem Gateway kommen
+(IPv6-Clients über `docker-proxy` auf Dual-Stack-Servern, älteres Docker mit Userland-Proxy,
+Docker Desktop mit Zugriff aus dem LAN): Sie könnten per `X-Forwarded-For` jede Adresse
+angeben und die Login-Sperre umgehen – kein Zugang zur API, aber unbegrenzt Passwörter
+raten.
+
+**Änderung**: `none` in `TRUSTED_PROXIES` (Groß-/Kleinschreibung egal) lässt die Gateways
+weg; daneben aufgeführte Adressen bleiben vertrauenswürdig. Die erzeugte Datei vermerkt das
+(`# Docker host not trusted`). `tests/smoke-test.sh` überspringt bei `none` den Abschnitt
+„Login limit behind a reverse proxy“ (die zehn Fehlversuche würden sonst den Host selbst
+sperren). Doku: `.env.example`, `SECURITY.md` (Admin Login), `DEPLOYMENT.md` („Port
+Considerations“, Upgrade-Zeile); lokale `CLAUDE.md`.
+
+**Tests (live)**: Schreiber mit `""`, `none`, `None, 10.0.0.5`, `10.0.0.5`. Lokal mit
+`TRUSTED_PROXIES=none` deployt: Datei ohne `set_real_ip_from`, falsches Passwort mit
+`X-Forwarded-For: 192.0.2.55` → „Failed login from 172.19.0.1“; `tests/smoke-test.sh`
+46/46 grün, Abschnitt übersprungen. Danach Zeile aus der lokalen `.env` entfernt, Server neu
+erstellt: Gateways wieder in der Datei, `X-Forwarded-For` wird übernommen. CI-Smoke-Test für
+5.4/5.5 (`66ff5d8`) auf Linux grün – dort kommen Anfragen vom Runner ebenfalls über ein
+Gateway an.
