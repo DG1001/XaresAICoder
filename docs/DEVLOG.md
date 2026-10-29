@@ -2060,3 +2060,21 @@ währenddessen abgelehnt, danach `stopped` ohne `lastError`; Fehlschlag: Status 
 `stopWorkspaceContainer` mit nachgebautem dockerode: Fehler „no exit event“, Container steht
 2,5 s später → Erfolg; Container läuft weiter → Fehler nach Ablauf der Wartezeit.
 `node --check` für Server und `app.js`, `bash -n` für den Smoke-Test.
+
+**Nachbesserung nach Review** (2026-10-29):
+
+- Antwortet Docker auf den Stopp nie (der zweite Workspace oben hing so), blieb der Eintrag in
+  `pendingStops` bis zum Neustart des Servers: Der Workspace stand dauerhaft auf „Stopping“
+  ohne Knöpfe, Start antwortete `409`, ein weiterer Stopp hängte sich an den hängenden an.
+  Jetzt gibt der Server nach 3 Minuten auf (`stopGiveUpMs`): `lastError` „Docker did not
+  finish the stop within 180 s (it may still complete)“, Status `error` bis zur nächsten
+  Abfrage bei Docker; danach gehen Start, Stopp und Löschen wieder. Löschen schon während
+  „Stopping“ anzubieten hilft dabei nicht: `deleteProject` ruft ebenfalls `container.stop()`
+  auf und hinge genauso.
+- Smoke-Test: `check … [ 202 ] && [ stopping ]` prüfte den Status außerhalb von `check`;
+  ohne `set -e` blieb ein falscher Status unbemerkt. Jetzt ein Vergleich in `check`.
+
+**Tests**: `runStop` mit nachgebautem Docker-Dienst und kurzer Frist: Stopp, der nie
+antwortet → nach der Frist `lastError`, Status `error`, `pendingStops` leer, Start wieder
+möglich; späte Ablehnung des hängenden Aufrufs ohne „unhandled rejection“; normaler Stopp
+unverändert. Smoke-Test lokal komplett, Dashboard im Browser („Stopping“, Fehlerzeile).

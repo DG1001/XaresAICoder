@@ -75,6 +75,9 @@ class WorkspaceService {
     this.projects = new Map();
     // Stops in progress: projectId -> promise (see stopProject)
     this.pendingStops = new Map();
+    // A stop Docker does not answer counts as failed after this time, so the
+    // workspace does not stay 'stopping' until the server restarts
+    this.stopGiveUpMs = 3 * 60 * 1000;
     this.maxWorkspacesPerUser = parseInt(process.env.MAX_WORKSPACES_PER_USER) || 5;
     this.persistenceFile = path.join('/app', 'workspaces', 'projects.json');
     this.showDiskUsage = process.env.SHOW_DISK_USAGE === 'true';
@@ -779,20 +782,30 @@ class WorkspaceService {
     };
   }
 
-  // Never rejects: the outcome ends up on the project (status, lastError)
+  // Never rejects: the outcome ends up on the project (status, lastError).
+  // Gives up after stopGiveUpMs, as Docker may never answer.
   async runStop(project) {
     const { projectId } = project;
+    const giveUp = new Error(`Docker did not finish the stop within ${Math.round(this.stopGiveUpMs / 1000)} s (it may still complete)`);
+    let timer;
     try {
-      const result = await dockerService.stopWorkspaceContainer(projectId);
+      const result = await Promise.race([
+        dockerService.stopWorkspaceContainer(projectId),
+        new Promise((resolve, reject) => { timer = setTimeout(() => reject(giveUp), this.stopGiveUpMs); })
+      ]);
       project.status = result.status || 'stopped';
       return { success: true, message: result.message };
     } catch (error) {
       console.error(`Error stopping project ${projectId}:`, error);
       project.lastError = { action: 'stop', message: error.message, at: new Date().toISOString() };
-      project.status = await dockerService.getProjectStatus(projectId)
+      // After giving up, Docker may not answer an inspect either; list and
+      // detail take the status from Docker again anyway
+      project.status = error === giveUp ? 'error' : await dockerService.getProjectStatus(projectId)
         .then(s => s.status)
         .catch(() => 'error');
       return { success: false, message: error.message };
+    } finally {
+      clearTimeout(timer);
     }
   }
 

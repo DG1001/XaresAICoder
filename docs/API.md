@@ -365,7 +365,9 @@ Starts a stopped workspace container.
 Stops a running workspace container gracefully. Stopping can take a while when Docker is
 busy, so by default the request only starts it: the answer is `202` and the project shows
 `status: "stopping"` until the container has stopped (poll `GET /api/projects/:projectId`
-or the list). If the stop fails, the project gets `lastError` and its status from Docker.
+or the list). If the stop fails, the project gets `lastError` and its status from Docker;
+a stop Docker has not finished after 3 minutes counts as failed (the container may still
+stop later).
 A second stop request while one runs joins it. Starting a workspace that is still stopping
 answers `409`.
 

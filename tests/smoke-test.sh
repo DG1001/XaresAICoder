@@ -138,7 +138,6 @@ wait_forgejo() {
     return 1
 }
 
-# Waits until the API reports the workspace as running (WS_STATUS: last status)
 # Stop runs on the server (202, status stopping) until the container is down
 wait_stopped() {
     local i
@@ -150,6 +149,7 @@ wait_stopped() {
     return 1
 }
 
+# Waits until the API reports the workspace as running (WS_STATUS: last status)
 wait_running() {
     local i
     WS_STATUS=""
@@ -306,8 +306,9 @@ if create_workspace zz-smoke-direct none; then
     as_group api PUT "/projects/$id/notes" '{"notes":"smoke test"}'
     check "Edit notes (HTTP $STATUS)" [ "$STATUS" = 200 ]
     as_group api POST "/projects/$id/stop"
-    check "Stop as group user, runs on the server (HTTP $STATUS, $(json 'd["project"]["status"]'))" \
-        [ "$STATUS" = 202 ] && [ "$(json 'd["project"]["status"]')" = stopping ]
+    stop_status=$(json 'd["project"]["status"]')
+    check "Stop as group user, runs on the server (HTTP $STATUS, $stop_status)" \
+        [ "$STATUS $stop_status" = "202 stopping" ]
     check "Stopped in the background" wait_stopped "$id"
     as_group api POST "/projects/$id/start"
     check "Start as group user (HTTP $STATUS)" [ "$STATUS" = 200 ]
