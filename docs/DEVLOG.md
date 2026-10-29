@@ -2069,3 +2069,58 @@ alle drei Adressen neu), kein `/16` (nur Warnung), vorhandene eigene Werte bei u
 Subnetz (bleiben). `docker compose config` mit und ohne die neuen Werte.
 `setup-network.sh` mit abweichendem vorhandenen Netz und `</dev/null`: alte Fassung Exit 1,
 neue Exit 0.
+
+### Nachtrag: Stoppen läuft auf dem Server, Fehler bleiben sichtbar (2026-10-29)
+
+**Problem** (bei einer Installation mit langsamer Platte und viel Schreiblast beobachtet):
+Zwei Workspaces sollten gestoppt werden; Docker brauchte so lange, dass die Verbindung zum
+Browser nach 40 s ohne Antwort endete (nginx: 499). Eine scheiterte danach im Server mit „tried to kill
+container, but did not receive an exit event“, die andere hing weiter. Im Dashboard war
+davon nichts zu sehen: Die Ladeanzeige gab es nur im Browser, nach dem Neuladen stand wieder
+„Stop“ da; der Fehler stand nur im Server-Log.
+
+**Änderung**:
+
+- `POST /api/projects/:id/stop` startet den Stopp und antwortet sofort `202`
+  (`accepted: true`). Der Server merkt sich laufende Stopps (`pendingStops`); solange Docker
+  den Container noch als laufend meldet, liefern Liste und Einzelabfrage `status: "stopping"`
+  – für jeden Client, auch nach dem Neuladen. Ein zweiter Stopp hängt sich an den laufenden;
+  ein Start währenddessen antwortet `409` („Workspace is still stopping“).
+- Scheitert der Stopp, bekommt der Workspace `lastError` (`action`, `message`, `at`) und den
+  Status von Docker. Der nächste Start oder Stopp löscht ihn. Das Dashboard zeigt ihn unter
+  den Angaben zum Workspace und meldet ihn beim Übergang aus „Stopping“ einmal als Fehler.
+- `?wait=true` (oder `"wait": true` im Body) behält das alte Verhalten: Antwort `200` erst
+  nach dem Stopp, `500` bei Fehler – für Skripte.
+- `stopWorkspaceContainer`: Meldet Docker einen Fehler, prüft der Server bis zu 30 s lang
+  alle 2 s, ob der Container nicht doch steht, bevor er den Fehler weitergibt.
+- Dashboard: Status „Stopping“ mit Ladeanzeige statt Knöpfen, Liste fragt währenddessen alle
+  3 s nach (wie beim Anlegen).
+- Doku: `API.md` (Status `stopping`, `lastError`, `202`/`wait`), Upgrade-Zeile in
+  `DEPLOYMENT.md`. Smoke-Test: erster Stopp mit `?wait=true` (200, Container steht), Stopp
+  als Gruppen-Nutzer ohne (202, `stopping`, danach `stopped`).
+
+**Tests**: Logik von `stopProject` mit nachgebautem Docker-Dienst (langsam, Fehler):
+sofortige Antwort mit `stopping`, Liste zeigt `stopping`, zweiter Stopp hängt sich an, Start
+währenddessen abgelehnt, danach `stopped` ohne `lastError`; Fehlschlag: Status von Docker,
+`lastError` gesetzt, Start löscht ihn; `wait` mit Fehler und mit Erfolg.
+`stopWorkspaceContainer` mit nachgebautem dockerode: Fehler „no exit event“, Container steht
+2,5 s später → Erfolg; Container läuft weiter → Fehler nach Ablauf der Wartezeit.
+`node --check` für Server und `app.js`, `bash -n` für den Smoke-Test.
+
+**Nachbesserung nach Review** (2026-10-29):
+
+- Antwortet Docker auf den Stopp nie (der zweite Workspace oben hing so), blieb der Eintrag in
+  `pendingStops` bis zum Neustart des Servers: Der Workspace stand dauerhaft auf „Stopping“
+  ohne Knöpfe, Start antwortete `409`, ein weiterer Stopp hängte sich an den hängenden an.
+  Jetzt gibt der Server nach 3 Minuten auf (`stopGiveUpMs`): `lastError` „Docker did not
+  finish the stop within 180 s (it may still complete)“, Status `error` bis zur nächsten
+  Abfrage bei Docker; danach gehen Start, Stopp und Löschen wieder. Löschen schon während
+  „Stopping“ anzubieten hilft dabei nicht: `deleteProject` ruft ebenfalls `container.stop()`
+  auf und hinge genauso.
+- Smoke-Test: `check … [ 202 ] && [ stopping ]` prüfte den Status außerhalb von `check`;
+  ohne `set -e` blieb ein falscher Status unbemerkt. Jetzt ein Vergleich in `check`.
+
+**Tests**: `runStop` mit nachgebautem Docker-Dienst und kurzer Frist: Stopp, der nie
+antwortet → nach der Frist `lastError`, Status `error`, `pendingStops` leer, Start wieder
+möglich; späte Ablehnung des hängenden Aufrufs ohne „unhandled rejection“; normaler Stopp
+unverändert. Smoke-Test lokal komplett, Dashboard im Browser („Stopping“, Fehlerzeile).

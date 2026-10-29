@@ -265,8 +265,13 @@ Retrieves detailed information about a specific project.
 **Status Values**:
 - `creating` - Workspace is being created
 - `running` - Container is active and accessible
+- `stopping` - A stop is in progress (see [Stop Workspace](#stop-workspace))
 - `stopped` - Container is stopped but can be restarted
 - `error` - Container failed or was removed
+
+A project may carry `lastError` (`{ "action": "stop", "message": "...", "at": "<ISO time>" }`)
+when an action the server finished in the background failed; it is cleared by the next
+start or stop.
 
 ### List All Projects
 
@@ -357,25 +362,46 @@ Starts a stopped workspace container.
 
 ### Stop Workspace
 
-Stops a running workspace container gracefully.
+Stops a running workspace container gracefully. Stopping can take a while when Docker is
+busy, so by default the request only starts it: the answer is `202` and the project shows
+`status: "stopping"` until the container has stopped (poll `GET /api/projects/:projectId`
+or the list). If the stop fails, the project gets `lastError` and its status from Docker;
+a stop Docker has not finished after 3 minutes counts as failed (the container may still
+stop later).
+A second stop request while one runs joins it. Starting a workspace that is still stopping
+answers `409`.
 
-**Endpoint**: `POST /api/projects/:projectId/stop`
+**Endpoint**: `POST /api/projects/:projectId/stop` (`?wait=true`: answer only after the
+container has stopped, as before)
 
-**Request Body** (for password-protected workspaces):
+**Request Body** (for password-protected workspaces; `"wait": true` is the same as
+`?wait=true`):
 ```json
 {
   "password": "workspace-password"
 }
 ```
 
-**Response**:
+**Response** (`202`, default):
+```json
+{
+  "success": true,
+  "accepted": true,
+  "message": "Stopping workspace",
+  "project": { "projectId": "abc123def456", "status": "stopping" }
+}
+```
+
+**Response** (`200`, with `wait`):
 ```json
 {
   "success": true,
   "message": "Workspace stopped successfully",
-  "projectId": "abc123def456"
+  "project": { "projectId": "abc123def456", "status": "stopped" }
 }
 ```
+
+With `wait`, a failed stop answers `500` (`{ "error": "Failed to stop project", "message": "..." }`).
 
 ### List Groups
 

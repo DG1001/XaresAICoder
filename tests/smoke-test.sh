@@ -138,6 +138,17 @@ wait_forgejo() {
     return 1
 }
 
+# Stop runs on the server (202, status stopping) until the container is down
+wait_stopped() {
+    local i
+    for i in $(seq 1 $((WAIT / 5))); do
+        api GET "/projects/$1"
+        [ "$(json 'd["project"]["status"]')" = stopped ] && return 0
+        sleep 5
+    done
+    return 1
+}
+
 # Waits until the API reports the workspace as running (WS_STATUS: last status)
 wait_running() {
     local i
@@ -267,8 +278,8 @@ if create_workspace zz-smoke-direct none; then
         user=$(forgejo_user_of "$id")
         check "Own Forgejo user ${user:-missing}" forgejo_user_exists "$user"
     fi
-    api POST "/projects/$id/stop"
-    check "Stop (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    api POST "/projects/$id/stop?wait=true"
+    check "Stop with wait (HTTP $STATUS)" [ "$STATUS" = 200 ]
     check "Container stopped" [ "$(docker inspect -f '{{.State.Running}}' "workspace-$id")" = false ]
     api POST "/projects/$id/start"
     check "Start (HTTP $STATUS)" [ "$STATUS" = 200 ]
@@ -295,7 +306,10 @@ if create_workspace zz-smoke-direct none; then
     as_group api PUT "/projects/$id/notes" '{"notes":"smoke test"}'
     check "Edit notes (HTTP $STATUS)" [ "$STATUS" = 200 ]
     as_group api POST "/projects/$id/stop"
-    check "Stop as group user (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    stop_status=$(json 'd["project"]["status"]')
+    check "Stop as group user, runs on the server (HTTP $STATUS, $stop_status)" \
+        [ "$STATUS $stop_status" = "202 stopping" ]
+    check "Stopped in the background" wait_stopped "$id"
     as_group api POST "/projects/$id/start"
     check "Start as group user (HTTP $STATUS)" [ "$STATUS" = 200 ]
     api PUT "/projects/$id/group" '{"group":"Uncategorized"}'
