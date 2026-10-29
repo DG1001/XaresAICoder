@@ -1970,3 +1970,34 @@ Considerations“, Upgrade-Zeile); lokale `CLAUDE.md`.
 erstellt: Gateways wieder in der Datei, `X-Forwarded-For` wird übernommen. CI-Smoke-Test für
 5.4/5.5 (`66ff5d8`) auf Linux grün – dort kommen Anfragen vom Runner ebenfalls über ein
 Gateway an.
+
+### README: Bilder und GIF ohne echte Projekte (2026-10-29)
+
+**Problem**: `docs/screen-server.png` (2025) zeigte echte Projekte und Gruppen des Betreibers.
+Das hochgeladene Video oben im README war veraltet (helles UI mit Template-Auswahl, Gemini
+CLI, die nicht mehr vorinstalliert ist).
+
+**Änderung**: Neue Medien unter `docs/images/`, alle mit Demo-Daten:
+- `demo.gif` (1024 px, 23 s, 811 KiB) ersetzt Bild und Video oben: Gruppe wählen, `todo-app`
+  anlegen, CREATING → RUNNING, VS Code öffnet, `info` mit den KI-Tools,
+  `python3 -m http.server 8000`, App unter `<workspace>-8000.<domain>`; Bildunterschriften
+  je Abschnitt.
+- `dashboard.png` (Overview), `vscode.png` (Cline, Flask-App im Terminal; Abschnitt KI-Tools),
+  `group-user.png` (Ansicht von `teacher-anna`; „Group Users“), `recorded-domains.png`
+  (aufgezeichnete Domains nach Kategorien; „Dual Proxy Modes“).
+- `docs/screen-server.png` gelöscht (bleibt in der Git-Historie); das Video ist nicht mehr
+  verlinkt (liegt weiter auf GitHub, löschen nur über die Weboberfläche).
+
+**Vorgehen**: Lokal sechs Demo-Workspaces in drei Gruppen (alle Netzwerkmodi, Passwort,
+Notizen, Git-Repo) und zwei Gruppen-Nutzer angelegt; im Workspace mit LLM-Logging-Proxy
+Verkehr erzeugt (pip, npm, Doku-Seiten, KI-APIs). Aufnahme mit Puppeteer; die
+Listen-Aufrufe (`/api/projects/`, `/api/projects/groups`, `/api/users`) wurden im Browser
+abgefangen und auf die Demo-Einträge gefiltert, echte Projekte erscheinen auf keinem Bild.
+GIF aus Einzelbildern mit eigener Anzeigedauer (Wartezeiten herausgeschnitten), Palette
+über alle Bilder mit ffmpeg. Danach alles gelöscht: 7 Workspaces samt Forgejo-Nutzern,
+Gruppen-Nutzer, Domain-Datei von `teacher-prep`.
+
+**Beobachtung (offen)**: `info` (Abschnitt „Git Remotes“) und das Ende von
+`setup_local_remote` geben `git remote -v` aus – mit dem Forgejo-Token des Workspace in der
+URL. Bei geteiltem Bildschirm (Workshop) oder in Screenshots ist es sichtbar. Für die Medien
+umgangen (GIF-Workspace ohne Repo, im VS-Code-Bild läuft die App statt `info`).

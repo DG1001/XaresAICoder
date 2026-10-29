@@ -4,14 +4,13 @@
 
 A professional browser-based AI-powered development environment that integrates VS Code (code-server) with multiple AI coding assistants for enhanced productivity.
 
-
-![Workspace Manager](docs/screen-server.png)
+![Create a workspace, open VS Code with the AI tools, run an app on its own subdomain](docs/images/demo.gif)
 
 ## Overview
 
-https://github.com/user-attachments/assets/127a1253-5df2-4a5e-937d-a25840439ccd
-
 XaresAICoder provides isolated development workspaces running VS Code in the browser, with integrated AI coding tools for comprehensive development assistance. Each workspace runs in a separate Docker container with resource limits, automatic cleanup, and seamless subdomain-based port forwarding.
+
+![Dashboard: workspaces in groups with network mode, password, Git and notes indicators](docs/images/dashboard.png)
 
 ## ✨ Key Features
 
@@ -40,6 +39,8 @@ Pre-configured workspace with multiple AI coding assistants:
 
 Users bring their own subscriptions or API keys. `update_ai_agents` updates the CLI tools without sudo; nothing updates automatically, so all participants of a workshop keep the same versions. VS Code opens without the Workspace Trust prompt, so the extensions start right away (see [SECURITY.md](docs/SECURITY.md#vs-code-workspace-trust)).
 
+![VS Code in the browser with Cline, a Flask app and its terminal](docs/images/vscode.png)
+
 ### 🔧 **Development Ready**
 - **Empty Project** or **Git Clone** - Start fresh or clone any HTTP/HTTPS Git repository directly into workspaces
 - **Private Repository Support** - Secure authentication with username and access tokens
@@ -64,6 +65,8 @@ Users bring their own subscriptions or API keys. `update_ai_agents` updates the 
 - ✅ **Restricted Dashboard** - Group users only see the projects of their groups and can open, start, stop and rename them and edit notes and workspace passwords; everything else stays with the admin
 - ✅ **One Login Is Enough** - No Basic Auth needed in front of the dashboard: behind a reverse proxy the login limit applies per client, sessions last 7 days, and Forgejo shows nothing without a login (see [docs/DEPLOYMENT.md → External SSL Proxy](docs/DEPLOYMENT.md#3-production-with-external-ssl-proxy))
 - See [docs/user-guide.md → Group Users](docs/user-guide.md#group-users-restricted-dashboard-access) and [docs/API.md → Login and Roles](docs/API.md#login-and-roles)
+
+![Dashboard of a group user: only the projects of their group, no create form](docs/images/group-user.png)
 
 ### Leaner Workspaces
 - ✅ **Kilo Code on Demand** - No longer pre-installed (about 550 MB in the image and about 350 MB RAM per workspace even when idle); install it where wanted with `code-server --install-extension kilocode.kilo-code`
@@ -95,6 +98,8 @@ Users bring their own subscriptions or API keys. `update_ai_agents` updates the 
 - ✅ **Security Proxy** - Squid whitelist-only filtering for assessments
 - ✅ **Domain Recording & Whitelist Generation** - Teacher records domains, applies as student whitelist
 - ✅ **LLM Conversation Export** - View, export, and generate documentation from captured conversations
+
+<img src="docs/images/recorded-domains.png" width="520" alt="Domains recorded in a teacher's workspace, grouped by category, ready to apply as Security Proxy whitelist">
 
 ### Password Management
 - ✅ **Set/Update/Remove Passwords** - Full lifecycle via UI and API
