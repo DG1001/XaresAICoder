@@ -292,6 +292,9 @@ dev.mycompany.internal.          A     192.168.1.100
 - **Port 80**: Default HTTP port, no port number needed in URLs
 - **Custom ports**: Must be specified in URLs (`http://domain:8000`)
 - **Firewall**: Ensure the configured port is open on your server
+- **No reverse proxy in front** (clients reach the published port directly): set
+  `TRUSTED_PROXIES=none` in `.env`, so nobody can choose their client address to dodge the
+  login limit (see [SECURITY.md](SECURITY.md#admin-login-dashboard-and-api))
 
 ## Switching Configurations
 
@@ -449,7 +452,7 @@ What changes:
 | Kilo Code | No longer pre-installed (about 550 MB in the image, about 350 MB RAM per workspace even when idle); users install it with `code-server --install-extension kilocode.kilo-code` where wanted | Rebuild the code-server image. Existing workspaces keep Kilo until recreated; remove it there with `code-server --uninstall-extension kilocode.kilo-code` and reload the window |
 | Login / group users | Group users with their own login, limited to the projects of their groups (Users tab, `/api/users`, see [API.md](API.md#group-user-permissions)); the session cookie now names the account | Everybody logs in once more after the update (older sessions are no longer valid). `{"password": …}` logins of scripts keep working |
 | Forgejo without login | Anonymous visitors see nothing in Forgejo (`GIT_REQUIRE_SIGNIN_VIEW=true`): no explore pages, profiles, public repositories or API; workspaces use their tokens and are not affected | Applied when `./deploy.sh` recreates Forgejo. Anonymous `git clone` of public repositories stops working: set `GIT_REQUIRE_SIGNIN_VIEW=false` in `.env` if they are meant to be public |
-| Login behind a reverse proxy | nginx takes the client address from `X-Forwarded-For` of a proxy on the Docker host or in `TRUSTED_PROXIES`, so the login limit applies per client instead of to everybody at once; sessions last 7 days instead of 12 hours | The external nginx must send `X-Forwarded-For` (see [Production with External SSL Proxy](#3-production-with-external-ssl-proxy)); a Basic Auth in front of the dashboard can go. An `.env` with `ADMIN_SESSION_HOURS=12` keeps 12 hours: change or remove the line |
+| Login behind a reverse proxy | nginx takes the client address from `X-Forwarded-For` of a proxy on the Docker host or in `TRUSTED_PROXIES`, so the login limit applies per client instead of to everybody at once; sessions last 7 days instead of 12 hours | The external nginx must send `X-Forwarded-For` (see [Production with External SSL Proxy](#3-production-with-external-ssl-proxy)); a Basic Auth in front of the dashboard can go. Without a reverse proxy in front, set `TRUSTED_PROXIES=none` (see [SECURITY.md](SECURITY.md#admin-login-dashboard-and-api)). An `.env` with `ADMIN_SESSION_HOURS=12` keeps 12 hours: change or remove the line |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless
 Forgejo admin password) until they are recreated; `setup_local_remote` works in them

@@ -344,22 +344,27 @@ fi
 # Requests from this host reach nginx from a Docker gateway, as those of a
 # reverse proxy in front would: nginx takes the client from X-Forwarded-For,
 # so ten wrong passwords block that client only (before the restore, which
-# restarts the server and so forgets the blocked client)
+# restarts the server and so forgets the blocked client). TRUSTED_PROXIES=none
+# switches that off; the wrong passwords would then block this host.
 section "Login limit behind a reverse proxy"
 wrong_login() {
     http "$BASE_DOMAIN" -o /dev/null -w '%{http_code}' -H "X-Forwarded-For: $1" \
         -H 'Content-Type: application/json' -d '{"password":"zz-smoke-wrong"}' \
         "http://$BASE_DOMAIN:$HOST_PORT/api/auth/login"
 }
-client_a="203.0.113.$((RANDOM % 254 + 1))"
-client_b="198.51.100.$((RANDOM % 254 + 1))"
-for _ in $(seq 1 10); do wrong_login "$client_a" >/dev/null; done
-code=$(wrong_login "$client_a")
-check "Client blocked after ten wrong passwords (HTTP $code)" [ "$code" = 429 ]
-code=$(wrong_login "$client_b")
-check "Other client behind the same proxy not blocked (HTTP $code)" [ "$code" = 401 ]
-api GET /projects/
-check "Own session unaffected (HTTP $STATUS)" [ "$STATUS" = 200 ]
+if [[ " $(env_value TRUSTED_PROXIES | tr 'A-Z,' 'a-z ') " == *" none "* ]]; then
+    echo "  - skipped: TRUSTED_PROXIES=none (the Docker host is not trusted)"
+else
+    client_a="203.0.113.$((RANDOM % 254 + 1))"
+    client_b="198.51.100.$((RANDOM % 254 + 1))"
+    for _ in $(seq 1 10); do wrong_login "$client_a" >/dev/null; done
+    code=$(wrong_login "$client_a")
+    check "Client blocked after ten wrong passwords (HTTP $code)" [ "$code" = 429 ]
+    code=$(wrong_login "$client_b")
+    check "Other client behind the same proxy not blocked (HTTP $code)" [ "$code" = 401 ]
+    api GET /projects/
+    check "Own session unaffected (HTTP $STATUS)" [ "$STATUS" = 200 ]
+fi
 
 if [ "$WITH_BACKUP" = true ]; then
     section "Backup and restore"

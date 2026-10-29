@@ -398,7 +398,12 @@ gateways) and from `TRUSTED_PROXIES`; otherwise all users would share the
 proxy's address and one person's typos would block everybody. A trusted
 address can claim any client address, so `TRUSTED_PROXIES` must only list
 proxies, and the published port should be bound to loopback when the proxy
-runs on the same host (`HOST_PORT=127.0.0.1:<port>`). An extra Basic Auth in
+runs on the same host (`HOST_PORT=127.0.0.1:<port>`). Without a proxy in
+front, set `TRUSTED_PROXIES=none`: clients that reach nginx from a Docker
+gateway (IPv6 clients forwarded by `docker-proxy`, older Docker with the
+userland proxy, Docker Desktop) could otherwise choose their address and
+dodge the limit. That gives no access to the API (the gateways are allowed
+there anyway), but unlimited password guesses. An extra Basic Auth in
 front of the dashboard is not needed. State-changing requests must come from the dashboard's
 own origin (workspace apps on sibling subdomains are same-site and would
 otherwise send the admin's cookie along).
