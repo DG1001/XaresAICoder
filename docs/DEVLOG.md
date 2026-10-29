@@ -2001,3 +2001,25 @@ Gruppen-Nutzer, Domain-Datei von `teacher-prep`.
 `setup_local_remote` geben `git remote -v` aus – mit dem Forgejo-Token des Workspace in der
 URL. Bei geteiltem Bildschirm (Workshop) oder in Screenshots ist es sichtbar. Für die Medien
 umgangen (GIF-Workspace ohne Repo, im VS-Code-Bild läuft die App statt `info`).
+
+### Nachtrag: Remote-URLs ohne Forgejo-Token auf dem Bildschirm (2026-10-29)
+
+**Problem** (beim Aufnehmen der README-Medien aufgefallen): `info` („Git Remotes“), das Ende
+von `setup_local_remote` und dessen Frage nach dem bisherigen `origin` gaben die Remote-URLs
+aus – mit `user:token@` des Workspace. Bei geteiltem Bildschirm im Workshop oder in
+Screenshots war das Token lesbar. Das Init-Skript beim Anlegen (Klon plus Forgejo-Repo,
+`docker.js`) schrieb dieselbe Liste ins Server-Log.
+
+**Änderung**: Alle vier Ausgaben laufen durch `sed -E 's#(://)[^/@[:space:]]+@#\1***@#'`
+(in `setup_local_remote` als Funktion `hide_credentials`). Git selbst nutzt die URLs
+unverändert; `git remote -v` und `.git/config` enthalten das Token weiter. `SECURITY.md`
+(Abschnitt Forgejo), Upgrade-Zeile in `DEPLOYMENT.md` (Image neu bauen; bestehende
+Workspaces behalten die alten Skripte bis zur Neuerstellung).
+
+**Tests (live)**: Ausdruck mit Forgejo-URL, GitHub-URL mit Token, URL ohne Zugangsdaten,
+SSH-Remote, `@` im Pfad. code-server-Image neu gebaut, Server neu deployt. Workspace
+`zz-remote-test` aus `github.com/octocat/Hello-World` mit Forgejo-Repo: Server-Log zeigt
+`origin http://***@forgejo:3000/…`; `info` maskiert; `setup_local_remote` (zweites Repo als
+Remote `forgejo`) maskiert die bisherige `origin`-Zeile und die Abschlussliste; in keiner
+Ausgabe ein Token. `git push origin` funktioniert weiter. Workspace und Forgejo-Nutzer
+gelöscht.

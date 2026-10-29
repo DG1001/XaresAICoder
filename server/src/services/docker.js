@@ -686,7 +686,7 @@ if [ -n "$GIT_CLONE_URL" ]; then
         fi
 
         echo "📋 Git remotes configured:"
-        git remote -v
+        git remote -v | sed -E 's#(://)[^/@[:space:]]+@#\\1***@#'
       else
         echo "⚠️  Failed to add local Forgejo remote"
       fi

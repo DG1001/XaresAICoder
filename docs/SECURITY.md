@@ -482,6 +482,10 @@ it (`write:repository`, `write:user`), passed in as `FORGEJO_USER` /
 - **Clones** get their own user and their own private repository with the
   source's state and history — no shared repository any participant could
   overwrite.
+- The token is part of the workspace's remote URLs (`.git/config`). `info`,
+  `setup_local_remote` and the server log print these URLs without
+  credentials (`http://***@forgejo:3000/…`), so a shared screen does not reveal
+  it; `git remote -v` itself still shows it.
 - **Deleting a workspace** revokes its token; user and repositories stay. To
   continue, create a workspace from the repository URL
   (`<base>/git/<user>/<repo>.git`): the new workspace user is added as
