@@ -731,6 +731,7 @@ deploy_application() {
     PROTOCOL=$(grep "^PROTOCOL=" .env | cut -d'=' -f2)
     HOST_PORT=$(grep "^HOST_PORT=" .env | cut -d'=' -f2)
     HOST_PORT=${HOST_PORT:-80}
+    HOST_PORT=${HOST_PORT##*:}  # port of a loopback binding like 127.0.0.1:8080
 
     # Construct health check URL.
     # nginx routes by Host header and its default_server returns 404 for unknown

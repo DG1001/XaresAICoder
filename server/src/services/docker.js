@@ -2140,6 +2140,33 @@ fi`.trim();
     return ranges;
   }
 
+  // Gateways of nginx's networks that are not internal: a reverse proxy on
+  // the Docker host reaches nginx through the published port and arrives
+  // from one of them. Waits for nginx, which Compose starts after the server.
+  async getHostGateways(maxWaitTime = 60000) {
+    const deadline = Date.now() + maxWaitTime;
+    let nginx;
+    for (;;) {
+      try {
+        nginx = await this.docker.getContainer(this.nginxContainerName).inspect();
+        break;
+      } catch (error) {
+        if (error.statusCode !== 404 || Date.now() > deadline) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    const gateways = [];
+    for (const name of Object.keys((nginx.NetworkSettings && nginx.NetworkSettings.Networks) || {})) {
+      const info = await this.docker.getNetwork(name).inspect();
+      if (info.Internal) continue;
+      for (const cfg of (info.IPAM && info.IPAM.Config) || []) {
+        const gateway = this.networkGateway(info, cfg);
+        if (gateway) gateways.push({ network: name, gateway });
+      }
+    }
+    return gateways;
+  }
+
   // Docker on Linux leaves a gateway it assigned itself out of IPAM.Config
   // (Docker Desktop lists it); that is the subnet's first address, reserved
   // by Docker. Internal networks get none: the host does not reach nginx

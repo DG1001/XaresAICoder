@@ -133,6 +133,12 @@ app.listen(PORT, '0.0.0.0', async () => {
     }
     await workspaceService.whenReady.catch(() => {});
     await workspaceService.migrateWorkspaceNetworks();
+    // Client addresses from a reverse proxy in front (login limit per client)
+    try {
+      await aliasesService.writeTrustedProxyConfig(await dockerService.getHostGateways());
+    } catch (err) {
+      console.error('Could not write the trusted reverse proxies for nginx:', err);
+    }
     await aliasesService.generateNginxConfig(workspaceService);
     await aliasesService.reloadNginx().catch(err =>
       console.warn('Initial nginx reload skipped:', err.message)

@@ -1859,3 +1859,90 @@ dessen Ansicht.
 **Tests (live)**: `tests/smoke-test.sh` lokal – alle 44 Prüfungen grün, davon 13 im neuen
 Abschnitt „Group users“; danach keine `zz-smoke-*`-Workspaces, Nutzer oder Forgejo-Nutzer
 übrig.
+
+### 5.4 Nachtrag: ein Login statt Basic Auth davor (2026-10-29)
+
+**Problem**: Vor dem Dashboard lag im Host-nginx eine Basic Auth (gemeinsamer Account, nur
+vom Admin genutzt; die Workspace-Subdomains liegen außerhalb). Dazu kam der App-Login, also
+zweimal anmelden; Gruppen-Nutzer hätten zusätzlich das gemeinsame Basic-Auth-Passwort
+gebraucht. Die Basic Auth soll weg, der App-Login bleibt der einzige. Hindernis: Hinter dem
+Host-nginx kommen alle Anfragen beim inneren nginx von derselben Adresse (Docker-Gateway,
+lokal gemessen `172.19.0.1`). `X-Real-IP` war damit für alle gleich, und 10 falsche
+Passwörter in 15 Minuten hätten den Login für alle gesperrt – ohne Basic Auth davor für
+jeden aus dem Internet auslösbar.
+
+**Änderung**
+- `aliasesService.writeTrustedProxyConfig` schreibt beim Serverstart
+  `trusted-proxies.conf` (Volume `nginx_dynamic`): `set_real_ip_from` für die Gateways der
+  nicht-internen Netze von nginx (`docker.getHostGateways`, wartet bis zu 60 s auf den
+  nginx-Container, den Compose nach dem Server startet) und für `TRUSTED_PROXIES` aus `.env`
+  (IP oder CIDR; ungültige Einträge und Präfixlängen werden mit Warnung verworfen, damit
+  nginx nicht an der Datei scheitert), dazu `real_ip_header X-Forwarded-For`. nginx bindet
+  sie auf http-Ebene ein (`nginx-base.conf.template`, per Glob optional). Ohne
+  `real_ip_recursive` gilt der letzte Eintrag – der, den der vertrauenswürdige Proxy
+  angehängt hat.
+- Wirkung: `$remote_addr` ist der echte Client – im Access-Log, in `X-Real-IP` für API,
+  Forgejo und Workspace-Apps, in der Login-Sperre. Workspaces kommen mit ihrer eigenen
+  Adresse an, ihr `X-Forwarded-For` wird ignoriert; die `deny`-Regeln für die
+  Workspace-Netze greifen unverändert.
+- `ADMIN_SESSION_HOURS`: Standard 168 (7 Tage) statt 12 – Code, Compose, `.env.example`.
+- `deploy.sh`, Smoke-Test: `HOST_PORT=127.0.0.1:<port>` (Bindung an Loopback, in
+  `.env.example` und `SECURITY.md` schon empfohlen) ergab URLs wie `localhost:127.0.0.1:8080`,
+  der Health-Check von `deploy.sh` brach ab. Beide nehmen jetzt nur den Port.
+- Doku: `DEPLOYMENT.md` (externer SSL-Proxy: eigener Login statt Basic Auth,
+  `X-Forwarded-For` nötig, `TRUSTED_PROXIES`, Loopback; Upgrade-Zeile), `SECURITY.md`
+  (Admin Login), `API.md` (Login-Zeile); lokale `CLAUDE.md`.
+- `tests/smoke-test.sh`: Abschnitt „Login limit behind a reverse proxy“ (zehn falsche
+  Passwörter für Client A → 429, Client B hinter demselben „Proxy“ → 401, eigene Sitzung
+  → 200; zufällige Adressen aus den Dokumentationsnetzen, vor dem Restore, der den Server
+  neu startet); im Workspace-Abschnitt: gefälschtes `X-Forwarded-For` aus dem Workspace →
+  weiter 403.
+
+**Entscheidungen**: Dem Docker-Host wird automatisch vertraut statt nur einer Liste in
+`.env`: Die Gateway-Adresse hängt vom Docker-Netz ab und ändert sich, wenn Netze neu angelegt
+werden; ein Proxy auf demselben Rechner ist der übliche Fall. Wer vom Gateway kommt, kann
+jede Client-Adresse angeben – das sind Prozesse auf dem Host, bei älterem Docker mit
+Userland-Proxy oder IPv6-Zugriff über `docker-proxy` aber evtl. auch externe Clients, wenn
+der Port offen ist; deshalb die Empfehlung, `HOST_PORT` an Loopback zu binden. Für `/api/`
+waren die Gateways schon bisher freigegeben (`api-access.conf`), es entsteht kein neuer
+Zugang; schlimmstenfalls lässt sich die Login-Sperre umgehen.
+
+**Tests (live)**: Anfragen vom Host kommen bei nginx von `172.19.0.1` (Gateway von
+`xares-aicoder-network`); erzeugte Datei mit `172.19.0.1` und `172.18.0.1`
+(`xares-control`), interne Netze ausgelassen, `nginx -T` lädt sie. Falsches Passwort mit
+`X-Forwarded-For: 192.0.2.77` → Server-Log „Failed login from 192.0.2.77“; bei
+`192.0.2.1, 192.0.2.88` gilt `192.0.2.88`. Container im Workspace-Netz: `/api/health` ohne,
+mit fremder und mit Gateway-Adresse im Header → jeweils 403, Log zeigt die Container-Adresse.
+Schreiber lokal mit Testeingaben (`/33`, `/129`, Text → verworfen). `tests/smoke-test.sh`
+lokal: 47/47 grün.
+
+### 5.5 Nachtrag: Forgejo zeigt ohne Login nichts (2026-10-29)
+
+**Problem**: Bisher verbarg die Basic Auth vor der Hauptdomain auch `/git/`. Ohne sie sah ein
+anonymer Besucher lokal Explore-Seiten, Profile und 18 öffentliche Repositories des
+Admin-Kontos (angelegt vor den Forgejo-Nutzern pro Workspace, Paket 2) – auch per API
+(`/api/v1/repos/search`). Auf einer öffentlichen Installation wären solche Altbestände im
+Internet lesbar.
+
+**Änderung**: `FORGEJO__service__REQUIRE_SIGNIN_VIEW=${GIT_REQUIRE_SIGNIN_VIEW:-true}` in
+`docker-compose.yml`, Variable in `.env.example`. `SECURITY.md` (Abschnitt Forgejo),
+`DEPLOYMENT.md` (Upgrade-Zeile, Hinweis beim externen SSL-Proxy). `tests/smoke-test.sh`:
+`/git/api/v1/repos/search` ohne Login → 403 (übersprungen bei
+`GIT_REQUIRE_SIGNIN_VIEW=false`).
+
+**Entscheidung**: Standard `true`, per `.env` abschaltbar, falls öffentliche Repositories
+gewollt sind. Anonymes `git clone` öffentlicher Repos geht damit nicht mehr; die Plattform
+selbst nutzt überall Admin-Zugang oder Workspace-Token. Der Forgejo-Healthcheck (`curl -f /`)
+und die Prüfungen in `deploy.sh`/`setup-forgejo.sh` bleiben grün: Die Startseite antwortet
+weiter mit 200, `curl -f` wertet Weiterleitungen nicht als Fehler. `testGitServerConnection`
+(anonym auf `/api/v1/version`, jetzt 403) wird nirgends aufgerufen.
+
+**Tests (live)**: Forgejo mit der neuen Variable neu erstellt. Anonym: `/`, `/user/login`,
+`/api/healthz` → 200; `/explore/repos`, `/explore/users`, Profil `/developer` → 303 auf die
+Login-Seite; `/api/v1/version`, `/users/search`, `/repos/search` → 403. Workspace
+`zz-forgejo-test`: Commit, `setup_local_remote`, `git ls-remote` mit Token → ok; Workspace
+`zz-forgejo-clone` aus `http://localhost/git/<user>/workspace.git` → als Collaborator mit
+Token geklont, Commit vorhanden. Beide gelöscht, Forgejo-Nutzer entfernt. Session-Cookie nach dem
+Deploy: `Max-Age=604799` (7 Tage). README: Zeile „One Login Is Enough“ unter „Recent Updates“.
+`tests/smoke-test.sh` lokal: 49/49 grün, darunter die neue Forgejo-Prüfung und die
+Fälschungsprüfung aus 5.4 (`X-Forwarded-For` aus dem Workspace → 403).

@@ -62,6 +62,7 @@ Users bring their own subscriptions or API keys. `update_ai_agents` updates the 
 ### Group Users (Latest)
 - ✅ **Own Logins per Person** - The admin creates users (Users tab) with one or more project groups, e.g. one per teacher and class
 - ✅ **Restricted Dashboard** - Group users only see the projects of their groups and can open, start, stop and rename them and edit notes and workspace passwords; everything else stays with the admin
+- ✅ **One Login Is Enough** - No Basic Auth needed in front of the dashboard: behind a reverse proxy the login limit applies per client, sessions last 7 days, and Forgejo shows nothing without a login (see [docs/DEPLOYMENT.md → External SSL Proxy](docs/DEPLOYMENT.md#3-production-with-external-ssl-proxy))
 - See [docs/user-guide.md → Group Users](docs/user-guide.md#group-users-restricted-dashboard-access) and [docs/API.md → Login and Roles](docs/API.md#login-and-roles)
 
 ### Leaner Workspaces
