@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test script to debug extension installation
 echo "=== Testing VS Code Extension Installation ==="

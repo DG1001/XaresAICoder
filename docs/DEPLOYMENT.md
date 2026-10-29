@@ -426,7 +426,8 @@ platform is accessed. Before upgrading:
 2. **Deploy with `./deploy.sh`** (not a bare `docker compose up`): it generates
    `ADMIN_PASSWORD`, checks the new network subnet, rotates the default Forgejo admin
    password and builds the images. Rebuild the code-server image (no `--skip-build`)
-   so `setup_local_remote` works with per-workspace Git accounts.
+   so `setup_local_remote` works with per-workspace Git accounts. Unattended (script,
+   cron): `./deploy.sh --skip-env --rebuild` with your feature flags.
 
 What changes:
 
@@ -453,6 +454,7 @@ What changes:
 | Login / group users | Group users with their own login, limited to the projects of their groups (Users tab, `/api/users`, see [API.md](API.md#group-user-permissions)); the session cookie now names the account | Everybody logs in once more after the update (older sessions are no longer valid). `{"password": …}` logins of scripts keep working |
 | Remote URLs on screen | `info`, `setup_local_remote` and the server log print Git remote URLs without the Forgejo token | Rebuild the code-server image; existing workspaces keep the old scripts until recreated |
 | Forgejo without login | Anonymous visitors see nothing in Forgejo (`GIT_REQUIRE_SIGNIN_VIEW=true`): no explore pages, profiles, public repositories or API; workspaces use their tokens and are not affected | Applied when `./deploy.sh` recreates Forgejo. Anonymous `git clone` of public repositories stops working: set `GIT_REQUIRE_SIGNIN_VIEW=false` in `.env` if they are meant to be public |
+| Unattended updates and other hosts | `deploy.sh --rebuild` rebuilds the code-server image without asking (without a terminal the question answers "no", so an update via script kept the old image); `setup-network.sh` keeps an existing `xares-aicoder-network` on an alternative subnet instead of asking to recreate it (the question ended unattended deploys); the fixed addresses of nginx and mitmproxy on `xares-internal` come from `.env` (`NGINX_INTERNAL_IP`, `MITMPROXY_IP`), written by `deploy.sh` together with the subnet; scripts start with `#!/usr/bin/env bash`; `deploy.sh` checks for `openssl` before generating the proxy CA | Nothing. On a non-default `INTERNAL_NETWORK_SUBNET` the next `./deploy.sh` adds the two addresses; a `docker-compose.yml` edited by hand for that can go back to the original |
 | Login behind a reverse proxy | nginx takes the client address from `X-Forwarded-For` of a proxy on the Docker host or in `TRUSTED_PROXIES`, so the login limit applies per client instead of to everybody at once; sessions last 7 days instead of 12 hours | The external nginx must send `X-Forwarded-For` (see [Production with External SSL Proxy](#3-production-with-external-ssl-proxy)); a Basic Auth in front of the dashboard can go. Without a reverse proxy in front, set `TRUSTED_PROXIES=none` (see [SECURITY.md](SECURITY.md#admin-login-dashboard-and-api)). An `.env` with `ADMIN_SESSION_HOURS=12` keeps 12 hours: change or remove the line |
 
 Old workspace containers keep the previous environment (incl. the rotated, now useless

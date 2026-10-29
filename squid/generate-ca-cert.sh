@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Generate SSL CA Certificate for Squid HTTPS Interception
 # This certificate is used by Squid to decrypt and inspect HTTPS traffic

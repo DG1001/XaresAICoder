@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # XaresAICoder Setup Test Script
 # Run from project root: ./tests/test-setup.sh

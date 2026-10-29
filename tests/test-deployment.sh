@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test script for verifying XaresAICoder deployment configurations
 # Run from project root: ./tests/test-deployment.sh

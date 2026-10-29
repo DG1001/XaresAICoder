@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # XaresAICoder Deployment Script
 # Handles building the code-server image and deploying the application
@@ -88,6 +88,9 @@ check_prerequisites() {
     print_success "Prerequisites check passed"
 }
 
+# --rebuild: rebuild an existing code-server image without asking
+REBUILD_IMAGE=false
+
 # Function to build code-server image
 build_code_server_image() {
     print_status "Building custom code-server image..."
@@ -106,13 +109,14 @@ build_code_server_image() {
 
     cd code-server
 
-    # Check if image already exists
-    if docker images | grep -q "xares-aicoder-codeserver.*latest"; then
+    # Check if image already exists (--rebuild rebuilds without asking; without
+    # a terminal the question answers itself with "no")
+    if [ "$REBUILD_IMAGE" != true ] && docker images | grep -q "xares-aicoder-codeserver.*latest"; then
         print_warning "xares-aicoder-codeserver:latest already exists"
         read -p "Do you want to rebuild it? (y/N): " -n 1 -r || REPLY=""
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_status "Skipping image build"
+            print_status "Skipping image build (use --rebuild to rebuild without asking)"
             cd ..
             return 0
         fi
@@ -215,11 +219,12 @@ apply_env_settings() {
         # existing Docker networks and with each other)
         local security_subnet=$(grep "^SECURITY_NETWORK_SUBNET=" .env | cut -d'=' -f2)
         configure_proxy_subnet INTERNAL_NETWORK_SUBNET 172.30.0.0/16 xares-internal \
-            DNSMASQ_IP 0.2 "${security_subnet:-172.31.0.0/16}" \
+            "DNSMASQ_IP:0.2 NGINX_INTERNAL_IP:0.4 MITMPROXY_IP:0.5" \
+            "${security_subnet:-172.31.0.0/16}" \
             "172.28.0.0/16 172.25.0.0/16 10.100.0.0/16"
         local internal_subnet=$(grep "^INTERNAL_NETWORK_SUBNET=" .env | cut -d'=' -f2)
         configure_proxy_subnet SECURITY_NETWORK_SUBNET 172.31.0.0/16 xares-security \
-            SECURITY_DNSMASQ_IP 255.254 "${internal_subnet:-172.30.0.0/16}" \
+            "SECURITY_DNSMASQ_IP:255.254" "${internal_subnet:-172.30.0.0/16}" \
             "172.29.0.0/16 172.26.0.0/16 10.101.0.0/16"
     fi
     
@@ -343,21 +348,24 @@ setup_network() {
     fi
 }
 
-# Checks one proxy network subnet and writes an alternative (plus the
-# matching dnsmasq address) to .env if it conflicts.
+# Checks one proxy network subnet and writes an alternative (plus the fixed
+# addresses in it: dnsmasq, and on xares-internal nginx and mitmproxy) to
+# .env if it conflicts.
 #   $1 .env key of the subnet          $2 default subnet
-#   $3 Docker network name to skip     $4 .env key of the dnsmasq address
-#   $5 host part of the dnsmasq address within the /16 (e.g. 0.2)
-#   $6 subnet of the other proxy network   $7 alternatives (space separated)
+#   $3 Docker network name to skip
+#   $4 fixed addresses as KEY:host pairs, host part within the /16
+#      (e.g. "DNSMASQ_IP:0.2 NGINX_INTERNAL_IP:0.4")
+#   $5 subnet of the other proxy network   $6 alternatives (space separated)
 configure_proxy_subnet() {
-    local key="$1" default_subnet="$2" own_network="$3" dns_key="$4" dns_host="$5"
+    local key="$1" default_subnet="$2" own_network="$3" addresses="$4"
     local current_subnet=$(grep "^${key}=" .env | cut -d'=' -f2)
     current_subnet=${current_subnet:-$default_subnet}
 
     # `|| rc=$?` keeps set -e from aborting the deploy when no subnet is found
     local suggested_subnet subnet_check_rc=0
-    suggested_subnet=$(check_internal_network_subnet "$current_subnet" "$own_network" "$6" "$7") || subnet_check_rc=$?
+    suggested_subnet=$(check_internal_network_subnet "$current_subnet" "$own_network" "$5" "$6") || subnet_check_rc=$?
 
+    local subnet="$current_subnet" changed=false
     if [ $subnet_check_rc -ne 0 ] || [ -z "$suggested_subnet" ]; then
         # No usable subnet determined — keep the existing configuration
         # rather than writing an empty value into .env.
@@ -369,18 +377,30 @@ configure_proxy_subnet() {
         else
             echo "${key}=$suggested_subnet" >> .env
         fi
-
-        local new_dns_ip=$(echo "$suggested_subnet" | sed "s|0\.0/16|${dns_host}|")
-        if grep -q "^${dns_key}=" .env; then
-            sed_inplace "s|^${dns_key}=.*|${dns_key}=$new_dns_ip|" .env
-        else
-            echo "${dns_key}=$new_dns_ip" >> .env
-        fi
-
-        if [ "$key" = "INTERNAL_NETWORK_SUBNET" ]; then
-            print_warning "IMPORTANT: docker-compose.yml pins nginx and mitmproxy to 172.30.0.4/172.30.0.5 on xares-internal; adjust them to $suggested_subnet"
-        fi
+        subnet="$suggested_subnet" changed=true
     fi
+
+    # The fixed addresses follow the subnet: rewritten when it changed, added
+    # when missing (installations from before a key existed keep working on a
+    # non-default subnet). Only for /16 subnets ending in .0.0, as the defaults.
+    local pair addr_key addr_host addr
+    if ! echo "$subnet" | grep -qE '^[0-9]+\.[0-9]+\.0\.0/16$'; then
+        local keys=""
+        for pair in $addresses; do keys="$keys ${pair%%:*}"; done
+        print_warning "$key=$subnet is not a /16 ending in .0.0; set${keys} in .env by hand"
+        return 0
+    fi
+    for pair in $addresses; do
+        addr_key=${pair%%:*} addr_host=${pair#*:}
+        addr=$(echo "$subnet" | sed "s|0\.0/16|${addr_host}|")
+        if ! grep -q "^${addr_key}=" .env; then
+            echo "${addr_key}=$addr" >> .env
+            print_status "Set $addr_key=$addr (in $subnet)"
+        elif [ "$changed" = true ]; then
+            sed_inplace "s|^${addr_key}=.*|${addr_key}=$addr|" .env
+            print_status "Set $addr_key=$addr (in $subnet)"
+        fi
+    done
 }
 
 # Function to check a proxy network subnet for conflicts. Prints the subnet
@@ -969,6 +989,10 @@ generate_proxy_cert() {
         print_success "SSL CA certificate already exists"
     else
         print_status "Generating SSL CA certificate for HTTPS interception..."
+        if ! command_exists openssl; then
+            print_error "openssl is needed to generate the proxy CA certificate (not found in PATH)"
+            exit 1
+        fi
         chmod +x ./squid/generate-ca-cert.sh
 
         if ./squid/generate-ca-cert.sh; then
@@ -1012,6 +1036,7 @@ show_usage() {
     echo
     echo "Options:"
     echo "  --skip-build          Skip building the code-server image"
+    echo "  --rebuild             Rebuild an existing code-server image without asking (for scripts and CI)"
     echo "  --skip-env            Skip the interactive environment setup (use existing .env; flags still apply)"
     echo "  --skip-network        Skip Docker network setup (use existing network)"
     echo "  --rotate-git-password Set a new random Forgejo admin password (done automatically while it is the default)"
@@ -1031,6 +1056,7 @@ show_usage() {
     echo "  $0 --enable-proxy           # Deploy with network access proxy"
     echo "  $0 --git-server --enable-proxy  # Deploy with both Git server and proxy"
     echo "  $0 --skip-build             # Deploy without rebuilding image"
+    echo "  $0 --skip-env --rebuild     # Unattended update: existing .env, new code-server image"
     echo "  $0 --build-only             # Only build the code-server image"
     echo "  $0 --use-registry           # Use pre-built images from GitHub registry"
     echo "  $0 --use-registry --registry-owner myuser  # Use specific registry owner"
@@ -1067,6 +1093,10 @@ main() {
                 ;;
             --rotate-git-password)
                 ROTATE_GIT_PASSWORD=true
+                shift
+                ;;
+            --rebuild)
+                REBUILD_IMAGE=true
                 shift
                 ;;
             --build-only)

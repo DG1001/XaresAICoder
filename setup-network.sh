@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # XaresAICoder Network Setup Script
 # Creates persistent external Docker network for workspace containers
@@ -97,23 +97,10 @@ if docker network ls --format "{{.Name}}" | grep -q "^${NETWORK_NAME}$"; then
     if [ "$EXISTING_SUBNET" = "$NETWORK_SUBNET" ]; then
         echo "✅ Network configuration is correct (subnet: ${NETWORK_SUBNET})"
     else
-        echo "⚠️  Network exists but with different subnet: ${EXISTING_SUBNET}"
-        echo "   Expected: ${NETWORK_SUBNET}"
-        echo "   This may cause connectivity issues."
-        
-        read -p "Do you want to recreate the network? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo "🗑️  Removing existing network..."
-            docker network rm ${NETWORK_NAME}
-            echo "🔧 Creating new network..."
-            docker network create \
-                --driver bridge \
-                --subnet=${NETWORK_SUBNET} \
-                --opt com.docker.network.bridge.name=xares-aicoder0 \
-                ${NETWORK_NAME}
-            echo "✅ Network '${NETWORK_NAME}' created successfully"
-        fi
+        # A different subnet is normal: when ${NETWORK_SUBNET} was taken on the
+        # first deploy, one of the alternatives below was used. The network is
+        # kept as it is; workspaces are attached to it.
+        echo "✅ Keeping existing subnet ${EXISTING_SUBNET} (default ${NETWORK_SUBNET} was taken or changed)"
     fi
 else
     # Check for subnet conflicts before creating new network
@@ -136,7 +123,8 @@ else
         if ! check_subnet_conflicts "$NETWORK_SUBNET" >/dev/null 2>&1; then
             echo "❌ No suitable alternative subnet found automatically."
             echo
-            read -p "Enter a custom subnet (e.g., 172.25.0.0/16) or press Enter to proceed anyway: " custom_subnet
+            # Without a terminal read fails at EOF; set -e must not end the script
+            read -p "Enter a custom subnet (e.g., 172.25.0.0/16) or press Enter to proceed anyway: " custom_subnet || custom_subnet=""
             if [ -n "$custom_subnet" ]; then
                 NETWORK_SUBNET="$custom_subnet"
                 echo "Using custom subnet: $NETWORK_SUBNET"

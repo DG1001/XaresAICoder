@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to check and install missing VS Code extensions on startup
 echo "Checking VS Code extensions..."
