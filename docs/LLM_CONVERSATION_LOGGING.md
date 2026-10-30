@@ -227,9 +227,12 @@ Each conversation is stored as:
    - View list of all captured conversations
 
 3. **Browse Conversations**
-   - Click conversation headers to expand/collapse
-   - View full request/response JSON
-   - See timestamps, models, token usage
+   - The list shows one line per captured API call: time, model, HTTP status,
+     number of messages, tokens (in/out/cached), size, and the start of the last
+     user message and of the response; 50 at a time, "Load more" for older ones
+   - Click a conversation to load and expand it; the raw request/response bodies
+     are shortened in the view (they repeat `parsed_request`/`parsed_response`),
+     "Download JSON" saves the complete capture
 
 ### Visualizing Conversations (Convo Viewer)
 
@@ -480,12 +483,17 @@ Done — authentication is wired up. Want me to add password hashing next?
 GET /api/projects/:projectId/llm-conversations
 ```
 
+Returns summaries (no bodies): agent tools resend the whole history with every
+call, so one capture can be several MB. Details and response format in
+[API.md](API.md#get-llm-conversations).
+
 **Query Parameters:**
 - `limit` (default: 100) - Number of conversations to return
 - `offset` (default: 0) - Pagination offset
 - `model` - Filter by model name
 - `dateFrom` - Filter conversations after date (ISO 8601)
 - `dateTo` - Filter conversations before date (ISO 8601)
+- `full=true` - Complete captures instead of summaries (can be very large)
 
 **Response:**
 ```json
@@ -493,10 +501,20 @@ GET /api/projects/:projectId/llm-conversations
   "success": true,
   "projectId": "abc-123",
   "ipAddress": "172.30.128.1",
-  "conversations": [...],
-  "count": 50
+  "summary": true,
+  "conversations": [{ "_file": "...", "model": "...", "usage": {...}, "size": 4755813, "...": "..." }],
+  "count": 50,
+  "total": 90
 }
 ```
+
+### Get One Conversation
+
+```
+GET /api/projects/:projectId/llm-conversations/:file
+```
+
+`:file` is a summary's `_file`. Returns the complete capture.
 
 ### Generate Documentation
 

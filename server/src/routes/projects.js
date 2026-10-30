@@ -612,7 +612,9 @@ router.get('/:projectId/squid-logs', requireWorkspacePassword, async (req, res) 
   }
 });
 
-// Get LLM conversations for a project
+// Get LLM conversations for a project. Default: one small summary per
+// capture (agent captures resend the whole history and reach several MB
+// each); ?full=true returns the complete captures as before.
 router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -621,7 +623,8 @@ router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req
       offset = 0,
       model,
       dateFrom,
-      dateTo
+      dateTo,
+      full
     } = req.query;
 
     const ipAddress = await workspaceService.getProxyIp(projectId);
@@ -632,25 +635,65 @@ router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req
       });
     }
 
-    const conversations = await dockerService.getLLMConversationsForWorkspace(
-      ipAddress,
-      clampInt(limit, 100, 1, 1000),
-      clampInt(offset, 0, 0, 100000),
-      { model, dateFrom, dateTo }
-    );
+    const lim = clampInt(limit, 100, 1, 1000);
+    const off = clampInt(offset, 0, 0, 100000);
+    const filters = { model, dateFrom, dateTo };
 
+    if (full === 'true' || full === '1') {
+      const conversations = await dockerService.getLLMConversationsForWorkspace(ipAddress, lim, off, filters);
+      return res.json({ success: true, projectId, ipAddress, conversations, count: conversations.length });
+    }
+
+    const { conversations, total } = await dockerService.getLLMConversationSummaries(ipAddress, lim, off, filters);
     res.json({
       success: true,
       projectId,
       ipAddress,
+      summary: true,
       conversations,
-      count: conversations.length
+      count: conversations.length,
+      total,
+      offset: off,
+      limit: lim
     });
 
   } catch (error) {
     console.error('Get LLM conversations error:', error);
     res.status(500).json({
       error: 'Failed to get LLM conversations',
+      message: error.message
+    });
+  }
+});
+
+// Get one complete LLM capture (:file = capture file name without .json, as
+// in the summaries' _file)
+router.get('/:projectId/llm-conversations/:file', requireWorkspacePassword, async (req, res) => {
+  try {
+    const { projectId, file } = req.params;
+    // Becomes a file name inside the mitmproxy container (see DELETE below)
+    if (!/^[0-9A-Za-z-]{1,64}$/.test(file)) {
+      return res.status(400).json({ success: false, message: 'Invalid conversation id' });
+    }
+
+    const ipAddress = await workspaceService.getProxyIp(projectId);
+    if (!ipAddress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workspace not found or not using proxy'
+      });
+    }
+
+    const conversation = await dockerService.getLLMConversation(ipAddress, file);
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+    res.json({ success: true, projectId, conversation });
+
+  } catch (error) {
+    console.error('Get LLM conversation error:', error);
+    res.status(500).json({
+      error: 'Failed to get LLM conversation',
       message: error.message
     });
   }

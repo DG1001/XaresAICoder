@@ -2124,3 +2124,36 @@ währenddessen abgelehnt, danach `stopped` ohne `lastError`; Fehlschlag: Status 
 antwortet → nach der Frist `lastError`, Status `error`, `pendingStops` leer, Start wieder
 möglich; späte Ablehnung des hängenden Aufrufs ohne „unhandled rejection“; normaler Stopp
 unverändert. Smoke-Test lokal komplett, Dashboard im Browser („Stopping“, Fehlerzeile).
+
+### Nachtrag: AI Conversations als Übersicht, Inhalt bei Bedarf (2026-10-30)
+
+**Problem** (Installation mit Agenten-Nutzung, Logging-Proxy): Das Fenster „AI Conversations“
+ließ sich nicht mehr öffnen. `GET /llm-conversations?limit=50` las die letzten 50 Aufzeichnungen
+komplett und schickte sie in einer Antwort: 40 MB bzw. 124 MB JSON, 10–15 s Laufzeit; Firefox
+stellte sie nicht mehr dar (ein Aufruf brach ab, nginx 499). Ursache: Agenten (hier OpenCode)
+schicken bei jedem Schritt den ganzen Verlauf samt Tools; eine Aufzeichnung war bis zu 4,7 MB
+groß, und der Rohtext steht doppelt drin (`body` und `parsed_request`).
+
+**Änderung**:
+
+- Die Liste liefert pro Aufzeichnung nur eine Übersicht: Datei, Zeit, Modell, HTTP-Status, Zahl
+  der Nachrichten, Token (Eingang, Ausgang, Cache; OpenAI-, DeepSeek- und Anthropic-Felder),
+  Größe, Auszüge (240 Zeichen) aus der letzten Nutzernachricht und der Antwort; bei
+  WebSocket-Aufzeichnungen Zahl der Frames und ob sie noch läuft. Dazu `total` für das Blättern.
+- Der Server merkt sich die Übersichten im Speicher je Datei, gültig solange Änderungszeit und
+  Größe gleich sind (WebSocket-Aufzeichnungen wachsen); Löschen verwirft sie. Höchstens 5000.
+- Neu `GET …/llm-conversations/:file` für eine vollständige Aufzeichnung (Name wie beim Löschen
+  geprüft). `?full=true` liefert die alte Liste. Gruppen-Nutzer haben weiterhin keinen Zugriff.
+- Dashboard: Liste aus den Übersichten, „Load more“ in 50er-Schritten, Aufklappen lädt die
+  Aufzeichnung einzeln; die doppelten Rohtexte sind in der Ansicht gekürzt, „Download JSON“
+  speichert alles.
+- nginx komprimiert JSON-Antworten der API (nur `/api/`, ab 4 KB).
+- Smoke-Test: Aufruf an die OpenAI-API aus dem Logging-Workspace (ohne gültigen Schlüssel,
+  401), dann Übersicht ohne Bodies, Einzelabruf mit Anfrage und Antwort ohne den Schlüssel,
+  `400` für einen ungültigen Namen, `full=true`.
+
+**Tests**: Logik mit nachgebauten Aufzeichnungen (OpenAI/DeepSeek-, Anthropic-,
+WebSocket-Format, eine kaputte Datei): Übersicht 1,2 KB statt ~12 MB, Token inkl. Cache,
+Auszüge, redigierte URL, Blättern, Filter, Cache (zweiter Aufruf liest nichts neu, geänderte
+oder gelöschte Datei schon), Einzelabruf mit redigiertem `Authorization`, fehlende Datei. 15/15.
+`node --check`, `bash -n`.
