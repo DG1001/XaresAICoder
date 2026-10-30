@@ -73,7 +73,12 @@ function summarizeConversation(conv, file, size) {
   const req = (conv && conv.parsed_request) || {};
   const res = (conv && conv.parsed_response) || {};
   const messages = Array.isArray(req.messages) ? req.messages : [];
-  const lastUser = [...messages].reverse().find(m => m && m.role === 'user');
+  // Agents feed screenshots back as user messages without text: take the
+  // last user message that has text
+  const userMessages = messages.filter(m => m && m.role === 'user');
+  const userTexts = userMessages.map(m => conversationText(m.content)).filter(t => t.trim());
+  const userHasImage = userMessages.some(m => Array.isArray(m.content)
+    && m.content.some(p => p && /image/.test(p.type || '')));
   const u = res.usage || {};
   const input = numberOrNull(u.prompt_tokens, u.input_tokens);
   const output = numberOrNull(u.completion_tokens, u.output_tokens);
@@ -95,7 +100,7 @@ function summarizeConversation(conv, file, size) {
     messageCount: messages.length,
     usage: input !== null || output !== null ? { input, output, cached } : null,
     size,
-    lastUserMessage: lastUser ? excerpt(conversationText(lastUser.content)) : '',
+    lastUserMessage: userTexts.length ? excerpt(userTexts[userTexts.length - 1]) : (userHasImage ? '[image]' : ''),
     response: excerpt(answer)
   };
   if (Array.isArray(conv.websocket_messages)) {

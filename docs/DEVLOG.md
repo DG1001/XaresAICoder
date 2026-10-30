@@ -2138,7 +2138,8 @@ groß, und der Rohtext steht doppelt drin (`body` und `parsed_request`).
 
 - Die Liste liefert pro Aufzeichnung nur eine Übersicht: Datei, Zeit, Modell, HTTP-Status, Zahl
   der Nachrichten, Token (Eingang, Ausgang, Cache; OpenAI-, DeepSeek- und Anthropic-Felder),
-  Größe, Auszüge (240 Zeichen) aus der letzten Nutzernachricht und der Antwort; bei
+  Größe, Auszüge (240 Zeichen) aus der letzten Nutzernachricht mit Text (Agenten spielen
+  Screenshots als Nutzernachricht ohne Text zurück; nur Bilder: `[image]`) und der Antwort; bei
   WebSocket-Aufzeichnungen Zahl der Frames und ob sie noch läuft. Dazu `total` für das Blättern.
 - Der Server merkt sich die Übersichten im Speicher je Datei, gültig solange Änderungszeit und
   Größe gleich sind (WebSocket-Aufzeichnungen wachsen); Löschen verwirft sie. Höchstens 5000.
@@ -2157,3 +2158,7 @@ WebSocket-Format, eine kaputte Datei): Übersicht 1,2 KB statt ~12 MB, Token ink
 Auszüge, redigierte URL, Blättern, Filter, Cache (zweiter Aufruf liest nichts neu, geänderte
 oder gelöschte Datei schon), Einzelabruf mit redigiertem `Authorization`, fehlende Datei. 15/15.
 `node --check`, `bash -n`.
+
+Live auf einer Installation (90 Aufzeichnungen, bis 4,7 MB): Übersicht für 50 Einträge 15,8 KB
+statt 124 MB; erster Aufruf 5,7 s (jede Datei einmal gelesen), danach 0,08 s aus dem Speicher;
+Einzelabruf 4,5 MB in 0,2 s.
