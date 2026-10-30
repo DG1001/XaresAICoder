@@ -44,6 +44,72 @@ function redactConversation(conv) {
   return conv;
 }
 
+// Agent tools resend the whole history with every request, so a single
+// capture can be several MB (raw body and parsed messages both stored). The
+// list view therefore gets a small summary per capture; the full capture is
+// fetched one at a time (getLLMConversation).
+function conversationText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map(part => (typeof part === 'string' ? part : (part && typeof part.text === 'string' ? part.text : '')))
+      .filter(Boolean)
+      .join(' ');
+  }
+  return '';
+}
+
+function excerpt(text, max = 240) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
+function numberOrNull(...values) {
+  for (const v of values) if (typeof v === 'number' && Number.isFinite(v)) return v;
+  return null;
+}
+
+function summarizeConversation(conv, file, size) {
+  const req = (conv && conv.parsed_request) || {};
+  const res = (conv && conv.parsed_response) || {};
+  const messages = Array.isArray(req.messages) ? req.messages : [];
+  // Agents feed screenshots back as user messages without text: take the
+  // last user message that has text
+  const userMessages = messages.filter(m => m && m.role === 'user');
+  const userTexts = userMessages.map(m => conversationText(m.content)).filter(t => t.trim());
+  const userHasImage = userMessages.some(m => Array.isArray(m.content)
+    && m.content.some(p => p && /image/.test(p.type || '')));
+  const u = res.usage || {};
+  const input = numberOrNull(u.prompt_tokens, u.input_tokens);
+  const output = numberOrNull(u.completion_tokens, u.output_tokens);
+  const cached = numberOrNull(u.prompt_cache_hit_tokens, u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens, u.cache_read_input_tokens);
+  let answer = '';
+  if (Array.isArray(res.choices) && res.choices[0]) {
+    const c = res.choices[0];
+    answer = conversationText((c.message && c.message.content) || c.text);
+  } else if (Array.isArray(res.content)) {
+    answer = conversationText(res.content);
+  }
+  const summary = {
+    _file: file,
+    timestamp: conv.timestamp,
+    method: conv.method,
+    url: redactUrl(conv.url),
+    model: req.model || res.model || null,
+    status: numberOrNull(conv.response && conv.response.status_code),
+    messageCount: messages.length,
+    usage: input !== null || output !== null ? { input, output, cached } : null,
+    size,
+    lastUserMessage: userTexts.length ? excerpt(userTexts[userTexts.length - 1]) : (userHasImage ? '[image]' : ''),
+    response: excerpt(answer)
+  };
+  if (Array.isArray(conv.websocket_messages)) {
+    summary.websocketMessages = conv.websocket_messages.length;
+    summary.inProgress = !!conv.in_progress;
+  }
+  return summary;
+}
+
 // Every environment variable buildContainerSpec() may set. A clone container
 // inherits the snapshot's environment from its image, so any of these that
 // the clone does not set itself is overridden with an empty value (e.g. the
@@ -152,6 +218,9 @@ class DockerService {
     this.docker = new Docker();
     // External persistent network name (no Docker Compose prefix)
     this.network = process.env.DOCKER_NETWORK || 'xares-aicoder-network';
+    // Capture summaries by "<ip>/<file>", valid while mtime and size match
+    // (WebSocket captures are rewritten while the session runs)
+    this.conversationSummaries = new Map();
     this.activeContainers = new Map();
     // Domain and port configuration
     this.baseDomain = process.env.BASE_DOMAIN || 'localhost';
@@ -1203,6 +1272,96 @@ fi`.trim();
     }
   }
 
+  async getMitmproxyContainer() {
+    const containers = await this.docker.listContainers();
+    const info = containers.find(c => c.Names.some(name => name.includes('mitmproxy-logger')));
+    return info ? this.docker.getContainer(info.Id) : null;
+  }
+
+  async execToString(container, cmd) {
+    const exec = await container.exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
+    return this.streamToString(await exec.start());
+  }
+
+  /**
+   * Summaries of a workspace's LLM captures, newest first:
+   * { conversations: [summary], total, nextOffset }. Reads each capture once and keeps the
+   * summary in memory until the file changes.
+   */
+  async getLLMConversationSummaries(ipAddress, limit = 50, offset = 0, filters = {}) {
+    try {
+      const container = await this.getMitmproxyContainer();
+      if (!container) {
+        console.error('mitmproxy container not found');
+        return { conversations: [], total: 0 };
+      }
+      const dir = `/var/log/mitmproxy/llm_conversations/${ipAddress}`;
+      const listing = await this.execToString(container, ['sh', '-c',
+        `find ${dir} -maxdepth 1 -name "*.json" -type f -printf "%f %T@ %s\\n" 2>/dev/null | sort -r`]);
+      const entries = listing.trim().split('\n').filter(Boolean).map(line => {
+        const [name, mtime, size] = line.split(' ');
+        return { name, mtime, size: Number(size) };
+      });
+      const page = entries.slice(offset, offset + limit);
+      const conversations = [];
+      for (const entry of page) {
+        const key = `${ipAddress}/${entry.name}`;
+        const stamp = `${entry.mtime}:${entry.size}`;
+        let cached = this.conversationSummaries.get(key);
+        if (!cached || cached.stamp !== stamp) {
+          const content = await this.execToString(container, ['cat', `${dir}/${entry.name}`]);
+          let summary;
+          try {
+            summary = summarizeConversation(JSON.parse(content), entry.name.replace(/\.json$/, ''), entry.size);
+          } catch (parseError) {
+            console.error(`Failed to parse ${key}:`, parseError.message);
+            continue;
+          }
+          cached = { stamp, summary };
+          this.conversationSummaries.set(key, cached);
+          if (this.conversationSummaries.size > 5000) {
+            this.conversationSummaries.delete(this.conversationSummaries.keys().next().value);
+          }
+        }
+        const s = cached.summary;
+        if (filters.model && s.model !== filters.model) continue;
+        if (filters.dateFrom && s.timestamp < filters.dateFrom) continue;
+        if (filters.dateTo && s.timestamp > filters.dateTo) continue;
+        conversations.push(s);
+      }
+      // Skipped entries (unreadable, filtered) still count for the offset,
+      // or the next page would repeat captures
+      return { conversations, total: entries.length, nextOffset: offset + page.length };
+    } catch (error) {
+      console.error('Error reading LLM conversation summaries:', error);
+      return { conversations: [], total: 0 };
+    }
+  }
+
+  /**
+   * One complete LLM capture (credentials redacted), or null if it does not
+   * exist. `file` is the capture file name without .json (checked by the route).
+   */
+  async getLLMConversation(ipAddress, file) {
+    const container = await this.getMitmproxyContainer();
+    if (!container) return null;
+    const path = `/var/log/mitmproxy/llm_conversations/${ipAddress}/${file}.json`;
+    const content = await this.execToString(container, ['sh', '-c', `test -f "$1" && cat "$1"`, 'sh', path]);
+    if (!content.trim()) return null;
+    const conversation = redactConversation(JSON.parse(content));
+    conversation._file = file;
+    return conversation;
+  }
+
+  forgetConversationSummaries(ipAddress, file = null) {
+    const prefix = `${ipAddress}/`;
+    for (const key of [...this.conversationSummaries.keys()]) {
+      if (file ? key === `${prefix}${file}.json` : key.startsWith(prefix)) {
+        this.conversationSummaries.delete(key);
+      }
+    }
+  }
+
   /**
    * Get recorded domains for a workspace by IP address
    * Reads domain tracking JSON from mitmproxy logger
@@ -1313,6 +1472,7 @@ fi`.trim();
    * Delete all LLM conversations for a workspace
    */
   async deleteAllLLMConversations(ipAddress) {
+    this.forgetConversationSummaries(ipAddress);
     try {
       const containers = await this.docker.listContainers();
       const mitmproxyContainer = containers.find(c =>
@@ -1372,6 +1532,7 @@ fi`.trim();
    * Delete a specific LLM conversation file
    */
   async deleteLLMConversation(ipAddress, timestamp) {
+    this.forgetConversationSummaries(ipAddress, timestamp);
     try {
       const containers = await this.docker.listContainers();
       const mitmproxyContainer = containers.find(c =>

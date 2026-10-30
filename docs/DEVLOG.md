@@ -2124,3 +2124,58 @@ währenddessen abgelehnt, danach `stopped` ohne `lastError`; Fehlschlag: Status 
 antwortet → nach der Frist `lastError`, Status `error`, `pendingStops` leer, Start wieder
 möglich; späte Ablehnung des hängenden Aufrufs ohne „unhandled rejection“; normaler Stopp
 unverändert. Smoke-Test lokal komplett, Dashboard im Browser („Stopping“, Fehlerzeile).
+
+### Nachtrag: AI Conversations als Übersicht, Inhalt bei Bedarf (2026-10-30)
+
+**Problem** (Installation mit Agenten-Nutzung, Logging-Proxy): Das Fenster „AI Conversations“
+ließ sich nicht mehr öffnen. `GET /llm-conversations?limit=50` las die letzten 50 Aufzeichnungen
+komplett und schickte sie in einer Antwort: 40 MB bzw. 124 MB JSON, 10–15 s Laufzeit; Firefox
+stellte sie nicht mehr dar (ein Aufruf brach ab, nginx 499). Ursache: Agenten (hier OpenCode)
+schicken bei jedem Schritt den ganzen Verlauf samt Tools; eine Aufzeichnung war bis zu 4,7 MB
+groß, und der Rohtext steht doppelt drin (`body` und `parsed_request`).
+
+**Änderung**:
+
+- Die Liste liefert pro Aufzeichnung nur eine Übersicht: Datei, Zeit, Modell, HTTP-Status, Zahl
+  der Nachrichten, Token (Eingang, Ausgang, Cache; OpenAI-, DeepSeek- und Anthropic-Felder),
+  Größe, Auszüge (240 Zeichen) aus der letzten Nutzernachricht mit Text (Agenten spielen
+  Screenshots als Nutzernachricht ohne Text zurück; nur Bilder: `[image]`) und der Antwort; bei
+  WebSocket-Aufzeichnungen Zahl der Frames und ob sie noch läuft. Dazu `total` für das Blättern.
+- Der Server merkt sich die Übersichten im Speicher je Datei, gültig solange Änderungszeit und
+  Größe gleich sind (WebSocket-Aufzeichnungen wachsen); Löschen verwirft sie. Höchstens 5000.
+- Neu `GET …/llm-conversations/:file` für eine vollständige Aufzeichnung (Name wie beim Löschen
+  geprüft). `?full=true` liefert die alte Liste. Gruppen-Nutzer haben weiterhin keinen Zugriff.
+- Dashboard: Liste aus den Übersichten, „Load more“ in 50er-Schritten, Aufklappen lädt die
+  Aufzeichnung einzeln; die doppelten Rohtexte sind in der Ansicht gekürzt, „Download JSON“
+  speichert alles.
+- nginx komprimiert JSON-Antworten der API (nur `/api/`, ab 4 KB).
+- Smoke-Test: Aufruf an die OpenAI-API aus dem Logging-Workspace (ohne gültigen Schlüssel,
+  401), dann Übersicht ohne Bodies, Einzelabruf mit Anfrage und Antwort ohne den Schlüssel,
+  `400` für einen ungültigen Namen, `full=true`.
+
+**Tests**: Logik mit nachgebauten Aufzeichnungen (OpenAI/DeepSeek-, Anthropic-,
+WebSocket-Format, eine kaputte Datei): Übersicht 1,2 KB statt ~12 MB, Token inkl. Cache,
+Auszüge, redigierte URL, Blättern, Filter, Cache (zweiter Aufruf liest nichts neu, geänderte
+oder gelöschte Datei schon), Einzelabruf mit redigiertem `Authorization`, fehlende Datei. 15/15.
+`node --check`, `bash -n`.
+
+Live auf einer Installation (90 Aufzeichnungen, bis 4,7 MB): Übersicht für 50 Einträge 15,8 KB
+statt 124 MB; erster Aufruf 5,7 s (jede Datei einmal gelesen), danach 0,08 s aus dem Speicher;
+Einzelabruf 4,5 MB in 0,2 s.
+
+**Nachbesserung nach Review** (2026-10-30):
+
+- Blättern: Überspringt der Server Einträge (Datei nicht lesbar, Filter), kamen weniger als
+  50 zurück, und „Load more“ setzte den nächsten Offset um genau so viele weiter – die
+  nächste Seite begann mit Einträgen, die schon da waren. Die Antwort trägt jetzt
+  `nextOffset` (Offset plus gelesene Einträge der Seite), das Dashboard nimmt ihn.
+- Smoke-Test: Die Testaufzeichnung blieb im Verzeichnis der IP liegen und tauchte beim
+  nächsten Workspace mit dieser IP auf. Sie wird jetzt über die API gelöscht (`200`, danach
+  `404`); das prüft zugleich das Löschen einzelner Aufzeichnungen.
+
+**Tests**: Smoke-Test lokal 56/56. Logging-Workspace mit 120 nachgebauten Aufzeichnungen
+(eine kaputt, eine 5,7 MB): Seiten 49 + 50 + 20, `nextOffset` 50/100/120, 119 verschiedene
+Einträge ohne Wiederholung; erster Aufruf je Seite 4,6–4,9 s (ein `docker exec` je Datei),
+danach 0,1–0,2 s aus dem Speicher; Antworten gzip. Im Browser: Zähler „120 (showing 49)“,
+„Load 50 more“/„Load 20 more“, 119 eindeutige Einträge; Aufklappen der großen Aufzeichnung
+lädt sie einzeln, Rohbody gekürzt, „Download JSON“ da, kein Schlüssel im Text.

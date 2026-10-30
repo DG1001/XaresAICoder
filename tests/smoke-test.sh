@@ -349,6 +349,34 @@ if [ "$ENABLE_PROXY" = true ]; then
         api GET "/projects/$id/recorded-domains"
         check "Domain recorded" [ "$(json '"example.com" in d["domains"]')" = True ]
         ip=$(json 'd["ipAddress"]')
+        # An LLM API call (rejected without a key, but captured with request
+        # and response): list shows a summary without bodies, the capture
+        # itself is fetched on its own
+        ws_http_code "$id" -X POST https://api.openai.com/v1/chat/completions \
+            -H 'Content-Type: application/json' -H 'Authorization: Bearer zz-smoke-invalid' \
+            -d '{"model":"zz-smoke-model","messages":[{"role":"user","content":"zz smoke hello"}]}' >/dev/null
+        for _ in $(seq 1 10); do
+            api GET "/projects/$id/llm-conversations?limit=5"
+            [ "$(json 'd.get("total", 0)')" -ge 1 ] 2>/dev/null && break
+            sleep 1
+        done
+        check "LLM call listed as summary (model $(json 'd["conversations"][0]["model"]'))" \
+            [ "$(json 'd["summary"] and d["conversations"][0]["model"] == "zz-smoke-model" and "zz smoke hello" in d["conversations"][0]["lastUserMessage"] and "body" not in d["conversations"][0] and "parsed_request" not in d["conversations"][0]')" = True ]
+        file=$(json 'd["conversations"][0]["_file"]')
+        api GET "/projects/$id/llm-conversations/$file"
+        check "Single capture with request and response (HTTP $STATUS)" \
+            [ "$(json 'd["conversation"]["parsed_request"]["model"] == "zz-smoke-model" and d["conversation"]["response"]["status_code"] >= 400 and "zz-smoke-invalid" not in json.dumps(d)')" = True ]
+        api GET "/projects/$id/llm-conversations/..%2Fsecret"
+        check "Capture name checked (HTTP $STATUS)" [ "$STATUS" = 400 ]
+        api GET "/projects/$id/llm-conversations?full=true&limit=5"
+        check "Full list on request" [ "$(json '"body" in d["conversations"][0]')" = True ]
+        # Captures stay per IP after the workspace is gone: remove the test call
+        if [ -n "$file" ]; then
+            api DELETE "/projects/$id/llm-conversations/$file"
+            check "Delete capture (HTTP $STATUS)" [ "$STATUS" = 200 ]
+            api GET "/projects/$id/llm-conversations/$file"
+            check "Capture gone (HTTP $STATUS)" [ "$STATUS" = 404 ]
+        fi
         check "Delete" delete_workspace "$id"
         # Recorded domains of the IP are only reset when it is reused
         [ -z "$ip" ] || docker exec xaresaicoder-mitmproxy-logger rm -f "/var/log/mitmproxy/domains/$ip.json"

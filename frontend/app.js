@@ -3085,6 +3085,9 @@ class XaresAICoder {
     }
 
     // AI Conversations Modal Methods
+    // The list shows one summary per capture (the server sends no bodies:
+    // agent captures resend the whole history and reach several MB each);
+    // a capture's full content is loaded only when it is expanded.
     async openAIConversationsModal(projectId) {
         try {
             const project = this.projects.find(p => p.projectId === projectId);
@@ -3093,7 +3096,6 @@ class XaresAICoder {
                 return;
             }
 
-            // Fetch conversations
             const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/llm-conversations?limit=50`);
             if (!response) return;
             const data = await response.json();
@@ -3103,7 +3105,9 @@ class XaresAICoder {
                 return;
             }
 
-            // Create modal
+            // next: server offset for "Load more"; dom: running index for element ids
+            this.conversationList = { projectId, shown: data.count, total: data.total ?? data.count, next: data.nextOffset ?? data.count, dom: data.count };
+
             const modalHTML = `
                 <div id="aiConversationsModal" class="modal" style="display: flex;">
                     <div class="modal-content" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column;">
@@ -3115,30 +3119,12 @@ class XaresAICoder {
                             </div>
                         </div>
                         <div class="modal-body" style="overflow-y: auto; max-height: calc(90vh - 180px);">
-                            <p><strong>Total Conversations:</strong> ${data.count}</p>
+                            <p class="conversation-count">${this.conversationCountText()}</p>
                             ${data.count === 0 ? '<p>No AI conversations recorded yet for this workspace.</p>' : ''}
                             <div class="conversation-list" style="margin-top: 20px;">
-                                ${data.conversations.map((conv, idx) => {
-                                    // model comes from captured request bodies (attacker-controlled)
-                                    const model = this.escapeHtml(conv.parsed_request?.model || 'Unknown');
-                                    const time = new Date(conv.timestamp).toLocaleString();
-                                    // Server sends the capture file name; WebSocket captures end in -ws
-                                    const timestamp = conv._file || conv.timestamp.replace(/:/g, '-').replace(/\./g, '-');
-                                    return `
-                                        <div class="conversation-item" id="conv-item-${idx}" style="margin-bottom: 15px; border: 1px solid var(--vscode-panel-border); padding: 10px; border-radius: 4px;">
-                                            <div class="conversation-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                                                <div style="cursor: pointer; font-weight: bold; flex: 1;" onclick="document.getElementById('conv-${idx}').style.display = document.getElementById('conv-${idx}').style.display === 'none' ? 'block' : 'none'">
-                                                    <span>#${idx + 1}</span> ${model} - ${time}
-                                                </div>
-                                                <button class="btn-danger" style="font-size: 11px; padding: 2px 6px;" onclick="app.deleteConversation('${projectId}', ${this.jsArg(timestamp)}, ${idx})" title="Delete this conversation">Delete</button>
-                                            </div>
-                                            <div id="conv-${idx}" class="conversation-body" style="display: none;">
-                                                <pre style="background: var(--vscode-editor-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">${this.escapeHtml(JSON.stringify(conv, null, 2))}</pre>
-                                            </div>
-                                        </div>
-                                    `;
-                                }).join('')}
+                                ${data.conversations.map((conv, idx) => this.renderConversationItem(projectId, conv, idx)).join('')}
                             </div>
+                            <div id="conversationMore" style="text-align: center; margin-top: 10px;">${this.conversationMoreButton()}</div>
                         </div>
                         <div class="modal-footer">
                             <button class="btn-primary" onclick="app.openConvoViewer('${projectId}')" title="Visualize the captured conversations in the browser (context growth, cache hit-rate, tool usage) — no download needed">
@@ -3156,16 +3142,146 @@ class XaresAICoder {
                 </div>
             `;
 
-            // Remove existing modal if present
             const existing = document.getElementById('aiConversationsModal');
             if (existing) existing.remove();
-
-            // Add modal to page
             document.body.insertAdjacentHTML('beforeend', modalHTML);
 
         } catch (error) {
             console.error('Error opening AI conversations modal:', error);
             this.showError('Failed to load AI conversations');
+        }
+    }
+
+    conversationCountText() {
+        const l = this.conversationList || { shown: 0, total: 0 };
+        return `<strong>Total Conversations:</strong> ${l.total}${l.shown < l.total ? ` (showing ${l.shown})` : ''}`;
+    }
+
+    conversationMoreButton() {
+        const l = this.conversationList;
+        if (!l || l.next >= l.total) return '';
+        return `<button class="btn-secondary" onclick="app.loadMoreConversations()">Load ${Math.min(50, l.total - l.next)} more</button>`;
+    }
+
+    formatConversationSize(bytes) {
+        if (typeof bytes !== 'number') return '';
+        if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+        if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+        return `${bytes} B`;
+    }
+
+    renderConversationItem(projectId, conv, idx) {
+        // Everything except sizes comes from captured traffic: escape it
+        const model = this.escapeHtml(conv.model || conv.parsed_request?.model || 'Unknown');
+        const time = conv.timestamp ? new Date(conv.timestamp).toLocaleString() : '';
+        // Server sends the capture file name; WebSocket captures end in -ws
+        const file = conv._file || String(conv.timestamp || '').replace(/:/g, '-').replace(/\./g, '-');
+        const facts = [];
+        if (conv.status) facts.push(`HTTP ${conv.status}`);
+        if (conv.websocketMessages !== undefined) facts.push(`WebSocket, ${conv.websocketMessages} frames${conv.inProgress ? ', in progress' : ''}`);
+        else if (conv.messageCount) facts.push(`${conv.messageCount} messages`);
+        if (conv.usage) {
+            const u = conv.usage;
+            facts.push(`tokens in ${u.input ?? '?'} / out ${u.output ?? '?'}${u.cached ? ` (cached ${u.cached})` : ''}`);
+        }
+        if (conv.size) facts.push(this.formatConversationSize(conv.size));
+        return `
+            <div class="conversation-item" id="conv-item-${idx}" style="margin-bottom: 15px; border: 1px solid var(--vscode-panel-border); padding: 10px; border-radius: 4px;">
+                <div class="conversation-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <div style="cursor: pointer; flex: 1;" onclick="app.toggleConversation('${projectId}', ${this.jsArg(file)}, ${idx})">
+                        <div style="font-weight: bold;"><span>#${idx + 1}</span> ${model} - ${this.escapeHtml(time)}</div>
+                        <div style="font-size: 12px; color: var(--vscode-text-muted);">${this.escapeHtml(facts.join(' · '))}</div>
+                        ${conv.lastUserMessage ? `<div style="font-size: 12px; margin-top: 4px;"><strong>User:</strong> ${this.escapeHtml(conv.lastUserMessage)}</div>` : ''}
+                        ${conv.response ? `<div style="font-size: 12px; margin-top: 2px;"><strong>Response:</strong> ${this.escapeHtml(conv.response)}</div>` : ''}
+                    </div>
+                    <button class="btn-danger" style="font-size: 11px; padding: 2px 6px;" onclick="app.deleteConversation('${projectId}', ${this.jsArg(file)}, ${idx})" title="Delete this conversation">Delete</button>
+                </div>
+                <div id="conv-${idx}" class="conversation-body" style="display: none;"></div>
+            </div>
+        `;
+    }
+
+    async toggleConversation(projectId, file, idx) {
+        const body = document.getElementById(`conv-${idx}`);
+        if (!body) return;
+        if (body.style.display !== 'none') {
+            body.style.display = 'none';
+            return;
+        }
+        body.style.display = 'block';
+        if (body.dataset.loaded) return;
+        body.innerHTML = '<p style="font-size: 12px;">Loading…</p>';
+        try {
+            const response = await this.protectedFetch(projectId, `${this.apiBase}/projects/${projectId}/llm-conversations/${encodeURIComponent(file)}`);
+            if (!response) { body.style.display = 'none'; return; }
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                body.innerHTML = `<p style="font-size: 12px;">${this.escapeHtml(data.message || 'Failed to load conversation')}</p>`;
+                return;
+            }
+            const conv = data.conversation;
+            // The raw request/response bodies repeat parsed_request /
+            // parsed_response; show them shortened, the download has everything
+            const view = JSON.parse(JSON.stringify(conv));
+            const omit = (obj, key) => {
+                if (obj && typeof obj[key] === 'string' && obj[key].length > 2000) {
+                    obj[key] = `[${obj[key].length} characters, see parsed_* or download]`;
+                }
+            };
+            if (view.parsed_request) omit(view, 'body');
+            if (view.parsed_response) omit(view.response, 'body');
+            this.conversationDownloads = this.conversationDownloads || {};
+            this.conversationDownloads[file] = conv;
+            body.innerHTML = `
+                <div style="margin-bottom: 6px;"><button class="btn-secondary" style="font-size: 11px; padding: 2px 6px;" onclick="app.downloadConversation(${this.jsArg(file)})">Download JSON</button></div>
+                <pre style="background: var(--vscode-editor-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto;">${this.escapeHtml(JSON.stringify(view, null, 2))}</pre>`;
+            body.dataset.loaded = '1';
+        } catch (error) {
+            console.error('Error loading conversation:', error);
+            body.innerHTML = '<p style="font-size: 12px;">Failed to load conversation</p>';
+        }
+    }
+
+    downloadConversation(file) {
+        const conv = this.conversationDownloads && this.conversationDownloads[file];
+        if (!conv) return;
+        const blob = new Blob([JSON.stringify(conv, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `llm-conversation-${file}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
+
+    async loadMoreConversations() {
+        const l = this.conversationList;
+        if (!l) return;
+        try {
+            const response = await this.protectedFetch(l.projectId, `${this.apiBase}/projects/${l.projectId}/llm-conversations?limit=50&offset=${l.next}`);
+            if (!response) return;
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                this.showError(data.message || 'Failed to load conversations');
+                return;
+            }
+            const list = document.querySelector('#aiConversationsModal .conversation-list');
+            if (list) {
+                list.insertAdjacentHTML('beforeend', data.conversations.map((conv, i) => this.renderConversationItem(l.projectId, conv, l.dom + i)).join(''));
+                l.dom += data.conversations.length;
+            }
+            l.next = data.nextOffset ?? l.next + (data.conversations.length || 50);
+            l.shown += data.conversations.length;
+            l.total = data.total ?? l.total;
+            const count = document.querySelector('#aiConversationsModal .conversation-count');
+            if (count) count.innerHTML = this.conversationCountText();
+            const more = document.getElementById('conversationMore');
+            if (more) more.innerHTML = this.conversationMoreButton();
+        } catch (error) {
+            console.error('Error loading more conversations:', error);
+            this.showError('Failed to load more conversations');
         }
     }
 
@@ -3282,10 +3398,13 @@ class XaresAICoder {
             const modal = document.getElementById('aiConversationsModal');
             if (modal) {
                 const items = modal.querySelectorAll('.conversation-item');
-                const countElem = modal.querySelector('.modal-body p strong');
-                if (countElem && countElem.parentElement) {
-                    countElem.parentElement.innerHTML = `<strong>Total Conversations:</strong> ${items.length}`;
+                if (this.conversationList) {
+                    this.conversationList.total = Math.max(0, this.conversationList.total - 1);
+                    this.conversationList.shown = items.length;
+                    this.conversationList.next = Math.max(0, this.conversationList.next - 1);
                 }
+                const countElem = modal.querySelector('.conversation-count');
+                if (countElem) countElem.innerHTML = this.conversationCountText();
 
                 // If no conversations left, show message
                 if (items.length === 0) {

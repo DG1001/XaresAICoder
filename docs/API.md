@@ -865,6 +865,57 @@ See [LLM_CONVERSATION_LOGGING.md](LLM_CONVERSATION_LOGGING.md) for full details.
 
 **Endpoint**: `GET /api/projects/:projectId/llm-conversations`
 
+Lists the captures of a workspace, newest first, as small summaries. Agent tools
+resend the whole history with every call, so a single capture can be several MB;
+the list therefore carries no request or response bodies.
+
+**Query**: `limit` (default 100, max 1000), `offset`, `model`, `dateFrom`, `dateTo`
+(filters apply to the page), `full=true` (complete captures as before this change –
+can be very large).
+
+**Response** (200):
+```json
+{
+  "success": true,
+  "summary": true,
+  "total": 90,
+  "count": 50,
+  "offset": 0,
+  "limit": 50,
+  "nextOffset": 50,
+  "conversations": [
+    {
+      "_file": "2026-10-29T13-15-29-051707",
+      "timestamp": "2026-10-29T13:15:29.051707",
+      "method": "POST",
+      "url": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-chat",
+      "status": 200,
+      "messageCount": 186,
+      "usage": { "input": 61234, "output": 512, "cached": 60800 },
+      "size": 4755813,
+      "lastUserMessage": "first 240 characters …",
+      "response": "first 240 characters …"
+    }
+  ]
+}
+```
+
+`nextOffset` is the `offset` for the next page (captures that could not be read or
+do not match a filter are skipped, so `count` can be smaller than `limit`).
+`usage` is `null` when the response carries none (e.g. streamed). WebSocket captures
+(Codex) have `websocketMessages` and `inProgress` instead of messages. Summaries are
+cached by the server until the capture file changes.
+
+### Get One LLM Conversation
+
+**Endpoint**: `GET /api/projects/:projectId/llm-conversations/:file`
+
+`:file` is a summary's `_file` (`[0-9A-Za-z-]`, max. 64 characters, else `400`).
+Returns `{ "success": true, "conversation": { … } }` with the complete capture
+(request and response headers with credentials redacted, raw bodies, `parsed_request`,
+`parsed_response`), or `404` if it does not exist.
+
 ### Get Squid Proxy Logs
 
 Returns filtered Squid proxy logs for Security Proxy workspaces.
