@@ -2162,3 +2162,20 @@ oder gelöschte Datei schon), Einzelabruf mit redigiertem `Authorization`, fehle
 Live auf einer Installation (90 Aufzeichnungen, bis 4,7 MB): Übersicht für 50 Einträge 15,8 KB
 statt 124 MB; erster Aufruf 5,7 s (jede Datei einmal gelesen), danach 0,08 s aus dem Speicher;
 Einzelabruf 4,5 MB in 0,2 s.
+
+**Nachbesserung nach Review** (2026-10-30):
+
+- Blättern: Überspringt der Server Einträge (Datei nicht lesbar, Filter), kamen weniger als
+  50 zurück, und „Load more“ setzte den nächsten Offset um genau so viele weiter – die
+  nächste Seite begann mit Einträgen, die schon da waren. Die Antwort trägt jetzt
+  `nextOffset` (Offset plus gelesene Einträge der Seite), das Dashboard nimmt ihn.
+- Smoke-Test: Die Testaufzeichnung blieb im Verzeichnis der IP liegen und tauchte beim
+  nächsten Workspace mit dieser IP auf. Sie wird jetzt über die API gelöscht (`200`, danach
+  `404`); das prüft zugleich das Löschen einzelner Aufzeichnungen.
+
+**Tests**: Smoke-Test lokal 56/56. Logging-Workspace mit 120 nachgebauten Aufzeichnungen
+(eine kaputt, eine 5,7 MB): Seiten 49 + 50 + 20, `nextOffset` 50/100/120, 119 verschiedene
+Einträge ohne Wiederholung; erster Aufruf je Seite 4,6–4,9 s (ein `docker exec` je Datei),
+danach 0,1–0,2 s aus dem Speicher; Antworten gzip. Im Browser: Zähler „120 (showing 49)“,
+„Load 50 more“/„Load 20 more“, 119 eindeutige Einträge; Aufklappen der großen Aufzeichnung
+lädt sie einzeln, Rohbody gekürzt, „Download JSON“ da, kein Schlüssel im Text.

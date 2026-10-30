@@ -370,6 +370,13 @@ if [ "$ENABLE_PROXY" = true ]; then
         check "Capture name checked (HTTP $STATUS)" [ "$STATUS" = 400 ]
         api GET "/projects/$id/llm-conversations?full=true&limit=5"
         check "Full list on request" [ "$(json '"body" in d["conversations"][0]')" = True ]
+        # Captures stay per IP after the workspace is gone: remove the test call
+        if [ -n "$file" ]; then
+            api DELETE "/projects/$id/llm-conversations/$file"
+            check "Delete capture (HTTP $STATUS)" [ "$STATUS" = 200 ]
+            api GET "/projects/$id/llm-conversations/$file"
+            check "Capture gone (HTTP $STATUS)" [ "$STATUS" = 404 ]
+        fi
         check "Delete" delete_workspace "$id"
         # Recorded domains of the IP are only reset when it is reused
         [ -z "$ip" ] || docker exec xaresaicoder-mitmproxy-logger rm -f "/var/log/mitmproxy/domains/$ip.json"

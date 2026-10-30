@@ -882,6 +882,7 @@ can be very large).
   "count": 50,
   "offset": 0,
   "limit": 50,
+  "nextOffset": 50,
   "conversations": [
     {
       "_file": "2026-10-29T13-15-29-051707",
@@ -900,6 +901,8 @@ can be very large).
 }
 ```
 
+`nextOffset` is the `offset` for the next page (captures that could not be read or
+do not match a filter are skipped, so `count` can be smaller than `limit`).
 `usage` is `null` when the response carries none (e.g. streamed). WebSocket captures
 (Codex) have `websocketMessages` and `inProgress` instead of messages. Summaries are
 cached by the server until the capture file changes.

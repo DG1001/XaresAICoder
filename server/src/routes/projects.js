@@ -644,7 +644,7 @@ router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req
       return res.json({ success: true, projectId, ipAddress, conversations, count: conversations.length });
     }
 
-    const { conversations, total } = await dockerService.getLLMConversationSummaries(ipAddress, lim, off, filters);
+    const { conversations, total, nextOffset } = await dockerService.getLLMConversationSummaries(ipAddress, lim, off, filters);
     res.json({
       success: true,
       projectId,
@@ -654,7 +654,8 @@ router.get('/:projectId/llm-conversations', requireWorkspacePassword, async (req
       count: conversations.length,
       total,
       offset: off,
-      limit: lim
+      limit: lim,
+      nextOffset
     });
 
   } catch (error) {

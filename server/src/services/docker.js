@@ -1285,7 +1285,7 @@ fi`.trim();
 
   /**
    * Summaries of a workspace's LLM captures, newest first:
-   * { conversations: [summary], total }. Reads each capture once and keeps the
+   * { conversations: [summary], total, nextOffset }. Reads each capture once and keeps the
    * summary in memory until the file changes.
    */
   async getLLMConversationSummaries(ipAddress, limit = 50, offset = 0, filters = {}) {
@@ -1329,7 +1329,9 @@ fi`.trim();
         if (filters.dateTo && s.timestamp > filters.dateTo) continue;
         conversations.push(s);
       }
-      return { conversations, total: entries.length };
+      // Skipped entries (unreadable, filtered) still count for the offset,
+      // or the next page would repeat captures
+      return { conversations, total: entries.length, nextOffset: offset + page.length };
     } catch (error) {
       console.error('Error reading LLM conversation summaries:', error);
       return { conversations: [], total: 0 };

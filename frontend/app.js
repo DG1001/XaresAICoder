@@ -3106,7 +3106,7 @@ class XaresAICoder {
             }
 
             // next: server offset for "Load more"; dom: running index for element ids
-            this.conversationList = { projectId, shown: data.count, total: data.total ?? data.count, next: data.count, dom: data.count };
+            this.conversationList = { projectId, shown: data.count, total: data.total ?? data.count, next: data.nextOffset ?? data.count, dom: data.count };
 
             const modalHTML = `
                 <div id="aiConversationsModal" class="modal" style="display: flex;">
@@ -3272,7 +3272,7 @@ class XaresAICoder {
                 list.insertAdjacentHTML('beforeend', data.conversations.map((conv, i) => this.renderConversationItem(l.projectId, conv, l.dom + i)).join(''));
                 l.dom += data.conversations.length;
             }
-            l.next += data.conversations.length || 50;
+            l.next = data.nextOffset ?? l.next + (data.conversations.length || 50);
             l.shown += data.conversations.length;
             l.total = data.total ?? l.total;
             const count = document.querySelector('#aiConversationsModal .conversation-count');
