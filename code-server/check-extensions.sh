@@ -9,16 +9,22 @@ MISSING_EXTENSIONS=()
 # Critical extensions that should definitely be present
 CRITICAL_EXTENSIONS=("ms-python.python")
 
-# Function to check if extension is installed by listing extensions
+# Every code-server call starts Node (1.5-3 s), and the workspace only
+# becomes reachable after this script: list the extensions once and check
+# against that list, refreshed only after an installation.
+list_extensions() {
+    if [ "$(whoami)" = "coder" ]; then
+        code-server --list-extensions 2>/dev/null
+    else
+        su - coder -c "code-server --list-extensions 2>/dev/null"
+    fi
+}
+INSTALLED_EXTENSIONS=$(list_extensions)
+
 # Strips any "@<version>" pin so 'publisher.name@1.2.3' matches the
 # 'publisher.name' that --list-extensions reports without the version.
 is_extension_installed() {
-    local extension="${1%%@*}"
-    if [ "$(whoami)" = "coder" ]; then
-        code-server --list-extensions 2>/dev/null | grep -q "^${extension}$"
-    else
-        su - coder -c "code-server --list-extensions 2>/dev/null" | grep -q "^${extension}$"
-    fi
+    grep -qixF -- "${1%%@*}" <<< "$INSTALLED_EXTENSIONS"
 }
 
 # Read extensions from file and check if they're installed
@@ -49,8 +55,9 @@ if [ ${#MISSING_EXTENSIONS[@]} -gt 0 ]; then
                 su - coder -c "code-server --install-extension '$extension' --force" &>/dev/null || true
             fi
         }
-        
+
         # Verify installation
+        INSTALLED_EXTENSIONS=$(list_extensions)
         if is_extension_installed "$extension"; then
             echo "✅ Successfully installed: $extension"
         else

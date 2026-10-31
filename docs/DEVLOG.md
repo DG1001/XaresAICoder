@@ -23,7 +23,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 | 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
 | 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | ✅ umgesetzt auf Branch `feat/group-users` (5.1–5.3), Smoke-Test grün |
-| 6 – Workspace-Ressourcen | `/dev/shm` je Workspace, Obergrenzen für RAM/CPU aus `.env`, Ressourcen nachträglich ändern | ✅ umgesetzt auf Branch `feat/workspace-resources` (6.1–6.3) |
+| 6 – Workspace-Ressourcen | `/dev/shm` je Workspace, Obergrenzen für RAM/CPU aus `.env`, Ressourcen nachträglich ändern | ✅ umgesetzt auf Branch `feat/workspace-resources` (6.1–6.3), Nachtrag 6.4 auf `fix/workspace-readiness` |
 
 ---
 
@@ -2323,10 +2323,48 @@ Auf dem lokalen Rechner braucht der Erweiterungs-Check im Entrypoint gerade 23 s
 Workspace als `running`. Gemessen auf diesem Branch und auf `main` gleich: `running` nach
 19–20 s, VS Code über nginx erst nach 26–27 s. Vorgemerkt (siehe unten).
 
+### 6.4 Nachtrag: „running“ erst, wenn VS Code antwortet (2026-10-31)
+
+**Problem** (vorgemerkt in 6.3): Anlegen, Start, Klonen und Passwortwechsel warten höchstens
+15 s auf code-server (`waitForWorkspaceReady`, danach „proceeding anyway“) und melden den
+Workspace dann als `running`; „Open Workspace“ lieferte danach noch einige Sekunden 502.
+Der Entrypoint (`check-extensions.sh`) startete `code-server --list-extensions` einmal je
+Erweiterung aus `extensions.txt` plus einmal für die kritischen – elf Node-Starts,
+16 s im Container ohne Limit, 23 s im Workspace des Smoke-Tests; ein Start mit einem Kern
+dauerte damit 35 s.
+
+**Änderung**:
+- `check-extensions.sh` listet die Erweiterungen einmal und prüft gegen diese Liste
+  (`grep -qixF`, Groß-/Kleinschreibung egal wie in VS Code); neu gelistet wird nur nach einer
+  Installation. Braucht ein neues code-server-Image.
+- `waitForWorkspaceReady` wartet standardmäßig 45 s statt 15 s, auch beim Passwortwechsel
+  (dort stand fest 15 s). Grund für die Länge: Bestehende Workspaces und ihre Klone bzw.
+  Neuaufbauten behalten das alte Skript, bis sie neu angelegt werden.
+
+**Entscheidungen**:
+- 45 s statt der 60 s des Neuaufbaus: Start und Passwortwechsel antworten synchron, nginx
+  bricht `/api/` nach 60 s ab (`proxy_read_timeout`-Standard). Start = Docker-Start + ≤ 45 s
+  + DNS-Check (sofort, höchstens 10 s), Passwortwechsel = Stopp (≤ 10 s) + Start + ≤ 45 s.
+- Antwortet code-server nach 45 s nicht, geht es wie bisher trotzdem weiter (`running`);
+  ein Fehler wäre falsch, wenn z. B. nur das Netz für eine Nachinstallation langsam ist.
+
+**Tests**:
+- Neues Image, Anlegen (Smoke-Timing wie in 6.3): VS Code über nginx nach 15 s, `running`
+  nach 17 s – vorher 26–27 s bzw. 19–20 s, also `running` jetzt erst nach VS Code.
+- Workspace mit einem Kern und dem alten Skript (von `main` hineinkopiert), Stopp und Start
+  über die API: Start antwortet nach 34,5 s, nginx sofort danach 302. Mit dem neuen Skript
+  im selben Workspace: 11,4 s, 302.
+- Passwort am laufenden Workspace gesetzt: 200 nach 14 s, nginx sofort 302.
+- Skript im Image-Container: 1,9 s statt 15,8 s, Ausgabe gleich.
+- Smoke-Test lokal: alle 67 Prüfungen grün (vorher 66, „VS Code reachable through nginx“).
+
 ### Vorgemerkt aus Paket 6
 
-- **Workspace „running“, bevor code-server antwortet**: Anlegen und Start warten höchstens
-  15 s auf code-server und machen dann weiter; „Open Workspace“ liefert dann eine Weile 502.
-  Der Entrypoint prüft jede vorinstallierte Erweiterung einzeln (lokal ~1,5 s je
-  Erweiterung). Möglich: beim (asynchronen) Anlegen länger warten wie beim Neuaufbau (60 s)
-  und/oder den Erweiterungs-Check im Entrypoint mit einem einzigen `--list-extensions`.
+- **Fehlende Erweiterungen werden beim Start nicht nachinstalliert**: Der Zweig in
+  `check-extensions.sh` ruft `su - coder -c "code-server --install-extension …"` auf, der
+  Entrypoint läuft aber schon als `coder` – `su` fragt nach einem Passwort und scheitert
+  („Authentication failure“), getestet in 6.4. Schon immer so, also unbemerkt: Wer eine
+  vorinstallierte Erweiterung entfernt, behält sie entfernt. Vor einer Reparatur klären, ob
+  das überhaupt gewollt ist: Sie würde entfernte Erweiterungen bei jedem Start wieder
+  installieren und ohne Internet (Intranet-Installation) den Start pro Erweiterung bis zu
+  60 s aufhalten.
