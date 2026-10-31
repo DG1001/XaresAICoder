@@ -2238,3 +2238,68 @@ bekommt ein Workspace 2 GB / 2 Kerne oder das niedrigere Maximum – mit dem Sta
 `cpuCores 8` → 400, `shmSize 3g` → 400. Workspace mit 4 GB, 4 Kernen (als Zahl), 2 GB shm:
 `df -h /dev/shm` 2,0G, `HostConfig` Memory 4 GiB, NanoCpus 4e9, ShmSize 2 GiB; 1,5 GB in
 `/dev/shm` geschrieben (74 %); nach Stop/Start und nach `docker restart` weiterhin 2,0G.
+
+### 6.2 Ressourcen nachträglich ändern, Neuaufbau für Shared Memory
+
+**Änderung**:
+- `PUT /api/projects/:id/resources` (`memoryLimit`, `cpuCores`, `shmSize`, jeweils optional;
+  Workspace-Passwort wie bei den anderen Workspace-Routen; Gruppen-Nutzer `403`, nicht auf
+  ihrer Allowlist).
+- Nur RAM/CPU geändert: `docker update` am laufenden oder gestoppten Container, `200`.
+  Docker hatte beim Anlegen Swap = 2 × RAM gesetzt; `MemorySwap` zieht mit, sonst lehnt
+  Docker ein größeres RAM-Limit ab.
+- Anderes `shmSize`: Neuaufbau im Hintergrund (`202`, Status `rebuilding`, `?wait=true`
+  für Skripte). `rebuildWorkspaceContainer`: Workspace stoppen, `docker commit` nach
+  `workspace-rebuild-<id>:raw-<zeit>` (Rückfall export/import wie beim Klonen), alten
+  Container in `rebuild-backup-<id>` umbenennen (bewusst ohne Präfix `workspace-`, damit
+  ihn nichts als Workspace sieht), neuen Container mit gleichem Namen aus dem Snapshot
+  anlegen – Env (Passwort, Forgejo-Token), Cmd/Entrypoint/User, die komplette
+  `HostConfig` des alten mit neuen Werten für Memory/MemorySwap/NanoCpus/ShmSize, Netz
+  mit fester Proxy-IP –, starten, falls er lief, auf code-server warten (60 s statt 15 s,
+  läuft ja im Hintergrund), alten Container löschen, ältere Snapshot-Tags entfernen.
+  Schlägt ein Schritt nach dem Umbenennen fehl: neuen Container weg, alten zurück unter
+  seinem Namen, ggf. starten, Snapshot löschen, `lastError` (`action: rebuild`).
+- Server-Neustart mitten im Neuaufbau: `recoverInterruptedRebuilds()` beim Laden holt
+  `rebuild-backup-<id>` zurück (ein evtl. schon angelegter neuer Container fällt weg; die
+  gespeicherten Werte passen zum alten, sie werden erst nach Erfolg geschrieben).
+- Während des Neuaufbaus antworten Start, Stopp, Löschen, Klonen und eine weitere Änderung
+  `409`. Löschen eines Workspace entfernt auch seine Snapshot-Images.
+- Dashboard: Knopf „Resources“ (nur Admin) in der Kopfzeile des Workspace; Dialog mit den
+  drei Auswahlen (ein Wert von vor einer gesenkten Grenze bleibt wählbar), Hinweis, dass
+  Shared Memory zum RAM zählt, und bei geänderter shm-Größe ein Hinweis auf den Neuaufbau
+  plus Rückfrage. Status „Rebuilding“ mit Ladeanzeige ohne Knöpfe; danach Erfolgsmeldung
+  oder die Fehlermeldung einmal und die Fehlerzeile.
+- Quick Clone schickte fest 2 GB / 2 Kerne; mit echten Obergrenzen hätte das auf einer
+  Standard-Installation (max. 1 Kern) `400` ergeben. Es schickt jetzt keine Werte mehr,
+  der Server nimmt seine Standards.
+- Doku: `API.md` (Abschnitt „Change Resources“, Status `rebuilding`), Upgrade-Zeile.
+
+**Bewusst nicht**: keine Zeitgrenze für den Neuaufbau (ein `docker commit` eines großen
+Workspace darf Minuten dauern; ein Abbruch mittendrin wäre schlimmer). Hängt Docker, hilft
+wie beim Stopp ein Neustart des Servers – der holt den alten Container zurück.
+
+**Tests** (lokal):
+- Laufender Workspace 4 GB/4 Kerne/2 GB shm → 8 GB/2 Kerne: `200`, `HostConfig` Memory
+  8 GiB, MemorySwap 16 GiB, NanoCpus 2e9, Container lief weiter. RAM 1 GB bei 2 GB shm → 400;
+  gleiche Werte → „Nothing changed“.
+- shm 2 → 4 GB am laufenden Workspace: `202`, Start und weitere Änderung währenddessen
+  `409`, nach 20 s `running`, neuer Container aus `workspace-rebuild-…`, `df` 4,0G, Datei in
+  `/workspace` und `~` erhalten, RAM-Einstellung erhalten, kein `rebuild-backup-` übrig,
+  Workspace-URL 302.
+- Gestoppter Workspace, shm 1 GB und RAM 2 GB mit `?wait=true`: `200`, bleibt gestoppt,
+  alter Snapshot-Tag entfernt; nach Start `df` 1,0G, Datei da.
+- Logging-Workspace mit Passwort und Forgejo-Repo: ohne Passwort `401`; Neuaufbau:
+  Fingerabdruck von `PASSWORD`/`FORGEJO_*` gleich, gleiche feste IP `172.30.128.2`, gleiches
+  DNS, letzter Commit da, Proxy funktioniert. (Push nach Forgejo geht aus Proxy-Workspaces
+  wie bisher nicht – bekannte Einschränkung aus Paket 2.) Dabei gefunden: code-server war
+  nach 15 s noch nicht bereit → Wartezeit beim Neuaufbau 60 s.
+- Abgebrochener Neuaufbau: Container von Hand in `rebuild-backup-<id>` umbenannt, Server
+  neu deployt → „Restored … after an interrupted rebuild“, Workspace wieder da (gestoppt).
+- Rücksprung mit nachgebautem dockerode: Erfolg (Reihenfolge, shm/RAM/Swap/CPU, Init,
+  CapDrop, Env, feste IP, Name) sowie Fehler bei `create` und bei `start` (neuer Container
+  weg, alter zurückbenannt und gestartet, Snapshot gelöscht). 9/9.
+- Klon eines neu aufgebauten Workspace: shm 2 GB übernommen, Datei da.
+- Browser: Formular bietet 64 MB–2 GB shm bei 2 GB RAM, nach 1 GB RAM nur bis 1 GB, nach
+  8 GB alle; Dialog zeigt die Werte des Workspace, Hinweis auf den Neuaufbau erscheint erst
+  bei geänderter shm-Größe; Speichern → Rückfrage → „Rebuilding workspace...“ →
+  `stopped` → Meldung „rebuilt with 2 GB shared memory“.

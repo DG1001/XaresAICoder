@@ -272,12 +272,13 @@ Retrieves detailed information about a specific project.
 - `creating` - Workspace is being created
 - `running` - Container is active and accessible
 - `stopping` - A stop is in progress (see [Stop Workspace](#stop-workspace))
+- `rebuilding` - The container is rebuilt for another shared memory size (see [Change Resources](#change-resources))
 - `stopped` - Container is stopped but can be restarted
 - `error` - Container failed or was removed
 
-A project may carry `lastError` (`{ "action": "stop", "message": "...", "at": "<ISO time>" }`)
+A project may carry `lastError` (`{ "action": "stop" | "rebuild", "message": "...", "at": "<ISO time>" }`)
 when an action the server finished in the background failed; it is cleared by the next
-start or stop.
+start, stop or rebuild.
 
 ### List All Projects
 
@@ -408,6 +409,40 @@ container has stopped, as before)
 ```
 
 With `wait`, a failed stop answers `500` (`{ "error": "Failed to stop project", "message": "..." }`).
+
+### Change Resources
+
+Changes memory limit, CPU cores and shared memory (`/dev/shm`) of a workspace (admin only;
+group users get `403`). Memory and CPU apply right away, also to a running workspace
+(`docker update`). Docker cannot change the shared memory of an existing container, so
+another `shmSize` rebuilds the workspace: it is stopped, committed to a snapshot image and
+replaced by a container from that snapshot with the same name, environment (password,
+Forgejo token), network address and settings. Files and installed software stay, running
+processes end; a workspace that was running is started again. If a step fails, the old
+container comes back and the workspace gets `lastError` (`action: "rebuild"`). A server
+restart during a rebuild restores the old container on start.
+
+**Endpoint**: `PUT /api/projects/:projectId/resources` (`?wait=true`: answer only after a
+rebuild). Protected workspaces need the `X-Workspace-Password` header.
+
+**Request Body** (each field optional; missing ones keep their value):
+```json
+{ "memoryLimit": "16g", "cpuCores": "12", "shmSize": "8g" }
+```
+
+Values come from `GET /api/limits` → `resources`; a value the workspace already has may stay
+even if a limit was lowered since. `shmSize` must not exceed `memoryLimit`.
+
+**Responses**:
+- `200` `{ "success": true, "message": "Resources updated" | "Nothing changed" | "Workspace rebuilt", "project": {…} }`
+- `202` `{ "success": true, "accepted": true, "message": "Rebuilding workspace", "project": { "status": "rebuilding", … } }`
+  — poll the project until it leaves `rebuilding`
+- `400` invalid values, `401` wrong workspace password, `404` unknown workspace,
+  `409` while it is being created, stopped or rebuilt (start, stop, delete and clone also
+  answer `409` during a rebuild), `500` Docker error (with `wait`: a failed rebuild)
+
+The snapshot image (`workspace-rebuild-<id>`) stays as the container's image; the previous one
+is untagged after the next rebuild and all are removed with the workspace.
 
 ### List Groups
 
@@ -834,7 +869,7 @@ other files (e.g. a `.env` in the project) are not touched.
 }
 ```
 
-**What gets cloned**: The entire container filesystem (installed packages, files, configs, git repos) via `docker commit`, plus metadata (proxyMode, group, memoryLimit, cpuCores, gitUrl).
+**What gets cloned**: The entire container filesystem (installed packages, files, configs, git repos) via `docker commit`, plus metadata (proxyMode, group, memoryLimit, cpuCores, shmSize, gitUrl).
 
 **Notes**:
 - Returns 202 immediately; clones are created sequentially in the background

@@ -234,6 +234,7 @@ router.delete('/:projectId', async (req, res) => {
     let statusCode = 500;
     if (error.message === 'Project not found') statusCode = 404;
     if (error.message === 'Invalid password for protected workspace') statusCode = 401;
+    if (error.message === 'Workspace is being rebuilt') statusCode = 409;
     
     res.status(statusCode).json({
       error: 'Failed to delete project',
@@ -276,7 +277,7 @@ router.post('/:projectId/start', async (req, res) => {
     let statusCode = 500;
     if (error.message === 'Project not found') statusCode = 404;
     if (error.message === 'Invalid password for protected workspace') statusCode = 401;
-    if (error.message === 'Workspace is still stopping') statusCode = 409;
+    if (error.message === 'Workspace is still stopping' || error.message === 'Workspace is being rebuilt') statusCode = 409;
     
     res.status(statusCode).json({
       error: 'Failed to start project',
@@ -302,6 +303,7 @@ router.post('/:projectId/stop', async (req, res) => {
     let statusCode = 500;
     if (error.message === 'Project not found') statusCode = 404;
     if (error.message === 'Invalid password for protected workspace') statusCode = 401;
+    if (error.message === 'Workspace is being rebuilt') statusCode = 409;
     
     res.status(statusCode).json({
       error: 'Failed to stop project',
@@ -313,6 +315,25 @@ router.post('/:projectId/stop', async (req, res) => {
 // Clone project (create multiple workspaces from a source).
 // The source workspace's password goes in X-Workspace-Password; body.password
 // is the password for the new clones.
+// Change memory, CPU cores and /dev/shm. 200 when applied right away (memory,
+// CPU) or nothing changed; 202 when the workspace is rebuilt for another
+// shared memory size (status 'rebuilding'); ?wait=true answers after it.
+router.put('/:projectId/resources', requireWorkspacePassword, async (req, res) => {
+  try {
+    const { memoryLimit, cpuCores, shmSize } = req.body || {};
+    const wait = req.query.wait === 'true' || req.query.wait === '1';
+    const result = await workspaceService.updateResources(req.params.projectId, { memoryLimit, cpuCores, shmSize }, { wait });
+    res.status(result.accepted ? 202 : 200).json(result);
+  } catch (error) {
+    console.error('Update resources error:', error);
+    let statusCode = 500;
+    if (error.message === 'Project not found') statusCode = 404;
+    if (error.invalidResources) statusCode = 400;
+    if (error.message.startsWith('Workspace is busy')) statusCode = 409;
+    res.status(statusCode).json({ error: 'Failed to update resources', message: error.message });
+  }
+});
+
 router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -371,6 +392,7 @@ router.post('/:projectId/clone', requireWorkspacePassword, async (req, res) => {
     let statusCode = 500;
     if (error.message === 'Source project not found' || error.message === 'Project not found') statusCode = 404;
     if (error.message.includes('Cannot clone') || error.message.includes('Clone count') || error.message.includes('Cannot create')) statusCode = 400;
+    if (error.message === 'Workspace is being rebuilt') statusCode = 409;
 
     res.status(statusCode).json({
       error: 'Failed to clone project',

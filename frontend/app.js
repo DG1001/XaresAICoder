@@ -890,8 +890,7 @@ class XaresAICoder {
         const requestBody = {
             projectName,
             projectType: 'git-clone',
-            memoryLimit: '2g',  // Default 2GB
-            cpuCores: '2',      // Default 2 cores
+            // No memoryLimit/cpuCores: the server's defaults within its limits
             gitUrl,
             group: this.selectedGroup || 'Uncategorized',
             proxyMode: 'none'   // Quick clone always uses unrestricted network
@@ -1089,6 +1088,7 @@ class XaresAICoder {
         return this.projects.some(p => 
             p.status === 'creating' || 
             p.status === 'stopping' ||
+            p.status === 'rebuilding' ||
             this.creatingProjects.has(p.projectId) ||
             (p.status === 'running' && !p.workspaceUrl) // Running but not ready
         );
@@ -1112,6 +1112,15 @@ class XaresAICoder {
             if (oldProject && oldProject.status === 'stopping' && newProject.status !== 'stopping' &&
                 newProject.lastError && newProject.lastError.action === 'stop') {
                 this.showError(`Failed to stop workspace "${newProject.projectName}": ${newProject.lastError.message}`);
+            }
+
+            // A rebuild for new resources finished
+            if (oldProject && oldProject.status === 'rebuilding' && newProject.status !== 'rebuilding') {
+                if (newProject.lastError && newProject.lastError.action === 'rebuild') {
+                    this.showError(`Failed to rebuild workspace "${newProject.projectName}": ${newProject.lastError.message}`);
+                } else {
+                    this.showSuccess(`Workspace "${newProject.projectName}" rebuilt with ${this.formatSize(newProject.shmSize)} shared memory`);
+                }
             }
 
             // Project creation failed
@@ -1185,6 +1194,11 @@ class XaresAICoder {
                             </svg>
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
+                        ${!['creating', 'rebuilding'].includes(project.status) ? `<button class="notes-btn admin-only" onclick="app.openResourcesModal('${project.projectId}')" title="Memory, CPU and Shared Memory" aria-label="Resources">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M5 0a.5.5 0 0 1 .5.5V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2A2.5 2.5 0 0 1 14 4.5h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14a2.5 2.5 0 0 1-2.5 2.5v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14A2.5 2.5 0 0 1 2 11.5H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2A2.5 2.5 0 0 1 4.5 2V.5A.5.5 0 0 1 5 0zm-.5 3A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13h7a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 11.5 3h-7zM5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5v-3z"/>
+                            </svg>
+                        </button>` : ''}
                         ${project.status !== 'creating' ? `<button class="notes-btn admin-only" onclick="app.openAliasesModal('${project.projectId}')" title="Manage Subdomain Aliases" aria-label="Subdomain Aliases">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9c-.086 0-.17.01-.25.031A2 2 0 0 1 7 10.5H4a2 2 0 1 1 0-4h1.535c.218-.376.495-.714.82-1z"/>
@@ -1407,17 +1421,17 @@ class XaresAICoder {
         const isStopped = project.status === 'stopped';
         const isError = project.status === 'error';
         const isCreating = project.status === 'creating';
-        const isStopping = project.status === 'stopping';
+        const isStopping = project.status === 'stopping' || project.status === 'rebuilding';
         const isRunningButNotReady = isRunning && !project.workspaceUrl;
 
         let buttons = '';
 
         if (isStopping) {
-            // The server runs the stop; the list polls until it is done
+            // The server runs the stop or rebuild; the list polls until it is done
             buttons += `
                 <div class="creating-indicator">
                     <div class="spinner" style="display: inline-block; width: 16px; height: 16px; margin-right: 8px;"></div>
-                    Stopping workspace...
+                    ${project.status === 'rebuilding' ? 'Rebuilding workspace...' : 'Stopping workspace...'}
                 </div>
             `;
         } else if (isCreating || isRunningButNotReady) {
@@ -1866,7 +1880,7 @@ class XaresAICoder {
     getLastErrorLine(project) {
         const err = project.lastError;
         if (!err || !err.message) return '';
-        const action = { stop: 'Stop' }[err.action] || 'Last action';
+        const action = { stop: 'Stop', rebuild: 'Rebuild' }[err.action] || 'Last action';
         const when = err.at ? ` (${this.formatDate(err.at)})` : '';
         return `<div class="project-last-error">${this.escapeHtml(`${action} failed${when}: ${err.message}`)}</div>`;
     }
@@ -1882,6 +1896,7 @@ class XaresAICoder {
             'stopped': 'Stopped',
             'creating': 'Creating',
             'stopping': 'Stopping',
+            'rebuilding': 'Rebuilding',
             'error': 'Error',
             'not_found': 'Not Found'
         };
@@ -1899,6 +1914,7 @@ class XaresAICoder {
             'stopped': 'status-stopped',
             'creating': 'status-creating',
             'stopping': 'status-creating',
+            'rebuilding': 'status-creating',
             'error': 'status-error',
             'not_found': 'status-error'
         };
@@ -2253,6 +2269,115 @@ class XaresAICoder {
     }
 
     // Project Notes Methods
+    // Memory and CPU apply right away; another shared memory size rebuilds
+    // the workspace from a snapshot of itself (the server runs it, the list
+    // shows "Rebuilding")
+    openResourcesModal(projectId) {
+        const project = this.projects.find(p => p.projectId === projectId);
+        if (!project) return;
+        const r = this.resourceChoices();
+        const current = {
+            memoryLimit: project.memoryLimit || '2g',
+            cpuCores: project.cpuCores || '2',
+            shmSize: project.shmSize || '64m'
+        };
+        this.resourcesProject = { projectId, current };
+        // A value from before a lower limit stays selectable
+        const withCurrent = (list, value, size) => (list.includes(value) ? list : [...list, value].sort((a, b) => size(a) - size(b)));
+        this.resourceShmChoices = withCurrent(r.shm, current.shmSize, v => this.sizeInMB(v));
+
+        document.getElementById('resourcesModal')?.remove();
+        document.body.insertAdjacentHTML('beforeend', `
+            <div id="resourcesModal" class="modal" style="display: flex;">
+                <div class="modal-content" style="max-width: 520px;">
+                    <div class="modal-header">
+                        <h3>Resources - ${this.escapeHtml(project.projectName)}</h3>
+                        <button class="modal-close" onclick="app.closeResourcesModal()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="resMemoryLimit">Memory Limit</label>
+                            <select id="resMemoryLimit"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="resCpuCores">CPU Cores</label>
+                            <select id="resCpuCores"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="resShmSize">Shared Memory (/dev/shm)</label>
+                            <select id="resShmSize"></select>
+                            <div class="form-hint">Counts toward the memory limit (tmpfs). Memory and CPU apply right away.</div>
+                        </div>
+                        <div id="resRebuildNote" class="form-hint" style="display: none; color: var(--vscode-warning, #cca700);">
+                            Another shared memory size needs a new container: the workspace is stopped and rebuilt from a
+                            snapshot of itself. Files, installed software, URL, password and Git access stay; running
+                            processes end. Takes a while for large workspaces and needs extra disk space for the snapshot.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-secondary" onclick="app.closeResourcesModal()">Cancel</button>
+                        <button class="btn-primary" id="resSaveBtn" onclick="app.saveResources()">Save</button>
+                    </div>
+                </div>
+            </div>`);
+
+        this.fillResourceSelect('resMemoryLimit', withCurrent(r.memory, current.memoryLimit, v => this.sizeInMB(v)),
+            current.memoryLimit, r.defaults.memoryLimit, v => `${this.formatSize(v)} RAM`);
+        this.fillResourceSelect('resCpuCores', withCurrent(r.cpu, current.cpuCores, Number),
+            current.cpuCores, r.defaults.cpuCores, v => this.getCpuCoresLabel(v));
+        const shm = document.getElementById('resShmSize');
+        const memory = document.getElementById('resMemoryLimit');
+        const update = (selected = null) => {
+            const values = this.resourceShmChoices.filter(v => this.sizeInMB(v) <= this.sizeInMB(memory.value));
+            const wanted = selected || shm.value;
+            this.fillResourceSelect('resShmSize', values, values.includes(wanted) ? wanted : values[values.length - 1], '64m', v => this.formatSize(v));
+            document.getElementById('resRebuildNote').style.display = shm.value !== current.shmSize ? 'block' : 'none';
+        };
+        update(current.shmSize);
+        memory.onchange = () => update();
+        shm.onchange = () => update();
+    }
+
+    closeResourcesModal() {
+        document.getElementById('resourcesModal')?.remove();
+        this.resourcesProject = null;
+    }
+
+    async saveResources() {
+        const state = this.resourcesProject;
+        if (!state) return;
+        const body = {
+            memoryLimit: document.getElementById('resMemoryLimit').value,
+            cpuCores: document.getElementById('resCpuCores').value,
+            shmSize: document.getElementById('resShmSize').value
+        };
+        const rebuild = body.shmSize !== state.current.shmSize;
+        if (rebuild && !confirm('Rebuild the workspace with the new shared memory size? It is stopped first; running processes end.')) return;
+        const button = document.getElementById('resSaveBtn');
+        button.disabled = true;
+        try {
+            const response = await this.protectedFetch(state.projectId, `${this.apiBase}/projects/${state.projectId}/resources`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (!response) { button.disabled = false; return; }
+            const data = await response.json();
+            if (!response.ok) {
+                this.showError(data.message || 'Failed to update resources');
+                button.disabled = false;
+                return;
+            }
+            this.closeResourcesModal();
+            if (response.status !== 202) this.showSuccess(data.message || 'Resources updated');
+            this.loadProjects();
+        } catch (error) {
+            console.error('Error updating resources:', error);
+            this.showError('Failed to update resources');
+            button.disabled = false;
+        }
+    }
+
     async openNotesModal(projectId) {
         try {
             const project = this.projects.find(p => p.projectId === projectId);

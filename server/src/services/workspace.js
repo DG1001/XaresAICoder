@@ -76,6 +76,8 @@ class WorkspaceService {
     this.projects = new Map();
     // Stops in progress: projectId -> promise (see stopProject)
     this.pendingStops = new Map();
+    // Rebuilds for new resources in progress: projectId -> promise (see updateResources)
+    this.pendingRebuilds = new Map();
     // A stop Docker does not answer counts as failed after this time, so the
     // workspace does not stay 'stopping' until the server restarts
     this.stopGiveUpMs = 3 * 60 * 1000;
@@ -455,6 +457,7 @@ class WorkspaceService {
     if (source.status === 'creating') {
       throw new Error('Cannot clone a workspace that is still being created');
     }
+    this.assertNotRebuilding(projectId);
 
     // Validate count
     if (!Number.isInteger(count) || count < 1 || count > 50) {
@@ -670,7 +673,7 @@ class WorkspaceService {
       // Docker might show "running" but workspace isn't ready yet
     } else {
       // For non-creating projects, update status from Docker
-      project.status = this.statusWithPendingStop(projectId, dockerStatus.status);
+      project.status = this.statusWithPendingAction(projectId, dockerStatus.status);
     }
 
     return {
@@ -705,6 +708,7 @@ class WorkspaceService {
     }
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
+    this.assertNotRebuilding(projectId);
 
     if (this.pendingStops.has(projectId)) {
       throw new Error('Workspace is still stopping');
@@ -806,8 +810,79 @@ class WorkspaceService {
 
   // While a stop runs, Docker still reports the container as running; the
   // dashboard shows 'stopping' instead (for every client, also after a reload).
-  statusWithPendingStop(projectId, dockerStatus) {
+  // During a rebuild the container is stopped, renamed and replaced: 'rebuilding'.
+  statusWithPendingAction(projectId, dockerStatus) {
+    if (this.pendingRebuilds.has(projectId)) return 'rebuilding';
     return this.pendingStops.has(projectId) && dockerStatus === 'running' ? 'stopping' : dockerStatus;
+  }
+
+  assertNotRebuilding(projectId) {
+    if (this.pendingRebuilds.has(projectId)) throw new Error('Workspace is being rebuilt');
+  }
+
+  // Memory and CPU apply right away (docker update); another /dev/shm size
+  // needs a new container, built from a snapshot of the workspace in the
+  // background (status 'rebuilding', a failure stays as lastError). { wait }
+  // answers only after the rebuild (scripts).
+  async updateResources(projectId, requested, { wait = false } = {}) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error('Project not found');
+    if (project.status === 'creating' || this.pendingStops.has(projectId) || this.pendingRebuilds.has(projectId)) {
+      throw new Error('Workspace is busy (being created, stopped or rebuilt)');
+    }
+
+    const current = {
+      memoryLimit: project.memoryLimit || '2g',
+      cpuCores: project.cpuCores || '2',
+      shmSize: project.shmSize || '64m'
+    };
+    let next;
+    try {
+      next = await this.resolveResources(requested, current);
+    } catch (error) {
+      error.invalidResources = true;
+      throw error;
+    }
+    if (Object.keys(current).every(key => next[key] === current[key])) {
+      return { success: true, message: 'Nothing changed', project: serializeProject(project) };
+    }
+
+    if (next.shmSize === current.shmSize) {
+      await dockerService.updateContainerResources(projectId, next);
+      Object.assign(project, next);
+      await this.saveProjectsToDisk();
+      return { success: true, message: 'Resources updated', project: serializeProject(project) };
+    }
+
+    delete project.lastError;
+    project.status = 'rebuilding';
+    const rebuild = this.runRebuild(project, next).finally(() => this.pendingRebuilds.delete(projectId));
+    this.pendingRebuilds.set(projectId, rebuild);
+    if (!wait) {
+      return { success: true, accepted: true, message: 'Rebuilding workspace', project: serializeProject(project) };
+    }
+    const result = await rebuild;
+    if (!result.success) throw new Error(result.message);
+    return { success: true, message: 'Workspace rebuilt', project: serializeProject(project) };
+  }
+
+  // Never rejects: the outcome ends up on the project (resources, status, lastError)
+  async runRebuild(project, resources) {
+    const { projectId } = project;
+    try {
+      const { status } = await dockerService.rebuildWorkspaceContainer(projectId, resources);
+      Object.assign(project, resources);
+      project.status = status;
+      await this.saveProjectsToDisk();
+      return { success: true };
+    } catch (error) {
+      console.error(`Error rebuilding project ${projectId}:`, error);
+      project.lastError = { action: 'rebuild', message: error.message, at: new Date().toISOString() };
+      project.status = await dockerService.getProjectStatus(projectId)
+        .then(s => s.status)
+        .catch(() => 'error');
+      return { success: false, message: error.message };
+    }
   }
 
   // Stopping can take long when Docker is busy (several workspaces at once,
@@ -822,6 +897,7 @@ class WorkspaceService {
     }
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
+    this.assertNotRebuilding(projectId);
 
     let stop = this.pendingStops.get(projectId);
     if (!stop) {
@@ -885,10 +961,12 @@ class WorkspaceService {
     }
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
+    this.assertNotRebuilding(projectId);
 
     try {
       await dockerService.stopWorkspace(projectId);
       this.projects.delete(projectId);
+      await dockerService.removeRebuildImages(projectId);
 
       // Save to disk
       await this.saveProjectsToDisk();
@@ -933,9 +1011,9 @@ class WorkspaceService {
       if (p.status === 'creating' && !p.workspaceUrl) {
         // Keep as creating until async process completes
         // Docker might show "running" but workspace isn't ready yet
-      } else if (dockerStatus) {
+      } else if (dockerStatus || this.pendingRebuilds.has(p.projectId)) {
         // For non-creating projects, update status from Docker
-        p.status = this.statusWithPendingStop(p.projectId, dockerStatus.status);
+        p.status = this.statusWithPendingAction(p.projectId, dockerStatus && dockerStatus.status);
       } else {
         // Container not found in Docker
         p.status = 'not_found';
@@ -1030,6 +1108,8 @@ class WorkspaceService {
       }
 
       console.log(`Loading projects from disk...`);
+      await dockerService.recoverInterruptedRebuilds().catch(error =>
+        console.error('Checking for interrupted rebuilds failed:', error.message));
       
       // Load projects and verify they still exist in Docker
       for (const [projectId, projectData] of Object.entries(projectsData)) {
