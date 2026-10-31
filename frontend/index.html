@@ -156,7 +156,7 @@
                                 </svg>
                                 Quick Clone
                             </h3>
-                            <p class="quick-clone-description">Quickly create a workspace from a public Git repository with default settings (2GB RAM, 2 CPU cores)</p>
+                            <p class="quick-clone-description">Quickly create a workspace from a public Git repository with default settings (2GB RAM and 2 CPU cores, or less if the limits are lower)</p>
                         </div>
 
                         <form id="quickCloneForm" class="quick-clone-form">
@@ -222,6 +222,17 @@
                                     <option value="4">4 Cores</option>
                                     <option value="8">8 Cores</option>
                                 </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="shmSize">Shared Memory (/dev/shm)</label>
+                                <select id="shmSize" name="shmSize" required>
+                                    <option value="64m" selected>64 MB (Default)</option>
+                                </select>
+                                <div class="form-hint">
+                                    Counts toward the memory limit (tmpfs). MPI programs such as OpenFOAM keep their
+                                    buffers here; 64 MB lasts for about 8 processes.
+                                </div>
                             </div>
 
                         </div>

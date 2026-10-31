@@ -46,6 +46,7 @@ function serializeProject(p) {
     projectType: p.projectType,
     memoryLimit: p.memoryLimit || '2g',
     cpuCores: p.cpuCores || '2',
+    shmSize: p.shmSize || '64m',
     passwordProtected: p.passwordProtected || false,
     group: p.group || 'Uncategorized',
     status: p.status,
@@ -75,6 +76,8 @@ class WorkspaceService {
     this.projects = new Map();
     // Stops in progress: projectId -> promise (see stopProject)
     this.pendingStops = new Map();
+    // Rebuilds for new resources in progress: projectId -> promise (see updateResources)
+    this.pendingRebuilds = new Map();
     // A stop Docker does not answer counts as failed after this time, so the
     // workspace does not stay 'stopping' until the server restarts
     this.stopGiveUpMs = 3 * 60 * 1000;
@@ -304,6 +307,7 @@ class WorkspaceService {
         projectType,
         memoryLimit: options.memoryLimit || '2g',
         cpuCores: options.cpuCores || '2',
+        shmSize: options.shmSize || '64m',
         userId,
         group: projectGroup,
         passwordProtected: options.passwordProtected || false,
@@ -337,6 +341,8 @@ class WorkspaceService {
         projectName: project.projectName,
         projectType,
         memoryLimit: project.memoryLimit,
+        cpuCores: project.cpuCores,
+        shmSize: project.shmSize,
         passwordProtected: project.passwordProtected,
         createGitRepo: project.createGitRepo,
         workspaceUrl: null,
@@ -397,6 +403,7 @@ class WorkspaceService {
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
         memoryLimit: options.memoryLimit || '2g',
         cpuCores: options.cpuCores || '2',
+        shmSize: options.shmSize || '64m',
         passwordProtected: options.passwordProtected || false,
         password: options.password || null,
         gitRepository: gitRepository,
@@ -450,6 +457,7 @@ class WorkspaceService {
     if (source.status === 'creating') {
       throw new Error('Cannot clone a workspace that is still being created');
     }
+    this.assertNotRebuilding(projectId);
 
     // Validate count
     if (!Number.isInteger(count) || count < 1 || count > 50) {
@@ -496,6 +504,7 @@ class WorkspaceService {
             projectType: source.projectType,
             memoryLimit: source.memoryLimit || '2g',
             cpuCores: source.cpuCores || '2',
+            shmSize: source.shmSize || '64m',
             userId,
             group: source.group || 'Uncategorized',
             passwordProtected: hasPassword,
@@ -587,6 +596,7 @@ class WorkspaceService {
           const workspace = await dockerService.createCloneContainer(clone.projectId, snapshotImage, {
             memoryLimit: clone.memoryLimit,
             cpuCores: clone.cpuCores,
+            shmSize: clone.shmSize,
             passwordProtected: clone.passwordProtected,
             password: options.password || null,
             proxyMode: clone.proxyMode,
@@ -663,7 +673,7 @@ class WorkspaceService {
       // Docker might show "running" but workspace isn't ready yet
     } else {
       // For non-creating projects, update status from Docker
-      project.status = this.statusWithPendingStop(projectId, dockerStatus.status);
+      project.status = this.statusWithPendingAction(projectId, dockerStatus.status);
     }
 
     return {
@@ -698,6 +708,7 @@ class WorkspaceService {
     }
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
+    this.assertNotRebuilding(projectId);
 
     if (this.pendingStops.has(projectId)) {
       throw new Error('Workspace is still stopping');
@@ -735,10 +746,143 @@ class WorkspaceService {
     }
   }
 
+  // Choices for memory, CPU cores and /dev/shm. Upper bounds are
+  // MEMORY_PER_WORKSPACE_MB and CPU_PER_WORKSPACE, capped at the Docker host
+  // (its CPU count, its memory rounded up to whole GB); the steps are powers
+  // of two plus the maximum itself (e.g. 1, 2, 4, 8, 12 cores).
+  async getResourceOptions() {
+    const host = await dockerService.getHostCapabilities();
+    let maxMemoryGB = Math.max(1, Math.floor(this.limits.memoryPerWorkspaceMB / 1024));
+    if (host.memTotal) maxMemoryGB = Math.min(maxMemoryGB, Math.ceil(host.memTotal / 2 ** 30));
+    let maxCpuCores = Math.max(1, Math.floor(this.limits.cpuPerWorkspace));
+    if (host.ncpu) maxCpuCores = Math.min(maxCpuCores, host.ncpu);
+    const steps = max => {
+      const values = [];
+      for (let n = 1; n < max; n *= 2) values.push(n);
+      return [...values, max];
+    };
+    const memory = steps(maxMemoryGB).map(n => `${n}g`);
+    const cpu = steps(maxCpuCores).map(String);
+    const preferred = (list, value) => (list.includes(value) ? value : list[list.length - 1]);
+    return {
+      maxMemoryGB,
+      maxCpuCores,
+      memory,
+      cpu,
+      // Shared memory counts toward the memory limit; never above it
+      shm: ['64m', ...memory],
+      defaults: { memoryLimit: preferred(memory, '2g'), cpuCores: preferred(cpu, '2'), shmSize: '64m' }
+    };
+  }
+
+  // Memory, CPU cores and /dev/shm for a new workspace (current = null) or a
+  // change (current = the workspace's values). Missing values keep the
+  // current ones or get the defaults. A value is checked against the choices
+  // only when it changes, so an edit may keep a value from before a lower
+  // limit. Throws with a message for the client.
+  async resolveResources(requested = {}, current = null) {
+    const options = await this.getResourceOptions();
+    const base = current || options.defaults;
+    const result = {};
+    const fields = [
+      ['memoryLimit', options.memory, 'Memory limit'],
+      ['cpuCores', options.cpu, 'CPU cores'],
+      ['shmSize', options.shm, 'Shared memory']
+    ];
+    for (const [key, choices, label] of fields) {
+      const given = requested[key];
+      if (given === undefined || given === null || given === '') {
+        result[key] = base[key];
+        continue;
+      }
+      const value = String(given).toLowerCase();
+      if (value !== base[key] && !choices.includes(value)) {
+        throw new Error(`${label} must be one of: ${choices.join(', ')}`);
+      }
+      result[key] = value;
+    }
+    const { sizeToBytes } = dockerService;
+    if (sizeToBytes(result.shmSize) > sizeToBytes(result.memoryLimit)) {
+      throw new Error(`Shared memory (${result.shmSize}) cannot be larger than the memory limit (${result.memoryLimit}): it counts toward it`);
+    }
+    return result;
+  }
+
   // While a stop runs, Docker still reports the container as running; the
   // dashboard shows 'stopping' instead (for every client, also after a reload).
-  statusWithPendingStop(projectId, dockerStatus) {
+  // During a rebuild the container is stopped, renamed and replaced: 'rebuilding'.
+  statusWithPendingAction(projectId, dockerStatus) {
+    if (this.pendingRebuilds.has(projectId)) return 'rebuilding';
     return this.pendingStops.has(projectId) && dockerStatus === 'running' ? 'stopping' : dockerStatus;
+  }
+
+  assertNotRebuilding(projectId) {
+    if (this.pendingRebuilds.has(projectId)) throw new Error('Workspace is being rebuilt');
+  }
+
+  // Memory and CPU apply right away (docker update); another /dev/shm size
+  // needs a new container, built from a snapshot of the workspace in the
+  // background (status 'rebuilding', a failure stays as lastError). { wait }
+  // answers only after the rebuild (scripts).
+  async updateResources(projectId, requested, { wait = false } = {}) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error('Project not found');
+    if (project.status === 'creating' || this.pendingStops.has(projectId) || this.pendingRebuilds.has(projectId)) {
+      throw new Error('Workspace is busy (being created, stopped or rebuilt)');
+    }
+
+    const current = {
+      memoryLimit: project.memoryLimit || '2g',
+      cpuCores: project.cpuCores || '2',
+      shmSize: project.shmSize || '64m'
+    };
+    let next;
+    try {
+      next = await this.resolveResources(requested, current);
+    } catch (error) {
+      error.invalidResources = true;
+      throw error;
+    }
+    if (Object.keys(current).every(key => next[key] === current[key])) {
+      return { success: true, message: 'Nothing changed', project: serializeProject(project) };
+    }
+
+    if (next.shmSize === current.shmSize) {
+      await dockerService.updateContainerResources(projectId, next);
+      Object.assign(project, next);
+      await this.saveProjectsToDisk();
+      return { success: true, message: 'Resources updated', project: serializeProject(project) };
+    }
+
+    delete project.lastError;
+    project.status = 'rebuilding';
+    const rebuild = this.runRebuild(project, next).finally(() => this.pendingRebuilds.delete(projectId));
+    this.pendingRebuilds.set(projectId, rebuild);
+    if (!wait) {
+      return { success: true, accepted: true, message: 'Rebuilding workspace', project: serializeProject(project) };
+    }
+    const result = await rebuild;
+    if (!result.success) throw new Error(result.message);
+    return { success: true, message: 'Workspace rebuilt', project: serializeProject(project) };
+  }
+
+  // Never rejects: the outcome ends up on the project (resources, status, lastError)
+  async runRebuild(project, resources) {
+    const { projectId } = project;
+    try {
+      const { status } = await dockerService.rebuildWorkspaceContainer(projectId, resources);
+      Object.assign(project, resources);
+      project.status = status;
+      await this.saveProjectsToDisk();
+      return { success: true };
+    } catch (error) {
+      console.error(`Error rebuilding project ${projectId}:`, error);
+      project.lastError = { action: 'rebuild', message: error.message, at: new Date().toISOString() };
+      project.status = await dockerService.getProjectStatus(projectId)
+        .then(s => s.status)
+        .catch(() => 'error');
+      return { success: false, message: error.message };
+    }
   }
 
   // Stopping can take long when Docker is busy (several workspaces at once,
@@ -753,6 +897,7 @@ class WorkspaceService {
     }
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
+    this.assertNotRebuilding(projectId);
 
     let stop = this.pendingStops.get(projectId);
     if (!stop) {
@@ -816,10 +961,12 @@ class WorkspaceService {
     }
 
     await this.verifyWorkspacePassword(projectId, providedPassword);
+    this.assertNotRebuilding(projectId);
 
     try {
       await dockerService.stopWorkspace(projectId);
       this.projects.delete(projectId);
+      await dockerService.removeRebuildImages(projectId);
 
       // Save to disk
       await this.saveProjectsToDisk();
@@ -864,9 +1011,9 @@ class WorkspaceService {
       if (p.status === 'creating' && !p.workspaceUrl) {
         // Keep as creating until async process completes
         // Docker might show "running" but workspace isn't ready yet
-      } else if (dockerStatus) {
+      } else if (dockerStatus || this.pendingRebuilds.has(p.projectId)) {
         // For non-creating projects, update status from Docker
-        p.status = this.statusWithPendingStop(p.projectId, dockerStatus.status);
+        p.status = this.statusWithPendingAction(p.projectId, dockerStatus && dockerStatus.status);
       } else {
         // Container not found in Docker
         p.status = 'not_found';
@@ -961,6 +1108,8 @@ class WorkspaceService {
       }
 
       console.log(`Loading projects from disk...`);
+      await dockerService.recoverInterruptedRebuilds().catch(error =>
+        console.error('Checking for interrupted rebuilds failed:', error.message));
       
       // Load projects and verify they still exist in Docker
       for (const [projectId, projectData] of Object.entries(projectsData)) {
@@ -974,6 +1123,8 @@ class WorkspaceService {
               ...projectData,
               // Add memoryLimit for existing projects that don't have it (migration)
               memoryLimit: projectData.memoryLimit || '2g',
+              // Workspaces from before the setting have Docker's default
+              shmSize: projectData.shmSize || '64m',
               // Migrate useProxy (boolean) to proxyMode (string) for backward compat
               proxyMode: projectData.proxyMode || (projectData.useProxy === true ? 'logging' : 'none'),
               // Initialize aliases array for older projects without the field

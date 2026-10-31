@@ -268,50 +268,61 @@ class XaresAICoder {
         }
     }
 
+    // Choices for memory, CPU cores and /dev/shm from the server
+    // (/api/limits: limits from .env, capped at the Docker host)
+    resourceChoices() {
+        if (this.limits && this.limits.resources) return this.limits.resources;
+        // Server without resource choices: the former fixed values
+        return {
+            memory: ['1g', '2g', '4g'], cpu: ['1'], shm: ['64m', '1g', '2g', '4g'],
+            defaults: { memoryLimit: '2g', cpuCores: '1', shmSize: '64m' }
+        };
+    }
+
     populateResourceSelects() {
-        // Memory options in MB
-        const memoryOptions = [
-            { value: '1g', mb: 1024, label: '1 GB RAM' },
-            { value: '2g', mb: 2048, label: '2 GB RAM' },
-            { value: '4g', mb: 4096, label: '4 GB RAM' },
-            { value: '8g', mb: 8192, label: '8 GB RAM' },
-            { value: '16g', mb: 16384, label: '16 GB RAM' }
-        ];
+        const r = this.resourceChoices();
+        this.fillResourceSelect('memoryLimit', r.memory, r.defaults.memoryLimit, r.defaults.memoryLimit, v => `${this.formatSize(v)} RAM`);
+        this.fillResourceSelect('cpuCores', r.cpu, r.defaults.cpuCores, r.defaults.cpuCores, v => this.getCpuCoresLabel(v));
+        this.bindShmToMemory('shmSize', 'memoryLimit', r.defaults.shmSize);
+    }
 
-        // CPU options
-        const cpuOptions = [
-            { value: '1', cores: 1, label: '1 Core' },
-            { value: '2', cores: 2, label: '2 Cores' },
-            { value: '4', cores: 4, label: '4 Cores' },
-            { value: '8', cores: 8, label: '8 Cores' }
-        ];
+    // Options of a resource select, with the default and the maximum marked
+    fillResourceSelect(id, values, selected, defaultValue, label) {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const max = values[values.length - 1];
+        select.innerHTML = values.map(v => `<option value="${v}" ${v === selected ? 'selected' : ''}>${label(v)}${v === defaultValue ? ' (Default)' : ''}${v === max && values.length > 1 ? ' (Max)' : ''}</option>`).join('');
+    }
 
-        // Filter options based on limits
-        const maxMemoryMB = this.limits.memoryPerWorkspaceMB || 4096;
-        const maxCpu = this.limits.cpuPerWorkspace || 2.0;
+    // Shared memory counts toward the memory limit: offer it only up to the
+    // selected limit, also after the limit changes
+    bindShmToMemory(shmId, memoryId, selected) {
+        const memory = document.getElementById(memoryId);
+        if (!memory) return;
+        this.updateShmSelect(shmId, memoryId, selected);
+        memory.onchange = () => this.updateShmSelect(shmId, memoryId);
+    }
 
-        const availableMemoryOptions = memoryOptions.filter(opt => opt.mb <= maxMemoryMB);
-        const availableCpuOptions = cpuOptions.filter(opt => opt.cores <= maxCpu);
+    updateShmSelect(shmId, memoryId, selected = null) {
+        const shm = document.getElementById(shmId);
+        const memory = document.getElementById(memoryId);
+        if (!shm || !memory) return;
+        const values = this.resourceChoices().shm.filter(v => this.sizeInMB(v) <= this.sizeInMB(memory.value));
+        const wanted = selected || shm.value;
+        const value = values.includes(wanted) ? wanted : values[values.length - 1];
+        this.fillResourceSelect(shmId, values, value, '64m', v => this.formatSize(v));
+    }
 
-        // Populate memory select
-        const memorySelect = document.getElementById('memoryLimit');
-        if (memorySelect) {
-            memorySelect.innerHTML = availableMemoryOptions.map((opt, index) => {
-                // Set 2GB as default, or the highest available if 2GB not available
-                const isDefault = opt.value === '2g' || (opt.mb === maxMemoryMB && maxMemoryMB < 2048);
-                return `<option value="${opt.value}" ${isDefault ? 'selected' : ''}>${opt.label}${isDefault && opt.value === '2g' ? ' (Default)' : ''}${opt.mb === maxMemoryMB ? ' (Max)' : ''}</option>`;
-            }).join('');
-        }
+    // '64m' -> 64, '2g' -> 2048
+    sizeInMB(value) {
+        const m = /^(\d+)([mg])$/.exec(String(value || ''));
+        return m ? Number(m[1]) * (m[2] === 'g' ? 1024 : 1) : 0;
+    }
 
-        // Populate CPU select
-        const cpuSelect = document.getElementById('cpuCores');
-        if (cpuSelect) {
-            cpuSelect.innerHTML = availableCpuOptions.map((opt, index) => {
-                // Set 2 cores as default, or the highest available if 2 cores not available
-                const isDefault = opt.value === '2' || (opt.cores === maxCpu && maxCpu < 2);
-                return `<option value="${opt.value}" ${isDefault ? 'selected' : ''}>${opt.label}${isDefault && opt.value === '2' ? ' (Default)' : ''}${opt.cores === maxCpu ? ' (Max)' : ''}</option>`;
-            }).join('');
-        }
+    // '64m' -> '64 MB', '2g' -> '2 GB'
+    formatSize(value) {
+        const m = /^(\d+)([mg])$/.exec(String(value || ''));
+        return m ? `${m[1]} ${m[2] === 'g' ? 'GB' : 'MB'}` : String(value || '');
     }
 
     setupUI() {
@@ -717,6 +728,7 @@ class XaresAICoder {
         const projectName = formData.get('projectName').trim();
         const memoryLimit = formData.get('memoryLimit');
         const cpuCores = formData.get('cpuCores');
+        const shmSize = formData.get('shmSize');
         const passwordProtected = formData.get('passwordProtected') === 'on';
         const workspacePassword = formData.get('workspacePassword');
         const createGitRepo = formData.get('createGitRepo') === 'on';
@@ -758,6 +770,7 @@ class XaresAICoder {
             projectType: useGitRepository ? 'git-clone' : 'empty',
             memoryLimit,
             cpuCores,
+            shmSize,
             group: this.selectedGroup || 'Uncategorized'
         };
 
@@ -812,6 +825,7 @@ class XaresAICoder {
             // Clear form
             e.target.reset();
             document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
+            this.populateResourceSelects(); // shared memory again up to the default memory limit
             
             // Hide password group and clear password input
             const passwordGroup = document.getElementById('passwordGroup');
@@ -876,8 +890,7 @@ class XaresAICoder {
         const requestBody = {
             projectName,
             projectType: 'git-clone',
-            memoryLimit: '2g',  // Default 2GB
-            cpuCores: '2',      // Default 2 cores
+            // No memoryLimit/cpuCores: the server's defaults within its limits
             gitUrl,
             group: this.selectedGroup || 'Uncategorized',
             proxyMode: 'none'   // Quick clone always uses unrestricted network
@@ -908,6 +921,7 @@ class XaresAICoder {
             // Clear form
             e.target.reset();
             document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
+            this.populateResourceSelects(); // shared memory again up to the default memory limit
 
             // Show simple success message
             this.showCreateSuccess(project);
@@ -1074,6 +1088,7 @@ class XaresAICoder {
         return this.projects.some(p => 
             p.status === 'creating' || 
             p.status === 'stopping' ||
+            p.status === 'rebuilding' ||
             this.creatingProjects.has(p.projectId) ||
             (p.status === 'running' && !p.workspaceUrl) // Running but not ready
         );
@@ -1097,6 +1112,15 @@ class XaresAICoder {
             if (oldProject && oldProject.status === 'stopping' && newProject.status !== 'stopping' &&
                 newProject.lastError && newProject.lastError.action === 'stop') {
                 this.showError(`Failed to stop workspace "${newProject.projectName}": ${newProject.lastError.message}`);
+            }
+
+            // A rebuild for new resources finished
+            if (oldProject && oldProject.status === 'rebuilding' && newProject.status !== 'rebuilding') {
+                if (newProject.lastError && newProject.lastError.action === 'rebuild') {
+                    this.showError(`Failed to rebuild workspace "${newProject.projectName}": ${newProject.lastError.message}`);
+                } else {
+                    this.showSuccess(`Workspace "${newProject.projectName}" rebuilt with ${this.formatSize(newProject.shmSize)} shared memory`);
+                }
             }
 
             // Project creation failed
@@ -1170,6 +1194,11 @@ class XaresAICoder {
                             </svg>
                             ${project.notes && project.notes.trim() ? '<span class="notes-indicator"></span>' : ''}
                         </button>
+                        ${!['creating', 'rebuilding'].includes(project.status) ? `<button class="notes-btn admin-only" onclick="app.openResourcesModal('${project.projectId}')" title="Memory, CPU and Shared Memory" aria-label="Resources">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M5 0a.5.5 0 0 1 .5.5V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2A2.5 2.5 0 0 1 14 4.5h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14a2.5 2.5 0 0 1-2.5 2.5v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14A2.5 2.5 0 0 1 2 11.5H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2A2.5 2.5 0 0 1 4.5 2V.5A.5.5 0 0 1 5 0zm-.5 3A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13h7a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 11.5 3h-7zM5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5v-3z"/>
+                            </svg>
+                        </button>` : ''}
                         ${project.status !== 'creating' ? `<button class="notes-btn admin-only" onclick="app.openAliasesModal('${project.projectId}')" title="Manage Subdomain Aliases" aria-label="Subdomain Aliases">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                                 <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9c-.086 0-.17.01-.25.031A2 2 0 0 1 7 10.5H4a2 2 0 1 1 0-4h1.535c.218-.376.495-.714.82-1z"/>
@@ -1200,6 +1229,7 @@ class XaresAICoder {
                         ${project.gitUrl ? `<a href="${this.safeHref(project.gitUrl)}" target="_blank" rel="noopener" class="git-url-info" title="Cloned from: ${this.escapeHtml(project.gitUrl)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>${this.escapeHtml(this.getShortGitUrl(project.gitUrl))}</a>` : ''}
                         <span>${this.getMemoryLimitLabel(project.memoryLimit)}</span>
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
+                        ${this.getShmLabel(project.shmSize) ? `<span title="Shared memory (/dev/shm)">${this.getShmLabel(project.shmSize)}</span>` : ''}
                         ${this.getDiskUsageLabel(project.diskUsage) ? `<span class="disk-usage">${this.getDiskUsageLabel(project.diskUsage)}</span>` : ''}
                     </div>
                     ${this.getLastErrorLine(project)}
@@ -1391,17 +1421,17 @@ class XaresAICoder {
         const isStopped = project.status === 'stopped';
         const isError = project.status === 'error';
         const isCreating = project.status === 'creating';
-        const isStopping = project.status === 'stopping';
+        const isStopping = project.status === 'stopping' || project.status === 'rebuilding';
         const isRunningButNotReady = isRunning && !project.workspaceUrl;
 
         let buttons = '';
 
         if (isStopping) {
-            // The server runs the stop; the list polls until it is done
+            // The server runs the stop or rebuild; the list polls until it is done
             buttons += `
                 <div class="creating-indicator">
                     <div class="spinner" style="display: inline-block; width: 16px; height: 16px; margin-right: 8px;"></div>
-                    Stopping workspace...
+                    ${project.status === 'rebuilding' ? 'Rebuilding workspace...' : 'Stopping workspace...'}
                 </div>
             `;
         } else if (isCreating || isRunningButNotReady) {
@@ -1816,24 +1846,18 @@ class XaresAICoder {
     }
 
     getMemoryLimitLabel(memoryLimit) {
-        const labels = {
-            '1g': '1GB RAM',
-            '2g': '2GB RAM', 
-            '4g': '4GB RAM',
-            '8g': '8GB RAM',
-            '16g': '16GB RAM'
-        };
-        return labels[memoryLimit] || '2GB RAM';
+        const m = /^(\d+)g$/.exec(memoryLimit || '');
+        return `${m ? m[1] : 2}GB RAM`;
     }
 
     getCpuCoresLabel(cpuCores) {
-        const labels = {
-            '1': '1 Core',
-            '2': '2 Cores',
-            '4': '4 Cores',
-            '8': '8 Cores'
-        };
-        return labels[cpuCores] || '2 Cores';
+        const n = parseInt(cpuCores, 10) || 2;
+        return n === 1 ? '1 Core' : `${n} Cores`;
+    }
+
+    // Only shown when it differs from Docker's default
+    getShmLabel(shmSize) {
+        return shmSize && shmSize !== '64m' ? `${this.formatSize(shmSize)} shm` : '';
     }
 
     getDiskUsageLabel(diskUsage) {
@@ -1856,7 +1880,7 @@ class XaresAICoder {
     getLastErrorLine(project) {
         const err = project.lastError;
         if (!err || !err.message) return '';
-        const action = { stop: 'Stop' }[err.action] || 'Last action';
+        const action = { stop: 'Stop', rebuild: 'Rebuild' }[err.action] || 'Last action';
         const when = err.at ? ` (${this.formatDate(err.at)})` : '';
         return `<div class="project-last-error">${this.escapeHtml(`${action} failed${when}: ${err.message}`)}</div>`;
     }
@@ -1872,6 +1896,7 @@ class XaresAICoder {
             'stopped': 'Stopped',
             'creating': 'Creating',
             'stopping': 'Stopping',
+            'rebuilding': 'Rebuilding',
             'error': 'Error',
             'not_found': 'Not Found'
         };
@@ -1889,6 +1914,7 @@ class XaresAICoder {
             'stopped': 'status-stopped',
             'creating': 'status-creating',
             'stopping': 'status-creating',
+            'rebuilding': 'status-creating',
             'error': 'status-error',
             'not_found': 'status-error'
         };
@@ -2243,6 +2269,115 @@ class XaresAICoder {
     }
 
     // Project Notes Methods
+    // Memory and CPU apply right away; another shared memory size rebuilds
+    // the workspace from a snapshot of itself (the server runs it, the list
+    // shows "Rebuilding")
+    openResourcesModal(projectId) {
+        const project = this.projects.find(p => p.projectId === projectId);
+        if (!project) return;
+        const r = this.resourceChoices();
+        const current = {
+            memoryLimit: project.memoryLimit || '2g',
+            cpuCores: project.cpuCores || '2',
+            shmSize: project.shmSize || '64m'
+        };
+        this.resourcesProject = { projectId, current };
+        // A value from before a lower limit stays selectable
+        const withCurrent = (list, value, size) => (list.includes(value) ? list : [...list, value].sort((a, b) => size(a) - size(b)));
+        this.resourceShmChoices = withCurrent(r.shm, current.shmSize, v => this.sizeInMB(v));
+
+        document.getElementById('resourcesModal')?.remove();
+        document.body.insertAdjacentHTML('beforeend', `
+            <div id="resourcesModal" class="modal" style="display: flex;">
+                <div class="modal-content" style="max-width: 520px;">
+                    <div class="modal-header">
+                        <h3>Resources - ${this.escapeHtml(project.projectName)}</h3>
+                        <button class="modal-close" onclick="app.closeResourcesModal()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="resMemoryLimit">Memory Limit</label>
+                            <select id="resMemoryLimit"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="resCpuCores">CPU Cores</label>
+                            <select id="resCpuCores"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="resShmSize">Shared Memory (/dev/shm)</label>
+                            <select id="resShmSize"></select>
+                            <div class="form-hint">Counts toward the memory limit (tmpfs). Memory and CPU apply right away.</div>
+                        </div>
+                        <div id="resRebuildNote" class="form-hint" style="display: none; color: var(--vscode-warning, #cca700);">
+                            Another shared memory size needs a new container: the workspace is stopped and rebuilt from a
+                            snapshot of itself. Files, installed software, URL, password and Git access stay; running
+                            processes end. Takes a while for large workspaces and needs extra disk space for the snapshot.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-secondary" onclick="app.closeResourcesModal()">Cancel</button>
+                        <button class="btn-primary" id="resSaveBtn" onclick="app.saveResources()">Save</button>
+                    </div>
+                </div>
+            </div>`);
+
+        this.fillResourceSelect('resMemoryLimit', withCurrent(r.memory, current.memoryLimit, v => this.sizeInMB(v)),
+            current.memoryLimit, r.defaults.memoryLimit, v => `${this.formatSize(v)} RAM`);
+        this.fillResourceSelect('resCpuCores', withCurrent(r.cpu, current.cpuCores, Number),
+            current.cpuCores, r.defaults.cpuCores, v => this.getCpuCoresLabel(v));
+        const shm = document.getElementById('resShmSize');
+        const memory = document.getElementById('resMemoryLimit');
+        const update = (selected = null) => {
+            const values = this.resourceShmChoices.filter(v => this.sizeInMB(v) <= this.sizeInMB(memory.value));
+            const wanted = selected || shm.value;
+            this.fillResourceSelect('resShmSize', values, values.includes(wanted) ? wanted : values[values.length - 1], '64m', v => this.formatSize(v));
+            document.getElementById('resRebuildNote').style.display = shm.value !== current.shmSize ? 'block' : 'none';
+        };
+        update(current.shmSize);
+        memory.onchange = () => update();
+        shm.onchange = () => update();
+    }
+
+    closeResourcesModal() {
+        document.getElementById('resourcesModal')?.remove();
+        this.resourcesProject = null;
+    }
+
+    async saveResources() {
+        const state = this.resourcesProject;
+        if (!state) return;
+        const body = {
+            memoryLimit: document.getElementById('resMemoryLimit').value,
+            cpuCores: document.getElementById('resCpuCores').value,
+            shmSize: document.getElementById('resShmSize').value
+        };
+        const rebuild = body.shmSize !== state.current.shmSize;
+        if (rebuild && !confirm('Rebuild the workspace with the new shared memory size? It is stopped first; running processes end.')) return;
+        const button = document.getElementById('resSaveBtn');
+        button.disabled = true;
+        try {
+            const response = await this.protectedFetch(state.projectId, `${this.apiBase}/projects/${state.projectId}/resources`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (!response) { button.disabled = false; return; }
+            const data = await response.json();
+            if (!response.ok) {
+                this.showError(data.message || 'Failed to update resources');
+                button.disabled = false;
+                return;
+            }
+            this.closeResourcesModal();
+            if (response.status !== 202) this.showSuccess(data.message || 'Resources updated');
+            this.loadProjects();
+        } catch (error) {
+            console.error('Error updating resources:', error);
+            this.showError('Failed to update resources');
+            button.disabled = false;
+        }
+    }
+
     async openNotesModal(projectId) {
         try {
             const project = this.projects.find(p => p.projectId === projectId);
@@ -2844,11 +2979,11 @@ class XaresAICoder {
 
         // Build settings summary
         const proxyLabels = { none: 'No Proxy', security: 'Security Proxy', logging: 'LLM Logging Proxy' };
-        const memoryLabels = { '1g': '1 GB', '2g': '2 GB', '4g': '4 GB', '8g': '8 GB', '16g': '16 GB' };
         let summary = `<div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">`;
         summary += `<span style="color: var(--vscode-text-muted);">Type:</span><span>${project.projectType === 'git-clone' ? 'Git Clone' : 'Empty'}</span>`;
-        summary += `<span style="color: var(--vscode-text-muted);">Memory:</span><span>${memoryLabels[project.memoryLimit] || project.memoryLimit}</span>`;
-        summary += `<span style="color: var(--vscode-text-muted);">CPU:</span><span>${project.cpuCores} Core${project.cpuCores !== '1' ? 's' : ''}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">Memory:</span><span>${this.formatSize(project.memoryLimit)}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">CPU:</span><span>${this.getCpuCoresLabel(project.cpuCores)}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">Shared memory:</span><span>${this.formatSize(project.shmSize || '64m')}</span>`;
         summary += `<span style="color: var(--vscode-text-muted);">Proxy:</span><span>${proxyLabels[project.proxyMode] || 'No Proxy'}</span>`;
         summary += `<span style="color: var(--vscode-text-muted);">Group:</span><span>${this.escapeHtml(project.group || 'Uncategorized')}</span>`;
         if (project.gitUrl) {

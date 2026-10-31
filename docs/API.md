@@ -194,8 +194,14 @@ Creates a new workspace with the specified configuration.
 - `createGitRepo` (boolean, optional): Create a private Git repository owned by the workspace's own Forgejo user (requires Git server). With the Git server enabled, every workspace gets its own Forgejo user and token (`FORGEJO_USER`/`FORGEJO_TOKEN`), with or without repository.
 - `gitUrl`, `gitUsername`, `gitToken` (with `projectType: "git-clone"`): repository to clone. A URL of this platform's Forgejo (`<base>/git/<owner>/<repo>`) needs no token: the new workspace user is added as collaborator and works directly on that repository (e.g. to continue the work of a deleted workspace).
 - `proxyMode` (string, optional): Network proxy mode — `none` (default), `logging` (LLM Logging Proxy, unrestricted with recording), `security` (Security Proxy, whitelist-only)
-- `memoryLimit` (string, optional): Memory limit — `1g`, `2g` (default), `4g`, `8g`, `16g`
-- `cpuCores` (string, optional): CPU cores — `1`, `2` (default), `4`, `8`
+- `memoryLimit` (string, optional): Memory limit in GB (`1g`, `2g`, `4g`, …); default `2g`
+- `cpuCores` (string, optional): CPU cores (`1`, `2`, `4`, …); default `2`
+- `shmSize` (string, optional): Size of `/dev/shm` — `64m` (default, Docker's), then the
+  memory choices (`1g`, `2g`, …); at most `memoryLimit`, because it counts toward it (tmpfs)
+- The allowed values come from `GET /api/limits` → `resources` (powers of two up to
+  `MEMORY_PER_WORKSPACE_MB` / `CPU_PER_WORKSPACE`, plus the maximum itself); others
+  answer `400` (`"error": "Invalid resources"`). Without a value the default applies, or the
+  maximum if the default is above it
 - `group` (string, optional): Group name for organizing workspaces
 
 **Response** (Success - 201):
@@ -266,12 +272,13 @@ Retrieves detailed information about a specific project.
 - `creating` - Workspace is being created
 - `running` - Container is active and accessible
 - `stopping` - A stop is in progress (see [Stop Workspace](#stop-workspace))
+- `rebuilding` - The container is rebuilt for another shared memory size (see [Change Resources](#change-resources))
 - `stopped` - Container is stopped but can be restarted
 - `error` - Container failed or was removed
 
-A project may carry `lastError` (`{ "action": "stop", "message": "...", "at": "<ISO time>" }`)
+A project may carry `lastError` (`{ "action": "stop" | "rebuild", "message": "...", "at": "<ISO time>" }`)
 when an action the server finished in the background failed; it is cleared by the next
-start or stop.
+start, stop or rebuild.
 
 ### List All Projects
 
@@ -402,6 +409,40 @@ container has stopped, as before)
 ```
 
 With `wait`, a failed stop answers `500` (`{ "error": "Failed to stop project", "message": "..." }`).
+
+### Change Resources
+
+Changes memory limit, CPU cores and shared memory (`/dev/shm`) of a workspace (admin only;
+group users get `403`). Memory and CPU apply right away, also to a running workspace
+(`docker update`). Docker cannot change the shared memory of an existing container, so
+another `shmSize` rebuilds the workspace: it is stopped, committed to a snapshot image and
+replaced by a container from that snapshot with the same name, environment (password,
+Forgejo token), network address and settings. Files and installed software stay, running
+processes end; a workspace that was running is started again. If a step fails, the old
+container comes back and the workspace gets `lastError` (`action: "rebuild"`). A server
+restart during a rebuild restores the old container on start.
+
+**Endpoint**: `PUT /api/projects/:projectId/resources` (`?wait=true`: answer only after a
+rebuild). Protected workspaces need the `X-Workspace-Password` header.
+
+**Request Body** (each field optional; missing ones keep their value):
+```json
+{ "memoryLimit": "16g", "cpuCores": "12", "shmSize": "8g" }
+```
+
+Values come from `GET /api/limits` → `resources`; a value the workspace already has may stay
+even if a limit was lowered since. `shmSize` must not exceed `memoryLimit`.
+
+**Responses**:
+- `200` `{ "success": true, "message": "Resources updated" | "Nothing changed" | "Workspace rebuilt", "project": {…} }`
+- `202` `{ "success": true, "accepted": true, "message": "Rebuilding workspace", "project": { "status": "rebuilding", … } }`
+  — poll the project until it leaves `rebuilding`
+- `400` invalid values, `401` wrong workspace password, `404` unknown workspace,
+  `409` while it is being created, stopped or rebuilt (start, stop, delete and clone also
+  answer `409` during a rebuild), `500` Docker error (with `wait`: a failed rebuild)
+
+The snapshot image (`workspace-rebuild-<id>`) stays as the container's image; the previous one
+is untagged after the next rebuild and all are removed with the workspace.
 
 ### List Groups
 
@@ -689,17 +730,29 @@ Retrieves current resource limit configuration for workspace management.
 ```json
 {
   "maxConcurrentWorkspaces": 5,
-  "cpuPerWorkspace": 4.0,
-  "memoryPerWorkspaceMB": 8192,
-  "enableResourceLimits": true
+  "cpuPerWorkspace": 12,
+  "memoryPerWorkspaceMB": 32768,
+  "enableResourceLimits": true,
+  "resources": {
+    "maxMemoryGB": 32,
+    "maxCpuCores": 12,
+    "memory": ["1g", "2g", "4g", "8g", "16g", "32g"],
+    "cpu": ["1", "2", "4", "8", "12"],
+    "shm": ["64m", "1g", "2g", "4g", "8g", "16g", "32g"],
+    "defaults": { "memoryLimit": "2g", "cpuCores": "2", "shmSize": "64m" }
+  }
 }
 ```
 
 **Parameters**:
 - `maxConcurrentWorkspaces` (integer): Maximum number of simultaneously running workspaces
-- `cpuPerWorkspace` (number): Maximum CPU cores allocated per workspace
-- `memoryPerWorkspaceMB` (integer): Maximum RAM in megabytes per workspace
-- `enableResourceLimits` (boolean): Whether resource limit enforcement is enabled
+- `cpuPerWorkspace` (number): Upper bound for the CPU cores of a workspace (`CPU_PER_WORKSPACE`)
+- `memoryPerWorkspaceMB` (integer): Upper bound for the RAM of a workspace in MB (`MEMORY_PER_WORKSPACE_MB`)
+- `enableResourceLimits` (boolean): Whether the limit of running workspaces is enforced
+- `resources`: the choices the dashboard offers and the API accepts. The bounds above are
+  capped at the Docker host (its CPU count; its memory rounded up to whole GB); the steps
+  are powers of two plus the maximum itself. `shm` lists the sizes of `/dev/shm`; per
+  workspace only those up to its memory limit are allowed
 
 **Usage**:
 ```bash
@@ -816,7 +869,7 @@ other files (e.g. a `.env` in the project) are not touched.
 }
 ```
 
-**What gets cloned**: The entire container filesystem (installed packages, files, configs, git repos) via `docker commit`, plus metadata (proxyMode, group, memoryLimit, cpuCores, gitUrl).
+**What gets cloned**: The entire container filesystem (installed packages, files, configs, git repos) via `docker commit`, plus metadata (proxyMode, group, memoryLimit, cpuCores, shmSize, gitUrl).
 
 **Notes**:
 - Returns 202 immediately; clones are created sequentially in the background

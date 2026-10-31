@@ -114,6 +114,15 @@ function summarizeConversation(conv, file, size) {
 // inherits the snapshot's environment from its image, so any of these that
 // the clone does not set itself is overridden with an empty value (e.g. the
 // source's GIT_ACCESS_TOKEN or PASSWORD).
+const MiB = 1024 * 1024;
+const GiB = 1024 * MiB;
+
+// '64m' / '2g' -> bytes, null for anything else
+function sizeToBytes(value) {
+  const m = /^([1-9][0-9]{0,5})([mg])$/.exec(String(value || ''));
+  return m ? Number(m[1]) * (m[2] === 'g' ? GiB : MiB) : null;
+}
+
 const PLATFORM_ENV_KEYS = [
   'PROJECT_TYPE', 'PROJECT_ID', 'VSCODE_PROXY_URI', 'PROXY_DOMAIN',
   'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
@@ -355,6 +364,7 @@ class DockerService {
     projectType,
     memoryLimit = '2g',
     cpuCores = '2',
+    shmSize = '64m',
     passwordProtected = false,
     password = null,
     proxyMode = 'none',
@@ -365,7 +375,7 @@ class DockerService {
     forgejo = null,
     sudoEnabled = this.workspaceSudoEnabled,
     proxyIp = null,
-    hostCapabilities = { ncpu: null, diskQuota: false }
+    hostCapabilities = { ncpu: null, memTotal: null, diskQuota: false }
   }) {
     const containerName = `workspace-${projectId}`;
     const useProxy = proxyMode !== 'none';
@@ -470,6 +480,8 @@ class DockerService {
         Memory: this.parseMemoryLimit(memoryLimit),
         // Hard CPU limit (CpuShares was only a relative weight under contention)
         NanoCpus: this.cpuCoresToNanoCpus(cpuCores, hostCapabilities.ncpu),
+        // /dev/shm (tmpfs, counts toward Memory); MPI puts its buffers there
+        ShmSize: this.parseShmSize(shmSize),
         NetworkMode: workspaceNetwork,
         PidMode: '', // Isolated PID namespace (default, but explicit for security)
         IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
@@ -1835,12 +1847,12 @@ fi`.trim();
   }
 
   /**
-   * Commit a workspace container to a snapshot image for cloning.
+   * Commit a workspace container to a snapshot image (for cloning, or with
+   * another repo for rebuildWorkspaceContainer).
    * Works on both running and stopped containers.
    */
-  async commitContainer(projectId) {
+  async commitContainer(projectId, snapshotRepo = `clone-snapshot-${projectId}`) {
     const containerName = `workspace-${projectId}`;
-    const snapshotRepo = `clone-snapshot-${projectId}`;
     // Unique per clone batch: concurrent batches of the same source must not
     // share (and delete) each other's snapshot
     const snapshotTag = `raw-${Date.now()}`;
@@ -1853,7 +1865,7 @@ fi`.trim();
       await container.commit({
         repo: snapshotRepo,
         tag: snapshotTag,
-        comment: `Snapshot for cloning workspace ${projectId}`,
+        comment: `Snapshot of workspace ${projectId}`,
         pause: true
       });
       console.log(`Created snapshot image: ${imageName} from container ${containerName}`);
@@ -2082,6 +2094,121 @@ fi`.trim();
       console.log(`Removed snapshot image: ${imageName}`);
     } catch (error) {
       console.error(`Failed to remove snapshot image ${imageName}:`, error.message);
+    }
+  }
+
+  // Memory and CPU of an existing container (running or stopped). Docker set
+  // the swap limit to twice the memory at creation; it has to follow, or a
+  // larger memory limit is refused.
+  async updateContainerResources(projectId, { memoryLimit, cpuCores }) {
+    const memory = this.parseMemoryLimit(memoryLimit);
+    const { ncpu } = await this.getHostCapabilities();
+    await this.docker.getContainer(`workspace-${projectId}`).update({
+      Memory: memory,
+      MemorySwap: 2 * memory,
+      NanoCpus: this.cpuCoresToNanoCpus(cpuCores, ncpu)
+    });
+  }
+
+  /**
+   * New container for a workspace with other resources, from a snapshot of
+   * the old one: Docker cannot change ShmSize of an existing container, and
+   * the workspace's files live in the container. Keeps name, environment
+   * (password, Forgejo token), network address and all other settings; the
+   * workspace is stopped for it and started again if it was running. On
+   * failure the old container comes back. Returns { status }.
+   */
+  async rebuildWorkspaceContainer(projectId, { memoryLimit, cpuCores, shmSize }) {
+    const name = `workspace-${projectId}`;
+    const info = await this.docker.getContainer(name).inspect();
+    const old = this.docker.getContainer(info.Id);
+    const wasRunning = info.State.Running;
+    if (wasRunning) await this.stopWorkspaceContainer(projectId);
+
+    const image = await this.commitContainer(projectId, `workspace-rebuild-${projectId}`);
+    // Not "workspace-…": nothing that looks for workspace containers sees it
+    await old.rename({ name: `rebuild-backup-${projectId}` });
+    let created = null;
+    try {
+      const memory = this.parseMemoryLimit(memoryLimit);
+      const network = info.HostConfig.NetworkMode;
+      const endpoint = (info.NetworkSettings.Networks || {})[network] || {};
+      const fixedIp = endpoint.IPAMConfig && endpoint.IPAMConfig.IPv4Address;
+      const c = info.Config;
+      created = await this.docker.createContainer({
+        name,
+        Image: image,
+        // Explicit: an export/import snapshot has no image config
+        Env: c.Env,
+        Cmd: c.Cmd,
+        Entrypoint: c.Entrypoint,
+        User: c.User,
+        WorkingDir: c.WorkingDir,
+        ExposedPorts: c.ExposedPorts,
+        Labels: c.Labels,
+        HostConfig: {
+          ...info.HostConfig,
+          Memory: memory,
+          MemorySwap: 2 * memory,
+          NanoCpus: this.cpuCoresToNanoCpus(cpuCores, (await this.getHostCapabilities()).ncpu),
+          ShmSize: this.parseShmSize(shmSize)
+        },
+        NetworkingConfig: { EndpointsConfig: { [network]: this.endpointConfig(name, fixedIp || null) } }
+      });
+      if (wasRunning) {
+        await created.start();
+        // Runs in the background: wait longer than a start request, so the
+        // workspace leaves "Rebuilding" only once code-server answers
+        await this.waitForWorkspaceReady(name, 60000);
+        await this.waitForDnsReady(name);
+      }
+    } catch (error) {
+      console.error(`Rebuilding ${name} failed, restoring the old container:`, error.message);
+      if (created) await created.remove({ force: true }).catch(() => {});
+      await old.rename({ name });
+      if (wasRunning) await old.start().catch(e => console.error(`Restarting ${name} failed: ${e.message}`));
+      await this.removeSnapshotImage(image);
+      throw new Error(`Rebuild failed: ${error.message}`);
+    }
+
+    await old.remove({ force: true });
+    await this.removeRebuildImages(projectId, image);
+    console.log(`Rebuilt ${name} from ${image} (memory ${memoryLimit}, ${cpuCores} cores, shm ${shmSize})`);
+    return { status: wasRunning ? 'running' : 'stopped' };
+  }
+
+  // Snapshot tags of earlier rebuilds (all but `keep`); their layers stay as
+  // long as the current snapshot builds on them
+  async removeRebuildImages(projectId, keep = null) {
+    const repo = `workspace-rebuild-${projectId}`;
+    try {
+      const images = await this.docker.listImages({ filters: { reference: [repo] } });
+      for (const tag of images.flatMap(i => i.RepoTags || [])) {
+        if (tag !== keep) await this.removeSnapshotImage(tag);
+      }
+    } catch (error) {
+      console.warn(`Could not clean up snapshots of ${repo}: ${error.message}`);
+    }
+  }
+
+  // A rebuild interrupted by a server restart leaves the old container as
+  // rebuild-backup-<id>: it goes back under its name (a new container of an
+  // unfinished rebuild is dropped; the stored settings match the old one)
+  async recoverInterruptedRebuilds() {
+    const leftovers = await this.docker.listContainers({ all: true, filters: { name: ['rebuild-backup-'] } });
+    for (const c of leftovers) {
+      const backupName = c.Names[0].replace(/^\//, '');
+      const projectId = backupName.replace(/^rebuild-backup-/, '');
+      const name = `workspace-${projectId}`;
+      try {
+        await this.docker.getContainer(name).remove({ force: true }).catch(e => {
+          if (e.statusCode !== 404) throw e;
+        });
+        await this.docker.getContainer(c.Id).rename({ name });
+        console.warn(`Restored ${name} after an interrupted rebuild`);
+      } catch (error) {
+        console.error(`Could not restore ${name} from ${backupName}: ${error.message}`);
+      }
     }
   }
 
@@ -2392,23 +2519,24 @@ fi`.trim();
     }
   }
 
+  // Memory limit ('1g', '2g', … '32g'; the route checks the allowed range) -> bytes
   parseMemoryLimit(memoryLimit) {
-    // Convert memory limit string (e.g., '1g', '2g', '4g', '8g', '16g') to bytes
-    const memoryMap = {
-      '1g': 1 * 1024 * 1024 * 1024,   // 1GB
-      '2g': 2 * 1024 * 1024 * 1024,   // 2GB
-      '4g': 4 * 1024 * 1024 * 1024,   // 4GB
-      '8g': 8 * 1024 * 1024 * 1024,   // 8GB
-      '16g': 16 * 1024 * 1024 * 1024  // 16GB
-    };
-    
-    const memory = memoryMap[memoryLimit];
-    if (!memory) {
+    const bytes = sizeToBytes(memoryLimit);
+    if (!bytes || !/g$/.test(memoryLimit)) {
       console.warn(`Invalid memory limit '${memoryLimit}', defaulting to 2GB`);
-      return memoryMap['2g'];
+      return 2 * GiB;
     }
-    
-    return memory;
+    return bytes;
+  }
+
+  // /dev/shm size ('64m', '1g', …) -> bytes; Docker's default is 64 MB
+  parseShmSize(shmSize) {
+    const bytes = sizeToBytes(shmSize);
+    if (!bytes) {
+      console.warn(`Invalid shared memory size '${shmSize}', defaulting to 64MB`);
+      return 64 * MiB;
+    }
+    return bytes;
   }
 
   // Docker host facts needed for limits, read once: CPU count (NanoCpus must
@@ -2424,18 +2552,19 @@ fi`.trim();
         console.warn(`WORKSPACE_DISK_LIMIT=${this.diskLimit} is ignored: storage driver ${info.Driver} on ` +
           `${status['Backing Filesystem'] || 'unknown'} does not support per-container quotas (needs overlay2 on xfs with pquota)`);
       }
-      this.hostCapabilities = { ncpu: info.NCPU || null, diskQuota };
+      this.hostCapabilities = { ncpu: info.NCPU || null, memTotal: info.MemTotal || null, diskQuota };
     } catch (error) {
       console.warn(`Could not read Docker host info: ${error.message}`);
-      this.hostCapabilities = { ncpu: null, diskQuota: false };
+      this.hostCapabilities = { ncpu: null, memTotal: null, diskQuota: false };
     }
     return this.hostCapabilities;
   }
 
-  // CPU cores ('1'|'2'|'4'|'8') -> NanoCpus, capped at the host's CPU count
+  // CPU cores ('1', '2', … '12'; the route checks the allowed range) ->
+  // NanoCpus, capped at the host's CPU count
   cpuCoresToNanoCpus(cpuCores, hostCpus = null) {
-    let cores = parseInt(cpuCores, 10);
-    if (![1, 2, 4, 8].includes(cores)) {
+    let cores = Number(cpuCores);
+    if (!Number.isInteger(cores) || cores < 1) {
       console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
       cores = 2;
     }
@@ -2499,3 +2628,4 @@ fi`.trim();
 }
 
 module.exports = new DockerService();
+module.exports.sizeToBytes = sizeToBytes;

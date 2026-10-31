@@ -2,9 +2,10 @@
 
 # XaresAICoder Smoke Test
 # Exercises a running installation end to end through nginx: login (incl. the
-# per-client limit behind a reverse proxy), workspace lifecycle, group users,
-# network isolation, both proxies, Forgejo and, with --backup, backup.sh with
-# a restore. Run by CI after ./deploy.sh
+# per-client limit behind a reverse proxy), workspace lifecycle, resources
+# (incl. the rebuild for shared memory), group users, network isolation, both
+# proxies, Forgejo and, with --backup, backup.sh with a restore. Run by CI after
+# ./deploy.sh
 # (.github/workflows/smoke-test.yml); also works against a local installation
 # and removes what it created (workspaces zz-smoke-*, their Forgejo users,
 # group user zz-smoke-user).
@@ -285,6 +286,24 @@ if create_workspace zz-smoke-direct none; then
     check "Start (HTTP $STATUS)" [ "$STATUS" = 200 ]
     check "Running again" wait_running "$id"
 
+    section "Workspace resources"
+    shm_kb() { docker exec "workspace-$id" df -k /dev/shm | awk 'NR==2 {print $2}'; }
+    api GET /limits
+    check "Choices from the limits (memory $(json '" ".join(d["resources"]["memory"])'), cores $(json '" ".join(d["resources"]["cpu"])'))" \
+        [ "$(json 'd["resources"]["defaults"]["shmSize"] == "64m" and "1g" in d["resources"]["shm"]')" = True ]
+    check "Shared memory 64 MB by default ($(shm_kb) KB)" [ "$(shm_kb)" = 65536 ]
+    api PUT "/projects/$id/resources" '{"shmSize":"4g"}'
+    check "Shared memory above the memory limit refused (HTTP $STATUS)" [ "$STATUS" = 400 ]
+    docker exec -u coder "workspace-$id" sh -c 'echo kept > /workspace/zz-rebuild-marker'
+    api PUT "/projects/$id/resources?wait=true" '{"shmSize":"1g"}'
+    check "Rebuilt for 1 GB shared memory (HTTP $STATUS, $(json 'd.get("message")'))" [ "$STATUS" = 200 ]
+    check "Running after the rebuild" wait_running "$id"
+    check "Shared memory 1 GB ($(shm_kb) KB)" [ "$(shm_kb)" = 1048576 ]
+    check "Files kept" [ "$(docker exec "workspace-$id" cat /workspace/zz-rebuild-marker 2>/dev/null)" = kept ]
+    api PUT "/projects/$id/resources" '{"memoryLimit":"1g"}'
+    check "Memory limit changed right away (HTTP $STATUS)" [ "$STATUS" = 200 ]
+    check "Memory limit in Docker" [ "$(docker inspect -f '{{.HostConfig.Memory}}' "workspace-$id")" = 1073741824 ]
+
     section "Group users"
     api PUT "/projects/$id/group" '{"group":"zz-smoke-group"}'
     check "Workspace moved to group zz-smoke-group (HTTP $STATUS)" [ "$STATUS" = 200 ]
@@ -301,6 +320,8 @@ if create_workspace zz-smoke-direct none; then
     check "Creating workspaces forbidden (HTTP $STATUS)" [ "$STATUS" = 403 ]
     as_group api GET /users
     check "User management forbidden (HTTP $STATUS)" [ "$STATUS" = 403 ]
+    as_group api PUT "/projects/$id/resources" '{"cpuCores":"1"}'
+    check "Changing resources forbidden (HTTP $STATUS)" [ "$STATUS" = 403 ]
     as_group api PUT "/projects/$id/name" '{"name":"zz-smoke-renamed"}'
     check "Rename (HTTP $STATUS)" [ "$STATUS" = 200 ]
     as_group api PUT "/projects/$id/notes" '{"notes":"smoke test"}'
@@ -324,6 +345,7 @@ if create_workspace zz-smoke-direct none; then
 
     check "Delete" delete_workspace "$id"
     check "Container removed" container_gone "workspace-$id"
+    check "Snapshot images removed" [ -z "$(docker images -q "workspace-rebuild-$id")" ]
 fi
 
 if [ "$ENABLE_PROXY" = true ]; then

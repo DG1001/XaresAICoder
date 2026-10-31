@@ -23,6 +23,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 | 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
 | 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | ✅ umgesetzt auf Branch `feat/group-users` (5.1–5.3), Smoke-Test grün |
+| 6 – Workspace-Ressourcen | `/dev/shm` je Workspace, Obergrenzen für RAM/CPU aus `.env`, Ressourcen nachträglich ändern | ✅ umgesetzt auf Branch `feat/workspace-resources` (6.1–6.3) |
 
 ---
 
@@ -2179,3 +2180,153 @@ Einträge ohne Wiederholung; erster Aufruf je Seite 4,6–4,9 s (ein `docker exe
 danach 0,1–0,2 s aus dem Speicher; Antworten gzip. Im Browser: Zähler „120 (showing 49)“,
 „Load 50 more“/„Load 20 more“, 119 eindeutige Einträge; Aufklappen der großen Aufzeichnung
 lädt sie einzeln, Rohbody gekürzt, „Download JSON“ da, kein Schlüssel im Text.
+
+---
+
+## Paket 6 – Workspace-Ressourcen (2026-10-31)
+
+Anlass: ein Feature-Wunsch von der Installation auf dem NixOS-Server. MPI-Rechnungen
+(OpenFOAM mit MPICH) legen ihre Puffer in `/dev/shm` an; Workspace-Container hatten
+Dockers Standard von 64 MB, damit laufen höchstens etwa 8 Prozesse. Ein Remount im
+laufenden Container ist nach jedem Neustart weg (und braucht `CAP_SYS_ADMIN`). Außerdem
+waren RAM und CPU im Server fest auf 16 GB / 8 Kerne begrenzt; ein ProLiant mit 32 GB und
+12 Kernen ließ sich nicht ausnutzen.
+
+Entscheidungen (per Rückfrage, jeweils die Empfehlung):
+- **Bearbeiten**: eigener Dialog „Resources“ je Workspace. RAM/CPU wirken sofort
+  (`docker update`); eine shm-Änderung baut den Container aus einem Snapshot seiner selbst
+  neu auf (6.2), weil Docker `ShmSize` eines bestehenden Containers nicht ändern kann und
+  die Dateien im Container liegen, nicht in Volumes.
+- **shm höchstens so groß wie das RAM-Limit**: tmpfs zählt zum Speicher des Containers.
+- **Obergrenzen aus den vorhandenen `.env`-Werten** `MEMORY_PER_WORKSPACE_MB` und
+  `CPU_PER_WORKSPACE`, keine neuen Variablen.
+
+### 6.1 Obergrenzen aus `.env`, Shared Memory beim Anlegen
+
+**Problem**: `MEMORY_PER_WORKSPACE_MB`/`CPU_PER_WORKSPACE` filterten nur die Auswahl im
+Dashboard (aus festen Listen 1–16 GB, 1/2/4/8 Kerne); die API nahm jeden Wert der festen
+Listen an, unabhängig von der Einstellung. Werte über 16 GB/8 Kerne gab es gar nicht.
+`/dev/shm` war nicht einstellbar.
+
+**Änderung**:
+- `workspaceService.getResourceOptions()` erzeugt die Auswahl: Zweierpotenzen bis zur
+  Obergrenze plus die Obergrenze selbst (12 Kerne → 1, 2, 4, 8, 12; 32 GB → 1, 2, 4, 8, 16,
+  32). Die Obergrenzen werden auf den Docker-Host gedeckelt (CPU-Zahl; Speicher auf ganze GB
+  aufgerundet, damit ein 32-GB-Host nicht bei 31 GB endet). Standard 2 GB / 2 Kerne, sonst
+  das Maximum. `shm`: `64m` und die Speicherwerte.
+- `resolveResources()` prüft `memoryLimit`, `cpuCores`, `shmSize` gegen diese Auswahl
+  (`400 Invalid resources` mit den erlaubten Werten) und `shmSize ≤ memoryLimit`. Beim
+  späteren Ändern (6.2) wird nur geprüft, was sich ändert, damit ein Workspace einen Wert
+  von vor einer gesenkten Grenze behalten kann.
+- `GET /api/limits` liefert zusätzlich `resources` (Auswahl, Maxima, Standards).
+- Docker: `HostConfig.ShmSize` aus `shmSize`; `parseMemoryLimit`/`cpuCoresToNanoCpus`
+  nehmen beliebige ganze Werte statt fester Listen; `getHostCapabilities` kennt `MemTotal`.
+- `shmSize` wird mit dem Projekt gespeichert (alte Einträge: `64m`), von Klonen
+  übernommen und in Liste und Klon-Übersicht angezeigt (nur wenn nicht 64 MB).
+- Dashboard: Auswahl aus `resources`, neues Feld „Shared Memory (/dev/shm)“ mit Hinweis
+  (zählt zum RAM-Limit, OpenFOAM/MPI); es bietet nur Werte bis zum gewählten RAM-Limit an
+  und passt sich an, wenn das Limit geändert wird.
+- Doku: `API.md` (Felder, `/api/limits`), `INSTALLATION.md` (Bedeutung der beiden Werte,
+  Beispiel Simulationsserver), `.env.example`, Upgrade-Zeile in `DEPLOYMENT.md`.
+
+**Verhaltensänderung**: API-Aufrufe über den Obergrenzen antworten `400`. Ohne Angabe
+bekommt ein Workspace 2 GB / 2 Kerne oder das niedrigere Maximum – mit dem Standard
+`CPU_PER_WORKSPACE=1.0` also 1 Kern (das Dashboard bot ohnehin nur 1 Kern an).
+
+**Tests** (lokal, `MEMORY_PER_WORKSPACE_MB=8192`, `CPU_PER_WORKSPACE=4`, Host 8 CPUs /
+11,7 GB): `/api/limits` → 1/2/4/8 GB, 1/2/4 Kerne, shm 64m–8g. `shmSize 8g` bei 2 GB → 400,
+`cpuCores 8` → 400, `shmSize 3g` → 400. Workspace mit 4 GB, 4 Kernen (als Zahl), 2 GB shm:
+`df -h /dev/shm` 2,0G, `HostConfig` Memory 4 GiB, NanoCpus 4e9, ShmSize 2 GiB; 1,5 GB in
+`/dev/shm` geschrieben (74 %); nach Stop/Start und nach `docker restart` weiterhin 2,0G.
+
+### 6.2 Ressourcen nachträglich ändern, Neuaufbau für Shared Memory
+
+**Änderung**:
+- `PUT /api/projects/:id/resources` (`memoryLimit`, `cpuCores`, `shmSize`, jeweils optional;
+  Workspace-Passwort wie bei den anderen Workspace-Routen; Gruppen-Nutzer `403`, nicht auf
+  ihrer Allowlist).
+- Nur RAM/CPU geändert: `docker update` am laufenden oder gestoppten Container, `200`.
+  Docker hatte beim Anlegen Swap = 2 × RAM gesetzt; `MemorySwap` zieht mit, sonst lehnt
+  Docker ein größeres RAM-Limit ab.
+- Anderes `shmSize`: Neuaufbau im Hintergrund (`202`, Status `rebuilding`, `?wait=true`
+  für Skripte). `rebuildWorkspaceContainer`: Workspace stoppen, `docker commit` nach
+  `workspace-rebuild-<id>:raw-<zeit>` (Rückfall export/import wie beim Klonen), alten
+  Container in `rebuild-backup-<id>` umbenennen (bewusst ohne Präfix `workspace-`, damit
+  ihn nichts als Workspace sieht), neuen Container mit gleichem Namen aus dem Snapshot
+  anlegen – Env (Passwort, Forgejo-Token), Cmd/Entrypoint/User, die komplette
+  `HostConfig` des alten mit neuen Werten für Memory/MemorySwap/NanoCpus/ShmSize, Netz
+  mit fester Proxy-IP –, starten, falls er lief, auf code-server warten (60 s statt 15 s,
+  läuft ja im Hintergrund), alten Container löschen, ältere Snapshot-Tags entfernen.
+  Schlägt ein Schritt nach dem Umbenennen fehl: neuen Container weg, alten zurück unter
+  seinem Namen, ggf. starten, Snapshot löschen, `lastError` (`action: rebuild`).
+- Server-Neustart mitten im Neuaufbau: `recoverInterruptedRebuilds()` beim Laden holt
+  `rebuild-backup-<id>` zurück (ein evtl. schon angelegter neuer Container fällt weg; die
+  gespeicherten Werte passen zum alten, sie werden erst nach Erfolg geschrieben).
+- Während des Neuaufbaus antworten Start, Stopp, Löschen, Klonen und eine weitere Änderung
+  `409`. Löschen eines Workspace entfernt auch seine Snapshot-Images.
+- Dashboard: Knopf „Resources“ (nur Admin) in der Kopfzeile des Workspace; Dialog mit den
+  drei Auswahlen (ein Wert von vor einer gesenkten Grenze bleibt wählbar), Hinweis, dass
+  Shared Memory zum RAM zählt, und bei geänderter shm-Größe ein Hinweis auf den Neuaufbau
+  plus Rückfrage. Status „Rebuilding“ mit Ladeanzeige ohne Knöpfe; danach Erfolgsmeldung
+  oder die Fehlermeldung einmal und die Fehlerzeile.
+- Quick Clone schickte fest 2 GB / 2 Kerne; mit echten Obergrenzen hätte das auf einer
+  Standard-Installation (max. 1 Kern) `400` ergeben. Es schickt jetzt keine Werte mehr,
+  der Server nimmt seine Standards.
+- Doku: `API.md` (Abschnitt „Change Resources“, Status `rebuilding`), Upgrade-Zeile.
+
+**Bewusst nicht**: keine Zeitgrenze für den Neuaufbau (ein `docker commit` eines großen
+Workspace darf Minuten dauern; ein Abbruch mittendrin wäre schlimmer). Hängt Docker, hilft
+wie beim Stopp ein Neustart des Servers – der holt den alten Container zurück.
+
+**Tests** (lokal):
+- Laufender Workspace 4 GB/4 Kerne/2 GB shm → 8 GB/2 Kerne: `200`, `HostConfig` Memory
+  8 GiB, MemorySwap 16 GiB, NanoCpus 2e9, Container lief weiter. RAM 1 GB bei 2 GB shm → 400;
+  gleiche Werte → „Nothing changed“.
+- shm 2 → 4 GB am laufenden Workspace: `202`, Start und weitere Änderung währenddessen
+  `409`, nach 20 s `running`, neuer Container aus `workspace-rebuild-…`, `df` 4,0G, Datei in
+  `/workspace` und `~` erhalten, RAM-Einstellung erhalten, kein `rebuild-backup-` übrig,
+  Workspace-URL 302.
+- Gestoppter Workspace, shm 1 GB und RAM 2 GB mit `?wait=true`: `200`, bleibt gestoppt,
+  alter Snapshot-Tag entfernt; nach Start `df` 1,0G, Datei da.
+- Logging-Workspace mit Passwort und Forgejo-Repo: ohne Passwort `401`; Neuaufbau:
+  Fingerabdruck von `PASSWORD`/`FORGEJO_*` gleich, gleiche feste IP `172.30.128.2`, gleiches
+  DNS, letzter Commit da, Proxy funktioniert. (Push nach Forgejo geht aus Proxy-Workspaces
+  wie bisher nicht – bekannte Einschränkung aus Paket 2.) Dabei gefunden: code-server war
+  nach 15 s noch nicht bereit → Wartezeit beim Neuaufbau 60 s.
+- Abgebrochener Neuaufbau: Container von Hand in `rebuild-backup-<id>` umbenannt, Server
+  neu deployt → „Restored … after an interrupted rebuild“, Workspace wieder da (gestoppt).
+- Rücksprung mit nachgebautem dockerode: Erfolg (Reihenfolge, shm/RAM/Swap/CPU, Init,
+  CapDrop, Env, feste IP, Name) sowie Fehler bei `create` und bei `start` (neuer Container
+  weg, alter zurückbenannt und gestartet, Snapshot gelöscht). 9/9.
+- Klon eines neu aufgebauten Workspace: shm 2 GB übernommen, Datei da.
+- Browser: Formular bietet 64 MB–2 GB shm bei 2 GB RAM, nach 1 GB RAM nur bis 1 GB, nach
+  8 GB alle; Dialog zeigt die Werte des Workspace, Hinweis auf den Neuaufbau erscheint erst
+  bei geänderter shm-Größe; Speichern → Rückfrage → „Rebuilding workspace...“ →
+  `stopped` → Meldung „rebuilt with 2 GB shared memory“.
+
+### 6.3 Smoke-Test und README
+
+**Änderung**:
+- Smoke-Test, Abschnitt „Workspace resources“ am Workspace ohne Proxy: Auswahl aus
+  `/api/limits`, `/dev/shm` 64 MB als Standard, shm über dem RAM-Limit → 400, Neuaufbau auf
+  1 GB mit `?wait=true` (200, läuft danach, `df` 1 GB, Datei erhalten), RAM-Limit sofort
+  geändert (200, `HostConfig.Memory`). Gruppen-Nutzer: Ressourcen ändern → 403. Nach dem
+  Löschen keine `workspace-rebuild-<id>`-Images mehr.
+- README: Auswahl bis zu den Grenzen statt fester 1–16 GB / 1–8 Kerne, Shared Memory,
+  Bedeutung der beiden `.env`-Werte, Beispiel Simulationsserver.
+
+**Tests**: Smoke-Test lokal 66 von 67; alle neuen Prüfungen grün. Rot war „VS Code
+reachable through nginx (HTTP 502)“ direkt nach dem Anlegen – unabhängig von diesem Paket:
+Auf dem lokalen Rechner braucht der Erweiterungs-Check im Entrypoint gerade 23 s
+(`code-server --list-extensions` je Erweiterung), der Server wartet beim Anlegen aber nur
+15 s auf code-server (`waitForWorkspaceReady`, danach „proceeding anyway“) und meldet den
+Workspace als `running`. Gemessen auf diesem Branch und auf `main` gleich: `running` nach
+19–20 s, VS Code über nginx erst nach 26–27 s. Vorgemerkt (siehe unten).
+
+### Vorgemerkt aus Paket 6
+
+- **Workspace „running“, bevor code-server antwortet**: Anlegen und Start warten höchstens
+  15 s auf code-server und machen dann weiter; „Open Workspace“ liefert dann eine Weile 502.
+  Der Entrypoint prüft jede vorinstallierte Erweiterung einzeln (lokal ~1,5 s je
+  Erweiterung). Möglich: beim (asynchronen) Anlegen länger warten wie beim Neuaufbau (60 s)
+  und/oder den Erweiterungs-Check im Entrypoint mit einem einzigen `--list-extensions`.
