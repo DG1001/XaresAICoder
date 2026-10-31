@@ -823,7 +823,10 @@ fi`.trim();
     }
   }
 
-  async waitForWorkspaceReady(containerName, maxWaitTime = 15000) {
+  // Workspaces from older images (and clones or rebuilds of them) check every
+  // extension separately and need up to 35 s; the synchronous start must still
+  // answer before nginx gives up on /api/ (proxy_read_timeout 60 s).
+  async waitForWorkspaceReady(containerName, maxWaitTime = 45000) {
     const startTime = Date.now();
     const checkInterval = 2000; // Check every 2 seconds
 
@@ -1820,7 +1823,7 @@ fi`.trim();
         await container.start();
 
         // Wait for code-server to become ready
-        await this.waitForWorkspaceReady(containerName, 15000);
+        await this.waitForWorkspaceReady(containerName);
 
         console.log(`Password updated for running container ${containerName}`);
         return { success: true, message: 'Password updated successfully' };
