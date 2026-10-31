@@ -114,6 +114,15 @@ function summarizeConversation(conv, file, size) {
 // inherits the snapshot's environment from its image, so any of these that
 // the clone does not set itself is overridden with an empty value (e.g. the
 // source's GIT_ACCESS_TOKEN or PASSWORD).
+const MiB = 1024 * 1024;
+const GiB = 1024 * MiB;
+
+// '64m' / '2g' -> bytes, null for anything else
+function sizeToBytes(value) {
+  const m = /^([1-9][0-9]{0,5})([mg])$/.exec(String(value || ''));
+  return m ? Number(m[1]) * (m[2] === 'g' ? GiB : MiB) : null;
+}
+
 const PLATFORM_ENV_KEYS = [
   'PROJECT_TYPE', 'PROJECT_ID', 'VSCODE_PROXY_URI', 'PROXY_DOMAIN',
   'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
@@ -355,6 +364,7 @@ class DockerService {
     projectType,
     memoryLimit = '2g',
     cpuCores = '2',
+    shmSize = '64m',
     passwordProtected = false,
     password = null,
     proxyMode = 'none',
@@ -365,7 +375,7 @@ class DockerService {
     forgejo = null,
     sudoEnabled = this.workspaceSudoEnabled,
     proxyIp = null,
-    hostCapabilities = { ncpu: null, diskQuota: false }
+    hostCapabilities = { ncpu: null, memTotal: null, diskQuota: false }
   }) {
     const containerName = `workspace-${projectId}`;
     const useProxy = proxyMode !== 'none';
@@ -470,6 +480,8 @@ class DockerService {
         Memory: this.parseMemoryLimit(memoryLimit),
         // Hard CPU limit (CpuShares was only a relative weight under contention)
         NanoCpus: this.cpuCoresToNanoCpus(cpuCores, hostCapabilities.ncpu),
+        // /dev/shm (tmpfs, counts toward Memory); MPI puts its buffers there
+        ShmSize: this.parseShmSize(shmSize),
         NetworkMode: workspaceNetwork,
         PidMode: '', // Isolated PID namespace (default, but explicit for security)
         IpcMode: 'private', // Isolated IPC namespace (prevents container communication via shared memory)
@@ -2392,23 +2404,24 @@ fi`.trim();
     }
   }
 
+  // Memory limit ('1g', '2g', … '32g'; the route checks the allowed range) -> bytes
   parseMemoryLimit(memoryLimit) {
-    // Convert memory limit string (e.g., '1g', '2g', '4g', '8g', '16g') to bytes
-    const memoryMap = {
-      '1g': 1 * 1024 * 1024 * 1024,   // 1GB
-      '2g': 2 * 1024 * 1024 * 1024,   // 2GB
-      '4g': 4 * 1024 * 1024 * 1024,   // 4GB
-      '8g': 8 * 1024 * 1024 * 1024,   // 8GB
-      '16g': 16 * 1024 * 1024 * 1024  // 16GB
-    };
-    
-    const memory = memoryMap[memoryLimit];
-    if (!memory) {
+    const bytes = sizeToBytes(memoryLimit);
+    if (!bytes || !/g$/.test(memoryLimit)) {
       console.warn(`Invalid memory limit '${memoryLimit}', defaulting to 2GB`);
-      return memoryMap['2g'];
+      return 2 * GiB;
     }
-    
-    return memory;
+    return bytes;
+  }
+
+  // /dev/shm size ('64m', '1g', …) -> bytes; Docker's default is 64 MB
+  parseShmSize(shmSize) {
+    const bytes = sizeToBytes(shmSize);
+    if (!bytes) {
+      console.warn(`Invalid shared memory size '${shmSize}', defaulting to 64MB`);
+      return 64 * MiB;
+    }
+    return bytes;
   }
 
   // Docker host facts needed for limits, read once: CPU count (NanoCpus must
@@ -2424,18 +2437,19 @@ fi`.trim();
         console.warn(`WORKSPACE_DISK_LIMIT=${this.diskLimit} is ignored: storage driver ${info.Driver} on ` +
           `${status['Backing Filesystem'] || 'unknown'} does not support per-container quotas (needs overlay2 on xfs with pquota)`);
       }
-      this.hostCapabilities = { ncpu: info.NCPU || null, diskQuota };
+      this.hostCapabilities = { ncpu: info.NCPU || null, memTotal: info.MemTotal || null, diskQuota };
     } catch (error) {
       console.warn(`Could not read Docker host info: ${error.message}`);
-      this.hostCapabilities = { ncpu: null, diskQuota: false };
+      this.hostCapabilities = { ncpu: null, memTotal: null, diskQuota: false };
     }
     return this.hostCapabilities;
   }
 
-  // CPU cores ('1'|'2'|'4'|'8') -> NanoCpus, capped at the host's CPU count
+  // CPU cores ('1', '2', … '12'; the route checks the allowed range) ->
+  // NanoCpus, capped at the host's CPU count
   cpuCoresToNanoCpus(cpuCores, hostCpus = null) {
-    let cores = parseInt(cpuCores, 10);
-    if (![1, 2, 4, 8].includes(cores)) {
+    let cores = Number(cpuCores);
+    if (!Number.isInteger(cores) || cores < 1) {
       console.warn(`Invalid CPU cores '${cpuCores}', defaulting to 2 cores`);
       cores = 2;
     }
@@ -2499,3 +2513,4 @@ fi`.trim();
 }
 
 module.exports = new DockerService();
+module.exports.sizeToBytes = sizeToBytes;

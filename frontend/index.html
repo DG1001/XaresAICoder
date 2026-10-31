@@ -224,6 +224,17 @@
                                 </select>
                             </div>
 
+                            <div class="form-group">
+                                <label for="shmSize">Shared Memory (/dev/shm)</label>
+                                <select id="shmSize" name="shmSize" required>
+                                    <option value="64m" selected>64 MB (Default)</option>
+                                </select>
+                                <div class="form-hint">
+                                    Counts toward the memory limit (tmpfs). MPI programs such as OpenFOAM keep their
+                                    buffers here; 64 MB lasts for about 8 processes.
+                                </div>
+                            </div>
+
                         </div>
 
                         <div class="form-section">

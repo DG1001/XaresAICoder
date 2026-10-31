@@ -194,8 +194,14 @@ Creates a new workspace with the specified configuration.
 - `createGitRepo` (boolean, optional): Create a private Git repository owned by the workspace's own Forgejo user (requires Git server). With the Git server enabled, every workspace gets its own Forgejo user and token (`FORGEJO_USER`/`FORGEJO_TOKEN`), with or without repository.
 - `gitUrl`, `gitUsername`, `gitToken` (with `projectType: "git-clone"`): repository to clone. A URL of this platform's Forgejo (`<base>/git/<owner>/<repo>`) needs no token: the new workspace user is added as collaborator and works directly on that repository (e.g. to continue the work of a deleted workspace).
 - `proxyMode` (string, optional): Network proxy mode — `none` (default), `logging` (LLM Logging Proxy, unrestricted with recording), `security` (Security Proxy, whitelist-only)
-- `memoryLimit` (string, optional): Memory limit — `1g`, `2g` (default), `4g`, `8g`, `16g`
-- `cpuCores` (string, optional): CPU cores — `1`, `2` (default), `4`, `8`
+- `memoryLimit` (string, optional): Memory limit in GB (`1g`, `2g`, `4g`, …); default `2g`
+- `cpuCores` (string, optional): CPU cores (`1`, `2`, `4`, …); default `2`
+- `shmSize` (string, optional): Size of `/dev/shm` — `64m` (default, Docker's), then the
+  memory choices (`1g`, `2g`, …); at most `memoryLimit`, because it counts toward it (tmpfs)
+- The allowed values come from `GET /api/limits` → `resources` (powers of two up to
+  `MEMORY_PER_WORKSPACE_MB` / `CPU_PER_WORKSPACE`, plus the maximum itself); others
+  answer `400` (`"error": "Invalid resources"`). Without a value the default applies, or the
+  maximum if the default is above it
 - `group` (string, optional): Group name for organizing workspaces
 
 **Response** (Success - 201):
@@ -689,17 +695,29 @@ Retrieves current resource limit configuration for workspace management.
 ```json
 {
   "maxConcurrentWorkspaces": 5,
-  "cpuPerWorkspace": 4.0,
-  "memoryPerWorkspaceMB": 8192,
-  "enableResourceLimits": true
+  "cpuPerWorkspace": 12,
+  "memoryPerWorkspaceMB": 32768,
+  "enableResourceLimits": true,
+  "resources": {
+    "maxMemoryGB": 32,
+    "maxCpuCores": 12,
+    "memory": ["1g", "2g", "4g", "8g", "16g", "32g"],
+    "cpu": ["1", "2", "4", "8", "12"],
+    "shm": ["64m", "1g", "2g", "4g", "8g", "16g", "32g"],
+    "defaults": { "memoryLimit": "2g", "cpuCores": "2", "shmSize": "64m" }
+  }
 }
 ```
 
 **Parameters**:
 - `maxConcurrentWorkspaces` (integer): Maximum number of simultaneously running workspaces
-- `cpuPerWorkspace` (number): Maximum CPU cores allocated per workspace
-- `memoryPerWorkspaceMB` (integer): Maximum RAM in megabytes per workspace
-- `enableResourceLimits` (boolean): Whether resource limit enforcement is enabled
+- `cpuPerWorkspace` (number): Upper bound for the CPU cores of a workspace (`CPU_PER_WORKSPACE`)
+- `memoryPerWorkspaceMB` (integer): Upper bound for the RAM of a workspace in MB (`MEMORY_PER_WORKSPACE_MB`)
+- `enableResourceLimits` (boolean): Whether the limit of running workspaces is enforced
+- `resources`: the choices the dashboard offers and the API accepts. The bounds above are
+  capped at the Docker host (its CPU count; its memory rounded up to whole GB); the steps
+  are powers of two plus the maximum itself. `shm` lists the sizes of `/dev/shm`; per
+  workspace only those up to its memory limit are allowed
 
 **Usage**:
 ```bash

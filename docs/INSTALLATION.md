@@ -162,8 +162,8 @@ curl http://localhost/api/health
 | `MAX_WORKSPACES_PER_USER` | 5 | Maximum workspaces per user |
 | `ENABLE_GIT_SERVER` | false | Enable integrated Forgejo Git server |
 | `MAX_CONCURRENT_WORKSPACES` | 3 | Maximum concurrent running workspaces |
-| `CPU_PER_WORKSPACE` | 1.0 | CPU cores allocated per workspace |
-| `MEMORY_PER_WORKSPACE_MB` | 4096 | RAM in MB per workspace |
+| `CPU_PER_WORKSPACE` | 1.0 | Most CPU cores a workspace can get (capped at the host's CPUs) |
+| `MEMORY_PER_WORKSPACE_MB` | 4096 | Most RAM in MB a workspace can get (capped at the host's memory) |
 | `ENABLE_RESOURCE_LIMITS` | true | Enable resource limit enforcement |
 
 ### Git Server Configuration
@@ -466,10 +466,10 @@ XaresAICoder supports configurable resource limits to prevent system overload. C
 # Maximum concurrent workspaces
 MAX_CONCURRENT_WORKSPACES=3
 
-# CPU cores per workspace
+# Most CPU cores per workspace (choices: 1, 2, 4, … up to this value)
 CPU_PER_WORKSPACE=1.0
 
-# Memory in MB per workspace
+# Most memory in MB per workspace (choices: 1, 2, 4, … GB up to this value)
 MEMORY_PER_WORKSPACE_MB=4096
 
 # Enable resource limit enforcement
@@ -498,6 +498,20 @@ MAX_CONCURRENT_WORKSPACES=5
 CPU_PER_WORKSPACE=0.5
 MEMORY_PER_WORKSPACE_MB=2048
 ```
+
+**Simulation server** (e.g. a ProLiant with 32 GB and 12 cores for OpenFOAM/MPI):
+```bash
+MAX_CONCURRENT_WORKSPACES=2
+CPU_PER_WORKSPACE=12
+MEMORY_PER_WORKSPACE_MB=32768
+```
+
+The dashboard and the API offer powers of two up to these values plus the value itself
+(here 1, 2, 4, 8, 12 cores and 1–32 GB); larger requests answer `400`. Values above the
+host are capped at it (CPU count, memory rounded up to whole GB). A value below 1 core or
+1 GB still allows 1. **Shared memory** (`/dev/shm`) is chosen per workspace from 64 MB
+(Docker's default) up to its memory limit: it is a tmpfs and counts toward that limit.
+MPI programs such as OpenFOAM keep their buffers there; 64 MB lasts for about 8 processes.
 
 **Check Current Limits**:
 > The API needs the admin login. Log in once with curl and reuse the cookie:

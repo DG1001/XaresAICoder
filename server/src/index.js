@@ -57,10 +57,16 @@ app.get('/api/config', (req, res) => {
   res.json(config);
 });
 
-// Resource limits endpoint
-app.get('/api/limits', (req, res) => {
+// Resource limits endpoint; resources: the choices for memory, CPU cores
+// and /dev/shm (see workspaceService.getResourceOptions)
+app.get('/api/limits', async (req, res) => {
   const workspaceService = require('./services/workspace');
-  res.json(workspaceService.limits);
+  try {
+    res.json({ ...workspaceService.limits, resources: await workspaceService.getResourceOptions() });
+  } catch (error) {
+    console.error('Limits error:', error);
+    res.status(500).json({ error: 'Failed to read limits', message: error.message });
+  }
 });
 
 // Whitelist API routes

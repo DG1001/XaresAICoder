@@ -23,6 +23,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 | 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
 | 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | ✅ umgesetzt auf Branch `feat/group-users` (5.1–5.3), Smoke-Test grün |
+| 6 – Workspace-Ressourcen | `/dev/shm` je Workspace, Obergrenzen für RAM/CPU aus `.env`, Ressourcen nachträglich ändern | in Arbeit auf Branch `feat/workspace-resources` |
 
 ---
 
@@ -2179,3 +2180,61 @@ Einträge ohne Wiederholung; erster Aufruf je Seite 4,6–4,9 s (ein `docker exe
 danach 0,1–0,2 s aus dem Speicher; Antworten gzip. Im Browser: Zähler „120 (showing 49)“,
 „Load 50 more“/„Load 20 more“, 119 eindeutige Einträge; Aufklappen der großen Aufzeichnung
 lädt sie einzeln, Rohbody gekürzt, „Download JSON“ da, kein Schlüssel im Text.
+
+---
+
+## Paket 6 – Workspace-Ressourcen (2026-10-31)
+
+Anlass: ein Feature-Wunsch von der Installation auf dem NixOS-Server. MPI-Rechnungen
+(OpenFOAM mit MPICH) legen ihre Puffer in `/dev/shm` an; Workspace-Container hatten
+Dockers Standard von 64 MB, damit laufen höchstens etwa 8 Prozesse. Ein Remount im
+laufenden Container ist nach jedem Neustart weg (und braucht `CAP_SYS_ADMIN`). Außerdem
+waren RAM und CPU im Server fest auf 16 GB / 8 Kerne begrenzt; ein ProLiant mit 32 GB und
+12 Kernen ließ sich nicht ausnutzen.
+
+Entscheidungen (per Rückfrage, jeweils die Empfehlung):
+- **Bearbeiten**: eigener Dialog „Resources“ je Workspace. RAM/CPU wirken sofort
+  (`docker update`); eine shm-Änderung baut den Container aus einem Snapshot seiner selbst
+  neu auf (6.2), weil Docker `ShmSize` eines bestehenden Containers nicht ändern kann und
+  die Dateien im Container liegen, nicht in Volumes.
+- **shm höchstens so groß wie das RAM-Limit**: tmpfs zählt zum Speicher des Containers.
+- **Obergrenzen aus den vorhandenen `.env`-Werten** `MEMORY_PER_WORKSPACE_MB` und
+  `CPU_PER_WORKSPACE`, keine neuen Variablen.
+
+### 6.1 Obergrenzen aus `.env`, Shared Memory beim Anlegen
+
+**Problem**: `MEMORY_PER_WORKSPACE_MB`/`CPU_PER_WORKSPACE` filterten nur die Auswahl im
+Dashboard (aus festen Listen 1–16 GB, 1/2/4/8 Kerne); die API nahm jeden Wert der festen
+Listen an, unabhängig von der Einstellung. Werte über 16 GB/8 Kerne gab es gar nicht.
+`/dev/shm` war nicht einstellbar.
+
+**Änderung**:
+- `workspaceService.getResourceOptions()` erzeugt die Auswahl: Zweierpotenzen bis zur
+  Obergrenze plus die Obergrenze selbst (12 Kerne → 1, 2, 4, 8, 12; 32 GB → 1, 2, 4, 8, 16,
+  32). Die Obergrenzen werden auf den Docker-Host gedeckelt (CPU-Zahl; Speicher auf ganze GB
+  aufgerundet, damit ein 32-GB-Host nicht bei 31 GB endet). Standard 2 GB / 2 Kerne, sonst
+  das Maximum. `shm`: `64m` und die Speicherwerte.
+- `resolveResources()` prüft `memoryLimit`, `cpuCores`, `shmSize` gegen diese Auswahl
+  (`400 Invalid resources` mit den erlaubten Werten) und `shmSize ≤ memoryLimit`. Beim
+  späteren Ändern (6.2) wird nur geprüft, was sich ändert, damit ein Workspace einen Wert
+  von vor einer gesenkten Grenze behalten kann.
+- `GET /api/limits` liefert zusätzlich `resources` (Auswahl, Maxima, Standards).
+- Docker: `HostConfig.ShmSize` aus `shmSize`; `parseMemoryLimit`/`cpuCoresToNanoCpus`
+  nehmen beliebige ganze Werte statt fester Listen; `getHostCapabilities` kennt `MemTotal`.
+- `shmSize` wird mit dem Projekt gespeichert (alte Einträge: `64m`), von Klonen
+  übernommen und in Liste und Klon-Übersicht angezeigt (nur wenn nicht 64 MB).
+- Dashboard: Auswahl aus `resources`, neues Feld „Shared Memory (/dev/shm)“ mit Hinweis
+  (zählt zum RAM-Limit, OpenFOAM/MPI); es bietet nur Werte bis zum gewählten RAM-Limit an
+  und passt sich an, wenn das Limit geändert wird.
+- Doku: `API.md` (Felder, `/api/limits`), `INSTALLATION.md` (Bedeutung der beiden Werte,
+  Beispiel Simulationsserver), `.env.example`, Upgrade-Zeile in `DEPLOYMENT.md`.
+
+**Verhaltensänderung**: API-Aufrufe über den Obergrenzen antworten `400`. Ohne Angabe
+bekommt ein Workspace 2 GB / 2 Kerne oder das niedrigere Maximum – mit dem Standard
+`CPU_PER_WORKSPACE=1.0` also 1 Kern (das Dashboard bot ohnehin nur 1 Kern an).
+
+**Tests** (lokal, `MEMORY_PER_WORKSPACE_MB=8192`, `CPU_PER_WORKSPACE=4`, Host 8 CPUs /
+11,7 GB): `/api/limits` → 1/2/4/8 GB, 1/2/4 Kerne, shm 64m–8g. `shmSize 8g` bei 2 GB → 400,
+`cpuCores 8` → 400, `shmSize 3g` → 400. Workspace mit 4 GB, 4 Kernen (als Zahl), 2 GB shm:
+`df -h /dev/shm` 2,0G, `HostConfig` Memory 4 GiB, NanoCpus 4e9, ShmSize 2 GiB; 1,5 GB in
+`/dev/shm` geschrieben (74 %); nach Stop/Start und nach `docker restart` weiterhin 2,0G.

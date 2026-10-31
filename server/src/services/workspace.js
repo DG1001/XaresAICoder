@@ -46,6 +46,7 @@ function serializeProject(p) {
     projectType: p.projectType,
     memoryLimit: p.memoryLimit || '2g',
     cpuCores: p.cpuCores || '2',
+    shmSize: p.shmSize || '64m',
     passwordProtected: p.passwordProtected || false,
     group: p.group || 'Uncategorized',
     status: p.status,
@@ -304,6 +305,7 @@ class WorkspaceService {
         projectType,
         memoryLimit: options.memoryLimit || '2g',
         cpuCores: options.cpuCores || '2',
+        shmSize: options.shmSize || '64m',
         userId,
         group: projectGroup,
         passwordProtected: options.passwordProtected || false,
@@ -337,6 +339,8 @@ class WorkspaceService {
         projectName: project.projectName,
         projectType,
         memoryLimit: project.memoryLimit,
+        cpuCores: project.cpuCores,
+        shmSize: project.shmSize,
         passwordProtected: project.passwordProtected,
         createGitRepo: project.createGitRepo,
         workspaceUrl: null,
@@ -397,6 +401,7 @@ class WorkspaceService {
       const workspace = await dockerService.createWorkspaceContainer(projectId, projectType, {
         memoryLimit: options.memoryLimit || '2g',
         cpuCores: options.cpuCores || '2',
+        shmSize: options.shmSize || '64m',
         passwordProtected: options.passwordProtected || false,
         password: options.password || null,
         gitRepository: gitRepository,
@@ -496,6 +501,7 @@ class WorkspaceService {
             projectType: source.projectType,
             memoryLimit: source.memoryLimit || '2g',
             cpuCores: source.cpuCores || '2',
+            shmSize: source.shmSize || '64m',
             userId,
             group: source.group || 'Uncategorized',
             passwordProtected: hasPassword,
@@ -587,6 +593,7 @@ class WorkspaceService {
           const workspace = await dockerService.createCloneContainer(clone.projectId, snapshotImage, {
             memoryLimit: clone.memoryLimit,
             cpuCores: clone.cpuCores,
+            shmSize: clone.shmSize,
             passwordProtected: clone.passwordProtected,
             password: options.password || null,
             proxyMode: clone.proxyMode,
@@ -733,6 +740,68 @@ class WorkspaceService {
       console.error('Error starting project:', error);
       throw error;
     }
+  }
+
+  // Choices for memory, CPU cores and /dev/shm. Upper bounds are
+  // MEMORY_PER_WORKSPACE_MB and CPU_PER_WORKSPACE, capped at the Docker host
+  // (its CPU count, its memory rounded up to whole GB); the steps are powers
+  // of two plus the maximum itself (e.g. 1, 2, 4, 8, 12 cores).
+  async getResourceOptions() {
+    const host = await dockerService.getHostCapabilities();
+    let maxMemoryGB = Math.max(1, Math.floor(this.limits.memoryPerWorkspaceMB / 1024));
+    if (host.memTotal) maxMemoryGB = Math.min(maxMemoryGB, Math.ceil(host.memTotal / 2 ** 30));
+    let maxCpuCores = Math.max(1, Math.floor(this.limits.cpuPerWorkspace));
+    if (host.ncpu) maxCpuCores = Math.min(maxCpuCores, host.ncpu);
+    const steps = max => {
+      const values = [];
+      for (let n = 1; n < max; n *= 2) values.push(n);
+      return [...values, max];
+    };
+    const memory = steps(maxMemoryGB).map(n => `${n}g`);
+    const cpu = steps(maxCpuCores).map(String);
+    const preferred = (list, value) => (list.includes(value) ? value : list[list.length - 1]);
+    return {
+      maxMemoryGB,
+      maxCpuCores,
+      memory,
+      cpu,
+      // Shared memory counts toward the memory limit; never above it
+      shm: ['64m', ...memory],
+      defaults: { memoryLimit: preferred(memory, '2g'), cpuCores: preferred(cpu, '2'), shmSize: '64m' }
+    };
+  }
+
+  // Memory, CPU cores and /dev/shm for a new workspace (current = null) or a
+  // change (current = the workspace's values). Missing values keep the
+  // current ones or get the defaults. A value is checked against the choices
+  // only when it changes, so an edit may keep a value from before a lower
+  // limit. Throws with a message for the client.
+  async resolveResources(requested = {}, current = null) {
+    const options = await this.getResourceOptions();
+    const base = current || options.defaults;
+    const result = {};
+    const fields = [
+      ['memoryLimit', options.memory, 'Memory limit'],
+      ['cpuCores', options.cpu, 'CPU cores'],
+      ['shmSize', options.shm, 'Shared memory']
+    ];
+    for (const [key, choices, label] of fields) {
+      const given = requested[key];
+      if (given === undefined || given === null || given === '') {
+        result[key] = base[key];
+        continue;
+      }
+      const value = String(given).toLowerCase();
+      if (value !== base[key] && !choices.includes(value)) {
+        throw new Error(`${label} must be one of: ${choices.join(', ')}`);
+      }
+      result[key] = value;
+    }
+    const { sizeToBytes } = dockerService;
+    if (sizeToBytes(result.shmSize) > sizeToBytes(result.memoryLimit)) {
+      throw new Error(`Shared memory (${result.shmSize}) cannot be larger than the memory limit (${result.memoryLimit}): it counts toward it`);
+    }
+    return result;
   }
 
   // While a stop runs, Docker still reports the container as running; the
@@ -974,6 +1043,8 @@ class WorkspaceService {
               ...projectData,
               // Add memoryLimit for existing projects that don't have it (migration)
               memoryLimit: projectData.memoryLimit || '2g',
+              // Workspaces from before the setting have Docker's default
+              shmSize: projectData.shmSize || '64m',
               // Migrate useProxy (boolean) to proxyMode (string) for backward compat
               proxyMode: projectData.proxyMode || (projectData.useProxy === true ? 'logging' : 'none'),
               // Initialize aliases array for older projects without the field

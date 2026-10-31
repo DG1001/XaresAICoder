@@ -268,50 +268,61 @@ class XaresAICoder {
         }
     }
 
+    // Choices for memory, CPU cores and /dev/shm from the server
+    // (/api/limits: limits from .env, capped at the Docker host)
+    resourceChoices() {
+        if (this.limits && this.limits.resources) return this.limits.resources;
+        // Server without resource choices: the former fixed values
+        return {
+            memory: ['1g', '2g', '4g'], cpu: ['1'], shm: ['64m', '1g', '2g', '4g'],
+            defaults: { memoryLimit: '2g', cpuCores: '1', shmSize: '64m' }
+        };
+    }
+
     populateResourceSelects() {
-        // Memory options in MB
-        const memoryOptions = [
-            { value: '1g', mb: 1024, label: '1 GB RAM' },
-            { value: '2g', mb: 2048, label: '2 GB RAM' },
-            { value: '4g', mb: 4096, label: '4 GB RAM' },
-            { value: '8g', mb: 8192, label: '8 GB RAM' },
-            { value: '16g', mb: 16384, label: '16 GB RAM' }
-        ];
+        const r = this.resourceChoices();
+        this.fillResourceSelect('memoryLimit', r.memory, r.defaults.memoryLimit, r.defaults.memoryLimit, v => `${this.formatSize(v)} RAM`);
+        this.fillResourceSelect('cpuCores', r.cpu, r.defaults.cpuCores, r.defaults.cpuCores, v => this.getCpuCoresLabel(v));
+        this.bindShmToMemory('shmSize', 'memoryLimit', r.defaults.shmSize);
+    }
 
-        // CPU options
-        const cpuOptions = [
-            { value: '1', cores: 1, label: '1 Core' },
-            { value: '2', cores: 2, label: '2 Cores' },
-            { value: '4', cores: 4, label: '4 Cores' },
-            { value: '8', cores: 8, label: '8 Cores' }
-        ];
+    // Options of a resource select, with the default and the maximum marked
+    fillResourceSelect(id, values, selected, defaultValue, label) {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const max = values[values.length - 1];
+        select.innerHTML = values.map(v => `<option value="${v}" ${v === selected ? 'selected' : ''}>${label(v)}${v === defaultValue ? ' (Default)' : ''}${v === max && values.length > 1 ? ' (Max)' : ''}</option>`).join('');
+    }
 
-        // Filter options based on limits
-        const maxMemoryMB = this.limits.memoryPerWorkspaceMB || 4096;
-        const maxCpu = this.limits.cpuPerWorkspace || 2.0;
+    // Shared memory counts toward the memory limit: offer it only up to the
+    // selected limit, also after the limit changes
+    bindShmToMemory(shmId, memoryId, selected) {
+        const memory = document.getElementById(memoryId);
+        if (!memory) return;
+        this.updateShmSelect(shmId, memoryId, selected);
+        memory.onchange = () => this.updateShmSelect(shmId, memoryId);
+    }
 
-        const availableMemoryOptions = memoryOptions.filter(opt => opt.mb <= maxMemoryMB);
-        const availableCpuOptions = cpuOptions.filter(opt => opt.cores <= maxCpu);
+    updateShmSelect(shmId, memoryId, selected = null) {
+        const shm = document.getElementById(shmId);
+        const memory = document.getElementById(memoryId);
+        if (!shm || !memory) return;
+        const values = this.resourceChoices().shm.filter(v => this.sizeInMB(v) <= this.sizeInMB(memory.value));
+        const wanted = selected || shm.value;
+        const value = values.includes(wanted) ? wanted : values[values.length - 1];
+        this.fillResourceSelect(shmId, values, value, '64m', v => this.formatSize(v));
+    }
 
-        // Populate memory select
-        const memorySelect = document.getElementById('memoryLimit');
-        if (memorySelect) {
-            memorySelect.innerHTML = availableMemoryOptions.map((opt, index) => {
-                // Set 2GB as default, or the highest available if 2GB not available
-                const isDefault = opt.value === '2g' || (opt.mb === maxMemoryMB && maxMemoryMB < 2048);
-                return `<option value="${opt.value}" ${isDefault ? 'selected' : ''}>${opt.label}${isDefault && opt.value === '2g' ? ' (Default)' : ''}${opt.mb === maxMemoryMB ? ' (Max)' : ''}</option>`;
-            }).join('');
-        }
+    // '64m' -> 64, '2g' -> 2048
+    sizeInMB(value) {
+        const m = /^(\d+)([mg])$/.exec(String(value || ''));
+        return m ? Number(m[1]) * (m[2] === 'g' ? 1024 : 1) : 0;
+    }
 
-        // Populate CPU select
-        const cpuSelect = document.getElementById('cpuCores');
-        if (cpuSelect) {
-            cpuSelect.innerHTML = availableCpuOptions.map((opt, index) => {
-                // Set 2 cores as default, or the highest available if 2 cores not available
-                const isDefault = opt.value === '2' || (opt.cores === maxCpu && maxCpu < 2);
-                return `<option value="${opt.value}" ${isDefault ? 'selected' : ''}>${opt.label}${isDefault && opt.value === '2' ? ' (Default)' : ''}${opt.cores === maxCpu ? ' (Max)' : ''}</option>`;
-            }).join('');
-        }
+    // '64m' -> '64 MB', '2g' -> '2 GB'
+    formatSize(value) {
+        const m = /^(\d+)([mg])$/.exec(String(value || ''));
+        return m ? `${m[1]} ${m[2] === 'g' ? 'GB' : 'MB'}` : String(value || '');
     }
 
     setupUI() {
@@ -717,6 +728,7 @@ class XaresAICoder {
         const projectName = formData.get('projectName').trim();
         const memoryLimit = formData.get('memoryLimit');
         const cpuCores = formData.get('cpuCores');
+        const shmSize = formData.get('shmSize');
         const passwordProtected = formData.get('passwordProtected') === 'on';
         const workspacePassword = formData.get('workspacePassword');
         const createGitRepo = formData.get('createGitRepo') === 'on';
@@ -758,6 +770,7 @@ class XaresAICoder {
             projectType: useGitRepository ? 'git-clone' : 'empty',
             memoryLimit,
             cpuCores,
+            shmSize,
             group: this.selectedGroup || 'Uncategorized'
         };
 
@@ -812,6 +825,7 @@ class XaresAICoder {
             // Clear form
             e.target.reset();
             document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
+            this.populateResourceSelects(); // shared memory again up to the default memory limit
             
             // Hide password group and clear password input
             const passwordGroup = document.getElementById('passwordGroup');
@@ -908,6 +922,7 @@ class XaresAICoder {
             // Clear form
             e.target.reset();
             document.getElementById('sudoEnabled').checked = !!(this.config && this.config.workspaceSudoDefault);
+            this.populateResourceSelects(); // shared memory again up to the default memory limit
 
             // Show simple success message
             this.showCreateSuccess(project);
@@ -1200,6 +1215,7 @@ class XaresAICoder {
                         ${project.gitUrl ? `<a href="${this.safeHref(project.gitUrl)}" target="_blank" rel="noopener" class="git-url-info" title="Cloned from: ${this.escapeHtml(project.gitUrl)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.20-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>${this.escapeHtml(this.getShortGitUrl(project.gitUrl))}</a>` : ''}
                         <span>${this.getMemoryLimitLabel(project.memoryLimit)}</span>
                         <span>${this.getCpuCoresLabel(project.cpuCores)}</span>
+                        ${this.getShmLabel(project.shmSize) ? `<span title="Shared memory (/dev/shm)">${this.getShmLabel(project.shmSize)}</span>` : ''}
                         ${this.getDiskUsageLabel(project.diskUsage) ? `<span class="disk-usage">${this.getDiskUsageLabel(project.diskUsage)}</span>` : ''}
                     </div>
                     ${this.getLastErrorLine(project)}
@@ -1816,24 +1832,18 @@ class XaresAICoder {
     }
 
     getMemoryLimitLabel(memoryLimit) {
-        const labels = {
-            '1g': '1GB RAM',
-            '2g': '2GB RAM', 
-            '4g': '4GB RAM',
-            '8g': '8GB RAM',
-            '16g': '16GB RAM'
-        };
-        return labels[memoryLimit] || '2GB RAM';
+        const m = /^(\d+)g$/.exec(memoryLimit || '');
+        return `${m ? m[1] : 2}GB RAM`;
     }
 
     getCpuCoresLabel(cpuCores) {
-        const labels = {
-            '1': '1 Core',
-            '2': '2 Cores',
-            '4': '4 Cores',
-            '8': '8 Cores'
-        };
-        return labels[cpuCores] || '2 Cores';
+        const n = parseInt(cpuCores, 10) || 2;
+        return n === 1 ? '1 Core' : `${n} Cores`;
+    }
+
+    // Only shown when it differs from Docker's default
+    getShmLabel(shmSize) {
+        return shmSize && shmSize !== '64m' ? `${this.formatSize(shmSize)} shm` : '';
     }
 
     getDiskUsageLabel(diskUsage) {
@@ -2844,11 +2854,11 @@ class XaresAICoder {
 
         // Build settings summary
         const proxyLabels = { none: 'No Proxy', security: 'Security Proxy', logging: 'LLM Logging Proxy' };
-        const memoryLabels = { '1g': '1 GB', '2g': '2 GB', '4g': '4 GB', '8g': '8 GB', '16g': '16 GB' };
         let summary = `<div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">`;
         summary += `<span style="color: var(--vscode-text-muted);">Type:</span><span>${project.projectType === 'git-clone' ? 'Git Clone' : 'Empty'}</span>`;
-        summary += `<span style="color: var(--vscode-text-muted);">Memory:</span><span>${memoryLabels[project.memoryLimit] || project.memoryLimit}</span>`;
-        summary += `<span style="color: var(--vscode-text-muted);">CPU:</span><span>${project.cpuCores} Core${project.cpuCores !== '1' ? 's' : ''}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">Memory:</span><span>${this.formatSize(project.memoryLimit)}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">CPU:</span><span>${this.getCpuCoresLabel(project.cpuCores)}</span>`;
+        summary += `<span style="color: var(--vscode-text-muted);">Shared memory:</span><span>${this.formatSize(project.shmSize || '64m')}</span>`;
         summary += `<span style="color: var(--vscode-text-muted);">Proxy:</span><span>${proxyLabels[project.proxyMode] || 'No Proxy'}</span>`;
         summary += `<span style="color: var(--vscode-text-muted);">Group:</span><span>${this.escapeHtml(project.group || 'Uncategorized')}</span>`;
         if (project.gitUrl) {
