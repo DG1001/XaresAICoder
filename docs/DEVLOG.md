@@ -23,7 +23,7 @@ Die Befunde wurden in drei Pakete gegliedert:
 | 3 – Betrieb | Log-Rotation, generierte Secrets, sticky Feature-Flags in `deploy.sh`, Node 22/`npm ci`, CI-Smoke-Test, Image-Pinning, Backups, persistente Whitelist | ✅ umgesetzt auf Branch `ops/paket-3` (3.1–3.4), CI-Smoke-Test grün |
 | 4 – KI-Agenten | Tool-Auswahl prüfen, Updates ohne sudo, Doku | ✅ umgesetzt auf Branch `feat/ai-agents` (4.1–4.3) |
 | 5 – Gruppen-Nutzer | Eingeschränkter Dashboard-Zugang pro Gruppe | ✅ umgesetzt auf Branch `feat/group-users` (5.1–5.3), Smoke-Test grün |
-| 6 – Workspace-Ressourcen | `/dev/shm` je Workspace, Obergrenzen für RAM/CPU aus `.env`, Ressourcen nachträglich ändern | in Arbeit auf Branch `feat/workspace-resources` |
+| 6 – Workspace-Ressourcen | `/dev/shm` je Workspace, Obergrenzen für RAM/CPU aus `.env`, Ressourcen nachträglich ändern | ✅ umgesetzt auf Branch `feat/workspace-resources` (6.1–6.3) |
 
 ---
 
@@ -2303,3 +2303,30 @@ wie beim Stopp ein Neustart des Servers – der holt den alten Container zurück
   8 GB alle; Dialog zeigt die Werte des Workspace, Hinweis auf den Neuaufbau erscheint erst
   bei geänderter shm-Größe; Speichern → Rückfrage → „Rebuilding workspace...“ →
   `stopped` → Meldung „rebuilt with 2 GB shared memory“.
+
+### 6.3 Smoke-Test und README
+
+**Änderung**:
+- Smoke-Test, Abschnitt „Workspace resources“ am Workspace ohne Proxy: Auswahl aus
+  `/api/limits`, `/dev/shm` 64 MB als Standard, shm über dem RAM-Limit → 400, Neuaufbau auf
+  1 GB mit `?wait=true` (200, läuft danach, `df` 1 GB, Datei erhalten), RAM-Limit sofort
+  geändert (200, `HostConfig.Memory`). Gruppen-Nutzer: Ressourcen ändern → 403. Nach dem
+  Löschen keine `workspace-rebuild-<id>`-Images mehr.
+- README: Auswahl bis zu den Grenzen statt fester 1–16 GB / 1–8 Kerne, Shared Memory,
+  Bedeutung der beiden `.env`-Werte, Beispiel Simulationsserver.
+
+**Tests**: Smoke-Test lokal 66 von 67; alle neuen Prüfungen grün. Rot war „VS Code
+reachable through nginx (HTTP 502)“ direkt nach dem Anlegen – unabhängig von diesem Paket:
+Auf dem lokalen Rechner braucht der Erweiterungs-Check im Entrypoint gerade 23 s
+(`code-server --list-extensions` je Erweiterung), der Server wartet beim Anlegen aber nur
+15 s auf code-server (`waitForWorkspaceReady`, danach „proceeding anyway“) und meldet den
+Workspace als `running`. Gemessen auf diesem Branch und auf `main` gleich: `running` nach
+19–20 s, VS Code über nginx erst nach 26–27 s. Vorgemerkt (siehe unten).
+
+### Vorgemerkt aus Paket 6
+
+- **Workspace „running“, bevor code-server antwortet**: Anlegen und Start warten höchstens
+  15 s auf code-server und machen dann weiter; „Open Workspace“ liefert dann eine Weile 502.
+  Der Entrypoint prüft jede vorinstallierte Erweiterung einzeln (lokal ~1,5 s je
+  Erweiterung). Möglich: beim (asynchronen) Anlegen länger warten wie beim Neuaufbau (60 s)
+  und/oder den Erweiterungs-Check im Entrypoint mit einem einzigen `--list-extensions`.

@@ -17,8 +17,9 @@ XaresAICoder provides isolated development workspaces running VS Code in the bro
 ### 🎯 **Professional Development Environment**
 - **VS Code in Browser** with light theme inspired design
 - **Isolated Docker Workspaces** with automatic resource management
-- **Configurable Memory Allocation** - Choose 1GB, 2GB, 4GB, 8GB, or 16GB RAM per workspace
-- **CPU Cores Selection** - Allocate 1-8 CPU cores per workspace
+- **Configurable Memory Allocation** - Choose 1GB, 2GB, 4GB, … RAM per workspace, up to the limit set in `.env`
+- **CPU Cores Selection** - Allocate 1, 2, 4, … CPU cores per workspace, up to the limit and the host's CPUs
+- **Shared Memory** - Size of `/dev/shm` per workspace (64 MB up to its RAM), e.g. for MPI/OpenFOAM; RAM, CPU and shared memory can be changed later
 - **Resource Limits** - Configurable concurrent workspace limits and per-workspace resource caps
 - **GPU Acceleration Support** - Automatic GPU passthrough for ML/AI workloads
 - **Dual Proxy Modes** - Per-workspace **LLM Logging Proxy** (mitmproxy, records all traffic and captures AI conversations) or **Security Proxy** (Squid, whitelist-only access control)
@@ -143,7 +144,7 @@ and stores it in `.env` as `ADMIN_PASSWORD`.
 
 #### Empty Project
 1. Enter a project name
-2. Choose memory allocation (1GB, 2GB default, 4GB, 8GB, or 16GB RAM) and CPU cores (1-8)
+2. Choose memory (2GB default), CPU cores and shared memory (`/dev/shm`, 64 MB default); the choices go up to the limits in `.env`
 3. **Optional**: Check "Password Protect Workspace" for secure access
 4. **Optional**: Check "Create Git Repository" to automatically set up Git
 5. Click "Create Workspace"
@@ -282,8 +283,8 @@ XaresAICoder includes configurable resource limits to prevent system overload an
 
 ### Default Limits
 - **Maximum Concurrent Workspaces**: 3 running workspaces at a time
-- **CPU per Workspace**: 1.0 cores
-- **Memory per Workspace**: 4096 MB (4GB)
+- **CPU per Workspace**: at most 1 core
+- **Memory per Workspace**: at most 4096 MB (4GB)
 
 ### Configuration
 
@@ -293,10 +294,10 @@ Customize limits via environment variables in `.env`:
 # Maximum number of simultaneously running workspaces
 MAX_CONCURRENT_WORKSPACES=3
 
-# CPU cores allocated per workspace
+# Most CPU cores a workspace can get (choices 1, 2, 4, … up to it)
 CPU_PER_WORKSPACE=1.0
 
-# RAM limit in MB per workspace
+# Most RAM in MB a workspace can get (choices 1, 2, 4, … GB up to it)
 MEMORY_PER_WORKSPACE_MB=4096
 
 # Enable/disable resource limit enforcement
@@ -312,9 +313,12 @@ ENABLE_RESOURCE_LIMITS=true
 - Simply stop any running workspace to free up a slot
 
 **Resource Allocation:**
-- Each workspace container is created with the configured CPU and memory limits
+- Each workspace gets the memory, CPU cores and shared memory chosen for it, within the limits above
+  (capped at the Docker host); the dashboard and the API refuse larger values
 - Docker enforces these limits automatically
 - Prevents any single workspace from consuming excessive resources
+- The **Resources** button of a workspace changes them later: memory and CPU right away, shared memory
+  by rebuilding the workspace from a snapshot of itself (files and installed software stay)
 
 **Checking Your Limits:**
 > The API needs the admin login. Log in once with curl and reuse the cookie:
@@ -353,6 +357,13 @@ MEMORY_PER_WORKSPACE_MB=8192
 MAX_CONCURRENT_WORKSPACES=5
 CPU_PER_WORKSPACE=0.5
 MEMORY_PER_WORKSPACE_MB=2048
+```
+
+**Simulation Server** (e.g. 32 GB, 12 cores for OpenFOAM/MPI; choose shared memory per workspace):
+```bash
+MAX_CONCURRENT_WORKSPACES=2
+CPU_PER_WORKSPACE=12
+MEMORY_PER_WORKSPACE_MB=32768
 ```
 
 ## 🗂️ Integrated Git Server (Optional)
