@@ -416,6 +416,49 @@ stay. `workspaces/index.tsv` in the backup lists project IDs and names. With `--
 the new workspace keeps its own password and Git account; Git remotes copied from the
 old workspace still point to its repository.
 
+## Temporary Hetzner Cloud session
+
+`./hetzner-session.sh` rents a Hetzner Cloud server, installs XaresAICoder with wildcard
+HTTPS on a DuckDNS name and deletes the server again. Cloud servers have no setup fee and
+are billed per started hour while they exist (also when powered off), so `down` deletes
+the server. Dedicated servers (EX/AX, Robot) have a setup fee and monthly billing and are
+not supported.
+
+```bash
+./hetzner-session.sh init            # writes ~/.config/xares-hetzner/config.env (chmod 600)
+# fill in HCLOUD_TOKEN, DUCKDNS_SUBDOMAIN, DUCKDNS_TOKEN, ACME_EMAIL
+./hetzner-session.sh up              # prices, confirmation, server, install, URL + admin password
+./hetzner-session.sh status [--show-password]
+./hetzner-session.sh ssh
+./hetzner-session.sh down --backup   # backup.sh --workspaces to ~/xares-backups/hetzner, then delete
+```
+
+- **Server type**: by default the cheapest x86 cloud type with at least `MIN_RAM_GB` (32)
+  RAM at the first location of `LOCATIONS`, shown with its hourly price before anything is
+  created; `SERVER_TYPE=` overrides. A location without capacity falls through to the next.
+- **Install**: Ubuntu 24.04, Docker from the Ubuntu repositories, the local working tree
+  (tracked and untracked files, no ignored ones) is uploaded and `deploy.sh --skip-env
+  --git-server --rebuild` runs on the server (`DEPLOY_ARGS`). `.env` gets
+  `BASE_PORT=443`, `PROTOCOL=https`, `HOST_PORT=127.0.0.1:8080` as in
+  [Production with External SSL Proxy](#3-production-with-external-ssl-proxy), plus
+  `WS_MAX`/`WS_CPU`/`WS_MEM_MB` for the workspace limits (10 workspaces, 2 CPUs, 4 GB
+  at most each).
+- **HTTPS**: Caddy (built with the DuckDNS plugin) in a container on the host. The apex gets
+  its own certificate, the wildcard `*.name.duckdns.org` one via DNS-01 (DuckDNS holds a
+  single TXT record, so the two never share a challenge). `down` saves the Caddy data and
+  `up` restores it, which avoids Let's Encrypt's limit on identical orders per week. Test
+  with `ACME_STAGING=1` first if you change the Caddy setup.
+- **Secrets**: the Hetzner token only goes into a request header file, the cloud-init
+  user data contains no secret (it is readable on the server). The DuckDNS token lives on
+  the server in `/opt/xares-caddy/env` (root only) for certificate renewal.
+- **Firewall** `xares-session`: 22 (limit with `ADMIN_CIDR`), 80, 443, ping. `down` clears
+  the DuckDNS record so it does not point at a reusable IP, deletes the server and warns
+  about unassigned primary IPs, which would keep billing.
+- A failed `up` leaves the server running (billing!) and offers to delete it; `down` also
+  finds a server labelled `xares-session` without a recorded session.
+- A backup is restored with `backup.sh --restore-workspace` on a fresh session (the platform
+  restore would bring back the old `.env` with the old domain).
+
 ## Upgrading Existing Installations
 
 The security hardening (packages 1 and 2, see `docs/DEVLOG.md`) changes how the
